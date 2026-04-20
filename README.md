@@ -37,7 +37,7 @@ No installation needed. Move it wherever you like.
 Requires [Node.js 18+](https://nodejs.org/).
 
 ```bash
-git clone https://github.com/your-username/dealdrop
+git clone https://github.com/SusieeTheFemboy/dealdrop
 cd dealdrop
 npm install
 npm start              # run in dev mode
