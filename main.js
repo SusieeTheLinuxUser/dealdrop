@@ -26,7 +26,13 @@ let seenSaleIds  = new Set(store.get('seenSaleIds', []))
 // ─── Fetch helper ─────────────────────────────────────────────────────────────
 
 async function get (url) {
-  const res = await fetch(url, { headers: { 'User-Agent': 'DealDrop/0.2.0' } })
+  const res = await fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Referer': 'https://store.steampowered.com/',
+      'Accept': 'application/json, text/plain, */*'
+    }
+  })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return res.json()
 }
@@ -155,6 +161,29 @@ async function fetchSteamFreeWeekends () {
   } catch { return [] }
 }
 
+async function fetchGamerPowerGiveaways () {
+  try {
+    const data = await get('https://www.gamerpower.com/api/giveaways?platform=PC')
+    return (data ?? []).map(g => {
+      const isSteam = g.platform?.toLowerCase().includes('steam')
+      const isEpic = g.platform?.toLowerCase().includes('epic')
+      return {
+        id: 'gp-' + g.id,
+        title: g.title,
+        source: isSteam ? 'steam' : isEpic ? 'epic' : 'other',
+        appId: isSteam ? g.steam_appid ?? null : null,
+        url: g.open_giveaway_url ?? g.open_giveaway ?? '#',
+        endDate: g.end_date,
+        image: g.thumbnail ?? null,
+        type: 'free'
+      }
+    })
+  } catch (e) {
+    console.error('[GamerPower]', e.message)
+    return []
+  }
+}
+
 async function detectSteamSale () {
   try {
     const data       = await get('https://store.steampowered.com/api/featuredcategories/?cc=us&l=en')
@@ -204,19 +233,38 @@ async function poll () {
   }
 
   // 2. Free games
-  if (settings.notifyFreeGame || settings.notifyFreeWeekend) {
-    const [ef, sf, sw] = await Promise.all([fetchEpicFreeGames(), fetchSteamFeatured(), fetchSteamFreeWeekends()])
-    const checkNew = (games, type, key) => {
-      if (!settings[key]) return
-      const fresh = games.filter(g => !seenFreeIds.has(g.id))
-      if (!fresh.length) return
-      fresh.forEach(g => seenFreeIds.add(g.id))
-      store.set('seenFreeIds', [...seenFreeIds])
-      if (fresh.length === 1) notify(type === 'weekend' ? `Free weekend: ${fresh[0].title}` : `Free: ${fresh[0].title}`, `${fresh[0].title} is free on ${fresh[0].source.toUpperCase()}!`)
-      else notify(`${fresh.length} free ${type === 'weekend' ? 'weekends' : 'games'} available`, fresh.map(g => g.title).join(', '))
+if (settings.notifyFreeGame || settings.notifyFreeWeekend) {
+  const [ef, sf, sw, gp] = await Promise.all([
+    fetchEpicFreeGames(),
+    fetchSteamFeatured(),
+    fetchSteamFreeWeekends(),
+    fetchGamerPowerGiveaways()
+  ])
+  
+  const checkNew = (games, type, key) => {
+    if (!settings[key]) return
+    const fresh = games.filter(g => !seenFreeIds.has(g.id))
+    if (!fresh.length) return
+    fresh.forEach(g => seenFreeIds.add(g.id))
+    store.set('seenFreeIds', [...seenFreeIds])
+    if (fresh.length === 1) {
+      const src = fresh[0].source?.toUpperCase() ?? 'STORE'
+      notify(
+        type === 'weekend' ? `Free weekend: ${fresh[0].title}` : `Free: ${fresh[0].title}`,
+        `${fresh[0].title} is free on ${src}!`
+      )
+    } else {
+      notify(
+        `${fresh.length} free ${type === 'weekend' ? 'weekends' : 'games'} available`,
+        fresh.map(g => g.title).join(', ')
+      )
     }
-    checkNew(ef, 'free', 'notifyFreeGame'); checkNew(sf, 'free', 'notifyFreeGame'); checkNew(sw, 'weekend', 'notifyFreeWeekend')
   }
+  checkNew(ef, 'free', 'notifyFreeGame')
+  checkNew(sf, 'free', 'notifyFreeGame')
+  checkNew(sw, 'weekend', 'notifyFreeWeekend')
+  checkNew(gp, 'free', 'notifyFreeGame') // ← new: notify for GamerPower giveaways
+}
 
   // 3. Wishlist sale check
   if (settings.notifyWishlistSale && steamId) {
@@ -239,20 +287,32 @@ async function poll () {
   }
 
   // 4. Push data to renderer
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    try {
-      const [ef, sf, sw, deals] = await Promise.all([fetchEpicFreeGames(), fetchSteamFeatured(), fetchSteamFreeWeekends(), fetchITADDeals(itadKey)])
-      let wishlist = [], prices = {}
-      if (steamId) { wishlist = await fetchWishlist(steamId); if (wishlist.length) prices = await checkPrices(wishlist.map(w => w.appId)) }
-      mainWindow.webContents.send('data-update', {
-        freeGames: [...ef, ...sf], freeWeekends: sw, deals,
-        wishlist: wishlist.map(w => ({ ...w, priceInfo: prices[w.appId] ?? null })),
-        lastChecked: Date.now(),
-      })
-    } catch (e) { console.error('[push]', e.message) }
-  }
+if (mainWindow && !mainWindow.isDestroyed()) {
+  try {
+    const [ef, sf, sw, gp, deals] = await Promise.all([
+      fetchEpicFreeGames(),
+      fetchSteamFeatured(),
+      fetchSteamFreeWeekends(),
+      fetchGamerPowerGiveaways(),
+      fetchITADDeals(itadKey)
+    ])
+    
+    let wishlist = [], prices = {}
+    if (steamId) {
+      wishlist = await fetchWishlist(steamId)
+      if (wishlist.length) prices = await checkPrices(wishlist.map(w => w.appId))
+    }
+    
+    mainWindow.webContents.send('data-update', {
+      freeGames: [...ef, ...sf, ...gp], // ← added ...gp here
+      freeWeekends: sw,
+      deals,
+      wishlist: wishlist.map(w => ({ ...w, priceInfo: prices[w.appId] ?? null })),
+      lastChecked: Date.now(),
+    })
+  } catch (e) { console.error('[push]', e.message) }
 }
-
+  
 function startPolling () {
   if (pollTimer) clearInterval(pollTimer)
   const ms = (store.get('settings', DEFAULT_SETTINGS).checkInterval ?? 60) * 60 * 1000
