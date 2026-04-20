@@ -57,7 +57,7 @@ function openBrowser     (url)   { window.api.openUrl(url) }
 
 // ─── Shared card actions ──────────────────────────────────────────────────────
 
-function makeCardActions (appId, url) {
+function makeCardActions (appId, url, source) {
   const wrap = document.createElement('div')
   wrap.className = 'card-actions'
   // Open in Steam client button
@@ -65,8 +65,14 @@ function makeCardActions (appId, url) {
     <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="3" fill="currentColor"/></svg>
     Steam app
   </button>`)
-  steamBtn.addEventListener('click', e => { e.stopPropagation(); if (appId) openSteamClient(appId) })
-
+  steamBtn.addEventListener('click', e => {
+    e.stopPropagation()
+      if (source === 'steam' && appId) {
+        openSteamClient(appId)
+      } else {
+        openBrowser(url) // fallback for Epic/GOG/other
+      }
+    })
   // Open in browser button
   const webBtn = el(`<button class="card-btn" title="Open in browser">
     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
@@ -145,7 +151,7 @@ function renderWishlist () {
 
 function makeWishlistDealRow (w) {
   const p   = w.priceInfo
-  const url = `https://store.steampowered.com/app/${w.appId}`
+  const url = w.url ?? `https://store.steampowered.com/app/${w.appId}`
   const row = document.createElement('div')
   row.className = 'deal-row'
   row.innerHTML = `
@@ -161,7 +167,14 @@ function makeWishlistDealRow (w) {
   </button>`)
   openBtn.addEventListener('click', e => { e.stopPropagation(); openSteamClient(w.appId) })
   row.appendChild(openBtn)
-  row.addEventListener('click', () => openBrowser(url))
+  row.addEventListener('click', e => {
+    e.stopPropagation()
+    if (w.source === 'steam' && w.appId) {
+      openSteamClient(w.appId)
+    } else {
+      openBrowser(url)
+    }
+  })
   return row
 }
 
@@ -229,7 +242,7 @@ function makeFreeCard (g, tagClass, tagText) {
         ${g.endDate ? `<span class="time-left">${timeLeft(g.endDate)}</span>` : ''}
       </div>
     </div>`
-  card.appendChild(makeCardActions(g.appId ?? null, g.url))
+  card.appendChild(makeCardActions(g.appId ?? null, g.url, g.source))
   return card
 }
 
