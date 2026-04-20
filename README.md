@@ -26,8 +26,8 @@ No accounts. No telemetry. No secrets. Runs in your system tray.
 Download the latest `.AppImage` from [Releases](../../releases), then:
 
 ```bash
-chmod +x DealDrop-*.AppImage
-./DealDrop-*.AppImage
+chmod +x dealdrop.AppImage
+./dealdrop.AppImage
 ```
 
 No installation needed. Move it wherever you like.
