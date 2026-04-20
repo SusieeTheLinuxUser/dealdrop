@@ -21,7 +21,7 @@ No accounts. No telemetry. No secrets. Runs in your system tray.
 
 ## Install
 
-### AppImage (Linux — recommended)
+### AppImage
 
 Download the latest `.AppImage` from [Releases](../../releases), then:
 
