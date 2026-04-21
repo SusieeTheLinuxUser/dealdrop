@@ -17,5 +17,6 @@ contextBridge.exposeInMainWorld('api', {
   steamLogin:       ()      => ipcRenderer.invoke('steam-login'),
   steamLogout:      ()      => ipcRenderer.invoke('steam-logout'),
   refreshProfile:   ()      => ipcRenderer.invoke('refresh-profile'),
+  fetchWishlistGameDeals: (payload) => ipcRenderer.invoke('fetch-wishlist-game-deals', payload),
   onDataUpdate:     (cb)    => ipcRenderer.on('data-update', (_, d) => cb(d)),
 })

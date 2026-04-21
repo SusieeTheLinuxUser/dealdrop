@@ -109,6 +109,31 @@
           <div class="section-label">On sale now</div>
           <div class="deals-list" id="list-wishlist-sale"></div>
         </div>
+        <div id="wishlist-deal-panel" class="wishlist-deal-panel" style="display:none">
+          <div class="wishlist-deal-head">
+            <div>
+              <div class="section-label" style="margin-bottom:4px">Selected game deal info</div>
+              <h3 id="wishlist-deal-title">Game</h3>
+            </div>
+            <span id="wishlist-deal-updated" class="last-checked"></span>
+          </div>
+          <div class="wishlist-deal-grid">
+            <div class="wishlist-deal-card">
+              <div class="wishlist-deal-card-title">Steam</div>
+              <div id="wishlist-steam-price" class="wishlist-deal-price">-</div>
+              <div id="wishlist-steam-sub" class="wishlist-deal-sub">No Steam price data yet.</div>
+            </div>
+            <div class="wishlist-deal-card">
+              <div class="wishlist-deal-card-title">Cheapest found</div>
+              <div id="wishlist-cheapest-price" class="wishlist-deal-price">-</div>
+              <div id="wishlist-cheapest-sub" class="wishlist-deal-sub">Click any wishlist game to load external deals.</div>
+            </div>
+          </div>
+          <div class="wishlist-deal-actions">
+            <button class="action-btn" id="wishlist-open-cheapest" style="display:none">Open cheapest offer</button>
+            <button class="action-btn" id="wishlist-open-steam">Open Steam page</button>
+          </div>
+        </div>
         <div id="wishlist-all-section" style="display:none">
           <div class="section-label" style="margin-top:20px">Full wishlist</div>
           <div class="wishlist-list" id="list-wishlist-all"></div>

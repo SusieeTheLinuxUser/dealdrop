@@ -22,6 +22,7 @@ const state = {
   steamUser:    null,
   itadKeySet:   false,
   lastChecked:  null,
+  selectedWishlistDeal: null,
 }
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
@@ -130,6 +131,7 @@ function renderWishlist () {
   const listAll      = document.getElementById('list-wishlist-all')
   const emptyEl      = document.getElementById('empty-wishlist')
   const tsEl         = document.getElementById('lc-wishlist')
+  const panel        = document.getElementById('wishlist-deal-panel')
 
   if (tsEl) tsEl.textContent = fmtChecked(state.lastChecked)
 
@@ -138,6 +140,7 @@ function renderWishlist () {
     onSaleWrap.style.display   = 'none'
     allWrap.style.display      = 'none'
     emptyEl.style.display      = 'none'
+    if (panel) panel.style.display = 'none'
     return
   }
   loginPrompt.style.display = 'none'
@@ -146,9 +149,11 @@ function renderWishlist () {
     onSaleWrap.style.display = 'none'
     allWrap.style.display    = 'none'
     emptyEl.style.display    = 'flex'
+    if (panel) panel.style.display = 'none'
     return
   }
   emptyEl.style.display = 'none'
+  if (panel) panel.style.display = 'block'
 
   listSale.innerHTML = ''
   listAll.innerHTML  = ''
@@ -162,6 +167,7 @@ function renderWishlist () {
 
   allWrap.style.display = 'block'
   state.wishlist.forEach(w => listAll.appendChild(makeWishlistRow(w)))
+  renderWishlistDealPanel()
 }
 
 function makeWishlistSaleRow (w) {
@@ -214,8 +220,87 @@ function makeWishlistRow (w) {
   info.innerHTML = `<div class="wishlist-name" title="${escHtml(w.name)}">${escHtml(w.name)}</div><div class="wishlist-sub">${priceStr}</div>`
 
   row.append(thumb, info, makeIconBtns(w.appId, url))
-  row.addEventListener('click', () => openBrowser(url))
+  row.addEventListener('click', () => selectWishlistGame(w))
   return row
+}
+
+async function selectWishlistGame (w) {
+  state.selectedWishlistDeal = {
+    loading: true,
+    appId: w.appId,
+    gameName: w.name,
+    steam: null,
+    cheapest: null,
+    checkedAt: Date.now(),
+  }
+  renderWishlistDealPanel()
+  try {
+    const res = await window.api.fetchWishlistGameDeals({ appId: w.appId, name: w.name })
+    if (res?.ok && res.data) state.selectedWishlistDeal = { loading: false, ...res.data }
+    else state.selectedWishlistDeal = { loading: false, appId: w.appId, gameName: w.name, steam: null, cheapest: null, checkedAt: Date.now() }
+  } catch (e) {
+    console.error('[wishlist-deal-panel]', e)
+    state.selectedWishlistDeal = { loading: false, appId: w.appId, gameName: w.name, steam: null, cheapest: null, checkedAt: Date.now() }
+  }
+  renderWishlistDealPanel()
+}
+
+function renderWishlistDealPanel () {
+  const panel = document.getElementById('wishlist-deal-panel')
+  if (!panel || !state.steamUser || !state.wishlist.length) return
+
+  const d = state.selectedWishlistDeal
+  if (!d) {
+    panel.querySelector('#wishlist-deal-title').textContent = 'Select a game'
+    panel.querySelector('#wishlist-deal-updated').textContent = ''
+    panel.querySelector('#wishlist-steam-price').textContent = '-'
+    panel.querySelector('#wishlist-steam-sub').textContent = 'Click any wishlist game to load Steam pricing.'
+    panel.querySelector('#wishlist-cheapest-price').textContent = '-'
+    panel.querySelector('#wishlist-cheapest-sub').textContent = 'Click any wishlist game to load the cheapest store deal.'
+    panel.querySelector('#wishlist-open-cheapest').style.display = 'none'
+    panel.querySelector('#wishlist-open-steam').onclick = null
+    return
+  }
+
+  panel.querySelector('#wishlist-deal-title').textContent = d.gameName ?? `App ${d.appId}`
+  panel.querySelector('#wishlist-deal-updated').textContent = d.loading ? 'Loading…' : fmtChecked(d.checkedAt)
+
+  const steamPrice = panel.querySelector('#wishlist-steam-price')
+  const steamSub = panel.querySelector('#wishlist-steam-sub')
+  if (d.loading) {
+    steamPrice.textContent = 'Loading…'
+    steamSub.textContent = 'Checking Steam price…'
+  } else if (d.steam) {
+    steamPrice.textContent = d.steam.formatted || fmt$(d.steam.final || 0)
+    steamSub.textContent = d.steam.onSale
+      ? `Steam sale live: ${d.steam.discount}% off (was ${fmt$(d.steam.initial || 0)}).`
+      : 'No active Steam discount right now.'
+  } else {
+    steamPrice.textContent = '-'
+    steamSub.textContent = 'Steam price unavailable for this game.'
+  }
+
+  const cheapestPrice = panel.querySelector('#wishlist-cheapest-price')
+  const cheapestSub = panel.querySelector('#wishlist-cheapest-sub')
+  const cheapestBtn = panel.querySelector('#wishlist-open-cheapest')
+  if (d.loading) {
+    cheapestPrice.textContent = 'Loading…'
+    cheapestSub.textContent = 'Searching external stores…'
+    cheapestBtn.style.display = 'none'
+  } else if (d.cheapest) {
+    cheapestPrice.textContent = fmt$(d.cheapest.price || 0)
+    cheapestSub.textContent = `${d.cheapest.store} (${d.cheapest.savingsPercent}% off, normal ${fmt$(d.cheapest.retailPrice || 0)}).`
+    cheapestBtn.style.display = d.cheapest.url ? 'inline-flex' : 'none'
+    cheapestBtn.onclick = () => d.cheapest.url && openBrowser(d.cheapest.url)
+  } else {
+    cheapestPrice.textContent = '-'
+    cheapestSub.textContent = 'No third-party deals found yet for this app.'
+    cheapestBtn.style.display = 'none'
+    cheapestBtn.onclick = null
+  }
+
+  const steamBtn = panel.querySelector('#wishlist-open-steam')
+  steamBtn.onclick = () => openSteam(d.appId)
 }
 
 // ─── Free games page ──────────────────────────────────────────────────────────
@@ -485,6 +570,9 @@ function applyData (data) {
   state.freeWeekends = data.freeWeekends ?? []
   state.deals        = data.deals        ?? []
   state.wishlist     = data.wishlist     ?? []
+  if (state.selectedWishlistDeal && !state.wishlist.some(w => w.appId === state.selectedWishlistDeal.appId)) {
+    state.selectedWishlistDeal = null
+  }
   state.lastChecked  = data.lastChecked  ?? Date.now()
   navigate(state.page)
 }
