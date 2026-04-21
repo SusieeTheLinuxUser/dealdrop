@@ -147,8 +147,17 @@ function renderWishlist () {
 
   if (!state.wishlist.length) {
     onSaleWrap.style.display = 'none'
-    allWrap.style.display    = 'none'
-    emptyEl.style.display    = 'flex'
+    allWrap.style.display = 'none'
+    
+    // Dynamic message based on privacy status
+    const titleEl = emptyEl.querySelector('.empty-title')
+    if (titleEl) {
+      titleEl.textContent = state.wishlistPrivate
+        ? 'Wishlist is set to Private in Steam privacy settings.'
+        : 'Wishlist is empty.'
+    }
+    
+    emptyEl.style.display = 'flex'
     if (panel) panel.style.display = 'none'
     return
   }
@@ -569,7 +578,13 @@ function applyData (data) {
   state.freeGames    = data.freeGames    ?? []
   state.freeWeekends = data.freeWeekends ?? []
   state.deals        = data.deals        ?? []
-  state.wishlist     = data.wishlist     ?? []
+  if (data.wishlist) {
+    state.wishlist = data.wishlist.items || []
+    state.wishlistPrivate = !!data.wishlist.isPrivate
+  } else {
+    state.wishlist = []
+    state.wishlistPrivate = false
+  }
   if (state.selectedWishlistDeal && !state.wishlist.some(w => w.appId === state.selectedWishlistDeal.appId)) {
     state.selectedWishlistDeal = null
   }

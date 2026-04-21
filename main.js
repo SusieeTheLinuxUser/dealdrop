@@ -240,7 +240,10 @@ async function fetchWishlist (steamId) {
     console.warn('[wishlist] no items due to privacy settings')
   }
 
-  return items.sort((a, b) => a.priority - b.priority)
+  return {
+    items: items.sort((a, b) => a.priority - b.priority),
+    isPrivate: sawPrivateSignal
+  }
 }
 
 // ─── Price checks ─────────────────────────────────────────────────────────────
