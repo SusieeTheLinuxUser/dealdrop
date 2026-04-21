@@ -15,6 +15,7 @@ const state = {
   freeWeekends: [],
   deals:        [],
   wishlist:     [],
+  wishlistPrivate: false, // tracks if Steam reported wishlist as private
   settings:     {
     notifyMajorSale: true, notifyFreeGame: true, notifyFreeWeekend: true,
     notifyWishlistSale: true, notifyBigDeal: false, checkInterval: 60,
