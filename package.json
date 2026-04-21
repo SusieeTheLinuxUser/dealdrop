@@ -1,6 +1,6 @@
 {
   "name": "dealdrop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Steam sale & free game notifier",
   "main": "main.js",
   "scripts": {
@@ -27,7 +27,6 @@
       "main.js",
       "preload.js",
       "renderer/**",
-      "src/**",
       "assets/**",
       "node_modules/**"
     ],

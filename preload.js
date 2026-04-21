@@ -16,5 +16,6 @@ contextBridge.exposeInMainWorld('api', {
   getSteamUser:     ()      => ipcRenderer.invoke('get-steam-user'),
   steamLogin:       ()      => ipcRenderer.invoke('steam-login'),
   steamLogout:      ()      => ipcRenderer.invoke('steam-logout'),
+  refreshProfile:   ()      => ipcRenderer.invoke('refresh-profile'),
   onDataUpdate:     (cb)    => ipcRenderer.on('data-update', (_, d) => cb(d)),
 })

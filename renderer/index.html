@@ -34,7 +34,8 @@
 
     <!-- Sidebar -->
     <nav class="sidebar">
-      <!-- Steam account area -->
+
+      <!-- Steam account -->
       <div class="steam-account" id="steam-account">
         <div id="steam-logged-out" class="steam-loggedout">
           <p class="steam-prompt">Sign in to sync wishlist</p>
@@ -45,9 +46,10 @@
         </div>
         <div id="steam-logged-in" class="steam-loggedin" style="display:none">
           <div class="steam-user-row">
-            <img id="steam-avatar" class="steam-avatar" src="" alt="" />
+            <img id="steam-avatar" class="steam-avatar" src="" alt="" style="display:none" />
+            <div id="steam-avatar-placeholder" class="steam-avatar-placeholder">👤</div>
             <div class="steam-user-info">
-              <span id="steam-username" class="steam-username"></span>
+              <span id="steam-username" class="steam-username">Steam user</span>
               <button class="steam-logout-btn" id="btn-steam-logout">Sign out</button>
             </div>
           </div>
@@ -89,7 +91,7 @@
       </div>
     </nav>
 
-    <!-- Main -->
+    <!-- Main content -->
     <main class="main-content">
 
       <!-- WISHLIST -->
@@ -113,7 +115,7 @@
         </div>
         <div class="empty-state" id="empty-wishlist" style="display:none">
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
-          <p>Your wishlist is empty or set to private on Steam.</p>
+          <p>Wishlist is empty, or set to Private in Steam privacy settings.</p>
         </div>
       </section>
 
@@ -133,7 +135,7 @@
         </div>
       </section>
 
-      <!-- DEALS -->
+      <!-- HOT DEALS -->
       <section class="page" id="page-deals">
         <div class="page-header">
           <h1>Hot deals</h1>
@@ -165,18 +167,24 @@
         <div class="settings-group" id="notif-settings"></div>
         <div class="section-label" style="margin-top:24px">Check interval</div>
         <div class="interval-group" id="interval-group"></div>
+
         <div class="section-label" style="margin-top:24px">IsThereAnyDeal API key</div>
         <div class="api-key-group">
           <input type="password" id="itad-key-input" placeholder="Paste your ITAD API key…" autocomplete="off" />
           <button id="save-itad-key">Save</button>
         </div>
-        <p class="hint">Get a free key at <a href="#" data-href="https://isthereanydeal.com/dev/app/">isthereanydeal.com/dev/app/</a></p>
-        <div class="section-label" style="margin-top:24px">Steam Web API key <span style="font-size:10px;color:var(--text2)">(optional — for profile names & avatars)</span></div>
+        <p class="hint">Free key at <a href="#" data-href="https://isthereanydeal.com/dev/app/">isthereanydeal.com/dev/app/</a> — unlocks the Hot Deals tab</p>
+
+        <div class="section-label" style="margin-top:24px">
+          Steam Web API key
+          <span style="font-size:10px;color:var(--text2);font-weight:400;margin-left:4px">(optional — better profile name &amp; avatar, faster wishlist)</span>
+        </div>
         <div class="api-key-group">
-          <input type="password" id="steam-api-key-input" placeholder="Steam Web API key (optional)…" autocomplete="off" />
+          <input type="password" id="steam-api-key-input" placeholder="Steam Web API key…" autocomplete="off" />
           <button id="save-steam-api-key">Save</button>
         </div>
-        <p class="hint">Get a free key at <a href="#" data-href="https://steamcommunity.com/dev/apikey">steamcommunity.com/dev/apikey</a></p>
+        <p class="hint">Free key at <a href="#" data-href="https://steamcommunity.com/dev/apikey">steamcommunity.com/dev/apikey</a> — also enables faster wishlist sync</p>
+
         <div class="section-label" style="margin-top:24px">Data</div>
         <button class="action-btn" id="btn-check-settings">Check for updates now</button>
       </section>
