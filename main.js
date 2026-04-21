@@ -74,23 +74,48 @@ function steamLogin () {
     win.setMenu(null)
     win.loadURL(`https://steamcommunity.com/openid/login?${params}`)
 
-    const STEAM_ID_RE = /openid\.identity=https?%3A%2F%2Fsteamcommunity\.com%2Fopenid%2Fid%2F(\d+)/
+    let finished = false
+    const finishResolve = (steamId) => {
+      if (finished) return
+      finished = true
+      if (!win.isDestroyed()) win.close()
+      resolve(steamId)
+    }
+    const finishReject = (message) => {
+      if (finished) return
+      finished = true
+      if (!win.isDestroyed()) win.close()
+      reject(new Error(message))
+    }
+
+    function parseSteamIdFromReturnUrl (url) {
+      try {
+        const u = new URL(url)
+        const claimed = u.searchParams.get('openid.claimed_id') ?? u.searchParams.get('openid.identity')
+        if (!claimed) return null
+        const id = claimed.match(/\/id\/(\d+)(?:\/)?$/)?.[1]
+        if (id) return id
+      } catch (_) {
+        // Fall through to regex fallback for malformed URLs
+      }
+
+      // Fallback for encoded callbacks
+      const match = url.match(/openid\.(?:claimed_id|identity)=https?%3A%2F%2Fsteamcommunity\.com%2Fopenid%2Fid%2F(\d+)/i)
+      return match?.[1] ?? null
+    }
 
     const check = (url) => {
       if (!url.startsWith(RETURN_URL)) return
-      const match = url.match(STEAM_ID_RE)
-      if (match) {
-        win.destroy()
-        resolve(match[1])
-      } else {
-        win.destroy()
-        reject(new Error('Steam did not return a valid identity URL'))
-      }
+      const steamId = parseSteamIdFromReturnUrl(url)
+      if (steamId) finishResolve(steamId)
+      else finishReject('Steam did not return a valid identity URL')
     }
 
     win.webContents.on('will-redirect', (_, url) => check(url))
     win.webContents.on('did-navigate',  (_, url) => check(url))
-    win.on('closed', () => reject(new Error('Cancelled')))
+    win.on('closed', () => {
+      if (!finished) finishReject('Cancelled')
+    })
   })
 }
 
@@ -133,43 +158,63 @@ async function fetchSteamProfile (steamId) {
 // Strategy: IStoreService (requires key, returns full data) → wishlistdata endpoint.
 
 async function fetchWishlist (steamId) {
-  const apiKey = store.get('steamApiKey', '')
-
-  // 1. IStoreService — accurate, no pagination issues, requires Web API key
-  if (apiKey) {
-    try {
-      const data = await get(
-        `https://api.steampowered.com/IStoreService/GetWishlist/v1/?key=${apiKey}&steamid=${steamId}`
-      )
-      const items = data?.response?.items ?? []
-      if (items.length > 0) {
-        return items.map(i => ({
-          appId:    String(i.appid),
-          name:     i.name ?? `App ${i.appid}`,
-          capsule:  true,
-          priority: i.priority ?? 999,
-        })).sort((a, b) => a.priority - b.priority)
-      }
-    } catch (e) {
-      console.warn('[wishlist] IStoreService failed, trying fallback:', e.message)
-    }
-  }
-
-  // 2. Public wishlistdata endpoint — paginated, works for public profiles
+  // Public wishlistdata endpoint — paginated, works for public profiles.
+  // Steam occasionally returns HTML (age-gate/anti-bot/edge behavior), so we
+  // probe multiple endpoints and only parse JSON when valid.
   const items = []
   let page = 0
+  let sawPrivateSignal = false
+
+  async function fetchWishlistPage (id, p) {
+    const urls = [
+      `https://store.steampowered.com/wishlist/profiles/${id}/wishlistdata/?p=${p}`,
+      `https://store.steampowered.com/wishlist/profiles/${id}/wishlistdata?p=${p}`,
+      `https://steamcommunity.com/profiles/${id}/wishlistdata/?p=${p}`,
+    ]
+
+    for (const url of urls) {
+      try {
+        const res = await fetch(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Referer': `https://store.steampowered.com/wishlist/profiles/${id}/`,
+            // Helps bypass some age-gated responses that return HTML.
+            'Cookie': 'birthtime=0; mature_content=1',
+          },
+          redirect: 'follow',
+        })
+
+        if (!res.ok) continue
+        const raw = await res.text()
+        const txt = raw.trim()
+        if (!txt) return {}
+        if (txt.startsWith('<')) continue // HTML response; try next URL
+
+        try {
+          return JSON.parse(txt)
+        } catch (_) {
+          continue
+        }
+      } catch (_) {
+        // Try next candidate URL
+      }
+    }
+
+    throw new Error('Steam wishlist endpoint returned non-JSON data')
+  }
+
   while (true) {
     try {
-      const data = await get(
-        `https://store.steampowered.com/wishlist/profiles/${steamId}/wishlistdata/?p=${page}`,
-        { 'Referer': `https://store.steampowered.com/wishlist/profiles/${steamId}/` }
-      )
+      const data = await fetchWishlistPage(steamId, page)
       // Steam returns {} or an empty object when there are no more pages
       if (!data || typeof data !== 'object' || Object.keys(data).length === 0) break
 
       // Sometimes Steam returns an error object
       if (data.success === 2 || data.rwgrsn === -2) {
-        console.warn('[wishlist] Wishlist is private or does not exist')
+        sawPrivateSignal = true
+        console.warn('[wishlist] Steam reported private/missing wishlist')
         break
       }
 
@@ -189,6 +234,10 @@ async function fetchWishlist (steamId) {
       console.error('[wishlist] page fetch failed:', e.message)
       break
     }
+  }
+
+  if (!items.length && sawPrivateSignal) {
+    console.warn('[wishlist] no items due to privacy settings')
   }
 
   return items.sort((a, b) => a.priority - b.priority)
@@ -226,6 +275,77 @@ async function checkPrices (appIds) {
   }
 
   return results
+}
+
+async function fetchCheapSharkStores () {
+  try {
+    const list = await get('https://www.cheapshark.com/api/1.0/stores')
+    if (!Array.isArray(list)) return {}
+    return list.reduce((acc, s) => {
+      acc[String(s.storeID)] = s.storeName ?? `Store ${s.storeID}`
+      return acc
+    }, {})
+  } catch (e) {
+    console.warn('[cheapshark-stores]', e.message)
+    return {}
+  }
+}
+
+async function fetchWishlistGameDeals (appId, gameName) {
+  const result = {
+    appId,
+    gameName,
+    steam: null,
+    cheapest: null,
+    checkedAt: Date.now(),
+  }
+
+  try {
+    const steamData = await get(
+      `https://store.steampowered.com/api/appdetails?appids=${encodeURIComponent(appId)}&filters=price_overview&cc=us`
+    )
+    const entry = steamData?.[String(appId)]
+    const price = entry?.success ? entry?.data?.price_overview : null
+    if (price) {
+      result.steam = {
+        onSale: (price.discount_percent ?? 0) > 0,
+        discount: price.discount_percent ?? 0,
+        final: (price.final ?? 0) / 100,
+        initial: (price.initial ?? 0) / 100,
+        formatted: price.final_formatted ?? null,
+      }
+    }
+  } catch (e) {
+    console.warn('[wishlist-game-steam]', e.message)
+  }
+
+  try {
+    const [stores, deals] = await Promise.all([
+      fetchCheapSharkStores(),
+      get(`https://www.cheapshark.com/api/1.0/deals?steamAppID=${encodeURIComponent(appId)}&pageSize=15`),
+    ])
+    if (Array.isArray(deals) && deals.length > 0) {
+      const sorted = deals
+        .filter(d => Number(d.salePrice) > 0)
+        .sort((a, b) => Number(a.salePrice) - Number(b.salePrice))
+      const best = sorted[0] ?? deals[0]
+      if (best) {
+        result.cheapest = {
+          store: stores[String(best.storeID)] ?? `Store ${best.storeID}`,
+          storeId: String(best.storeID),
+          price: Number(best.salePrice),
+          retailPrice: Number(best.normalPrice),
+          savingsPercent: Math.round(Number(best.savings) || 0),
+          dealId: best.dealID ?? null,
+          url: best.dealID ? `https://www.cheapshark.com/redirect?dealID=${encodeURIComponent(best.dealID)}` : null,
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[wishlist-game-cheapest]', e.message)
+  }
+
+  return result
 }
 
 // ─── Free games ───────────────────────────────────────────────────────────────
@@ -610,6 +730,19 @@ ipcMain.handle('refresh-profile', async () => {
   const profile = await fetchSteamProfile(steamId)
   store.set('steamProfile', profile)
   return profile
+})
+
+ipcMain.handle('fetch-wishlist-game-deals', async (_, payload) => {
+  const appId = String(payload?.appId ?? '').trim()
+  const gameName = String(payload?.name ?? '').trim()
+  if (!appId) return { ok: false, error: 'Missing appId' }
+  try {
+    const data = await fetchWishlistGameDeals(appId, gameName || `App ${appId}`)
+    return { ok: true, data }
+  } catch (e) {
+    console.error('[wishlist-game-deals]', e.message)
+    return { ok: false, error: e.message }
+  }
 })
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
