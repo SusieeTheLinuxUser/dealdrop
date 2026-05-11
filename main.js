@@ -53,14 +53,17 @@ async function getText (url) {
 
 function steamLogin () {
   return new Promise((resolve, reject) => {
-    const RETURN_URL = 'https://dealdrop.local/auth/return'
+    // Steam requires return_to and realm to be real resolvable HTTP(S) URLs.
+    // We use http://localhost and intercept the request before it loads.
+    const CALLBACK = 'http://localhost/steamcallback'
+
     const params = new URLSearchParams({
       'openid.mode':       'checkid_setup',
       'openid.ns':         'http://specs.openid.net/auth/2.0',
       'openid.identity':   'http://specs.openid.net/auth/2.0/identifier_select',
       'openid.claimed_id': 'http://specs.openid.net/auth/2.0/identifier_select',
-      'openid.return_to':  RETURN_URL,
-      'openid.realm':      'https://dealdrop.local',
+      'openid.return_to':  CALLBACK,
+      'openid.realm':      'http://localhost/',
     })
 
     const win = new BrowserWindow({
@@ -70,55 +73,59 @@ function steamLogin () {
       backgroundColor: '#1b2838',
       webPreferences: { nodeIntegration: false, contextIsolation: true },
     })
-
     win.setMenu(null)
-    win.loadURL(`https://steamcommunity.com/openid/login?${params}`)
 
-    let finished = false
-    const finishResolve = (steamId) => {
-      if (finished) return
-      finished = true
-      if (!win.isDestroyed()) win.close()
-      resolve(steamId)
-    }
-    const finishReject = (message) => {
-      if (finished) return
-      finished = true
-      if (!win.isDestroyed()) win.close()
-      reject(new Error(message))
+    let settled = false
+    const settle = (fn) => {
+      if (settled) return
+      settled = true
+      try { win.destroy() } catch {}
+      fn()
     }
 
-    function parseSteamIdFromReturnUrl (url) {
+    const extractId = (rawUrl) => {
       try {
-        const u = new URL(url)
-        const claimed = u.searchParams.get('openid.claimed_id') ?? u.searchParams.get('openid.identity')
-        if (!claimed) return null
-        const id = claimed.match(/\/id\/(\d+)(?:\/)?$/)?.[1]
-        if (id) return id
-      } catch (_) {
-        // Fall through to regex fallback for malformed URLs
+        const u         = new URL(rawUrl)
+        const claimedId = u.searchParams.get('openid.claimed_id') ?? ''
+        const m         = claimedId.match(/\/openid\/id\/(\d{17,})$/)
+        return m ? m[1] : null
+      } catch { return null }
+    }
+
+    // Primary: webRequest fires before the window tries to load localhost —
+    // we cancel the navigation and read the Steam ID from query params.
+    win.webContents.session.webRequest.onBeforeRequest(
+      { urls: ['http://localhost/steamcallback*', 'http://localhost/*'] },
+      (details, callback) => {
+        callback({ cancel: true })
+        if (!details.url.includes('steamcallback')) return
+        const id = extractId(details.url)
+        if (id) settle(() => resolve(id))
+        else    settle(() => reject(new Error('Steam callback missing claimed_id')))
       }
+    )
 
-      // Fallback for encoded callbacks
-      const match = url.match(/openid\.(?:claimed_id|identity)=https?%3A%2F%2Fsteamcommunity\.com%2Fopenid%2Fid%2F(\d+)/i)
-      return match?.[1] ?? null
-    }
-
-    const check = (url) => {
-      if (!url.startsWith(RETURN_URL)) return
-      const steamId = parseSteamIdFromReturnUrl(url)
-      if (steamId) finishResolve(steamId)
-      else finishReject('Steam did not return a valid identity URL')
-    }
-
-    win.webContents.on('will-redirect', (_, url) => check(url))
-    win.webContents.on('did-navigate',  (_, url) => check(url))
-    win.on('closed', () => {
-      if (!finished) finishReject('Cancelled')
+    // Fallback: will-navigate fires before navigation commits
+    win.webContents.on('will-navigate', (e, url) => {
+      if (!url.startsWith(CALLBACK)) return
+      e.preventDefault()
+      const id = extractId(url)
+      if (id) settle(() => resolve(id))
+      else    settle(() => reject(new Error('Steam callback missing claimed_id')))
     })
+
+    // Belt-and-suspenders: did-navigate fires after navigation
+    win.webContents.on('did-navigate', (_, url) => {
+      if (!url.startsWith(CALLBACK)) return
+      const id = extractId(url)
+      if (id) settle(() => resolve(id))
+      else    settle(() => reject(new Error('Steam callback missing claimed_id')))
+    })
+
+    win.on('closed', () => settle(() => reject(new Error('Cancelled'))))
+    win.loadURL(`https://steamcommunity.com/openid/login?${params}`)
   })
 }
-
 // ─── Steam profile ────────────────────────────────────────────────────────────
 // Strategy: try Web API key first (best), then fall back to public XML profile.
 
@@ -155,95 +162,81 @@ async function fetchSteamProfile (steamId) {
 }
 
 // ─── Wishlist ─────────────────────────────────────────────────────────────────
-// Strategy: IStoreService (requires key, returns full data) → wishlistdata endpoint.
+// Strategy:
+//   1. IWishlistService/GetWishlist/v1  — works WITHOUT any API key, fast,
+//      no pagination. Returns appids + priority only (no names).
+//   2. wishlistdata paginated endpoint  — also no key, returns names directly.
+//
+// Always returns a flat array so callers don't need to unwrap a shape object.
+// Names from IWishlistService are null and get filled in by checkPrices below.
 
 async function fetchWishlist (steamId) {
-  // Public wishlistdata endpoint — paginated, works for public profiles.
-  // Steam occasionally returns HTML (age-gate/anti-bot/edge behavior), so we
-  // probe multiple endpoints and only parse JSON when valid.
+  // 1. IWishlistService — no key, single request, any public wishlist
+  try {
+    const data  = await get(
+      `https://api.steampowered.com/IWishlistService/GetWishlist/v1?steamid=${steamId}`
+    )
+    const items = data?.response?.items ?? []
+    if (items.length > 0) {
+      console.log(`[wishlist] IWishlistService: ${items.length} items`)
+      return items
+        .map(i => ({
+          appId:    String(i.appid),
+          name:     null,            // filled in by checkPrices (basic filter)
+          capsule:  true,
+          priority: i.priority ?? 999,
+        }))
+        .sort((a, b) => a.priority - b.priority)
+    }
+  } catch (e) {
+    console.warn('[wishlist] IWishlistService failed, trying wishlistdata:', e.message)
+  }
+
+  // 2. Paginated wishlistdata fallback (public profiles only, includes names)
   const items = []
   let page = 0
-  let sawPrivateSignal = false
-
-  async function fetchWishlistPage (id, p) {
-    const urls = [
-      `https://store.steampowered.com/wishlist/profiles/${id}/wishlistdata/?p=${p}`,
-      `https://store.steampowered.com/wishlist/profiles/${id}/wishlistdata?p=${p}`,
-      `https://steamcommunity.com/profiles/${id}/wishlistdata/?p=${p}`,
-    ]
-
-    for (const url of urls) {
-      try {
-        const res = await fetch(url, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-            'Accept': 'application/json, text/plain, */*',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Referer': `https://store.steampowered.com/wishlist/profiles/${id}/`,
-            // Helps bypass some age-gated responses that return HTML.
-            'Cookie': 'birthtime=0; mature_content=1',
-          },
-          redirect: 'follow',
-        })
-
-        if (!res.ok) continue
-        const raw = await res.text()
-        const txt = raw.trim()
-        if (!txt) return {}
-        if (txt.startsWith('<')) continue // HTML response; try next URL
-
-        try {
-          return JSON.parse(txt)
-        } catch (_) {
-          continue
-        }
-      } catch (_) {
-        // Try next candidate URL
-      }
-    }
-
-    throw new Error('Steam wishlist endpoint returned non-JSON data')
-  }
 
   while (true) {
     try {
-      const data = await fetchWishlistPage(steamId, page)
-      // Steam returns {} or an empty object when there are no more pages
-      if (!data || typeof data !== 'object' || Object.keys(data).length === 0) break
+      const res = await fetch(
+        `https://store.steampowered.com/wishlist/profiles/${steamId}/wishlistdata/?p=${page}`,
+        {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Accept':     'application/json, text/plain, */*',
+            'Referer':    `https://store.steampowered.com/wishlist/profiles/${steamId}/`,
+          },
+        }
+      )
+      if (!res.ok) break
+      const txt = (await res.text()).trim()
+      if (!txt || txt.startsWith('<')) break   // HTML = private or age-gated
 
-      // Sometimes Steam returns an error object
+      const data = JSON.parse(txt)
+      if (!data || typeof data !== 'object' || Object.keys(data).length === 0) break
       if (data.success === 2 || data.rwgrsn === -2) {
-        sawPrivateSignal = true
-        console.warn('[wishlist] Steam reported private/missing wishlist')
+        console.warn('[wishlist] Wishlist is private or does not exist')
         break
       }
 
       for (const [appId, info] of Object.entries(data)) {
-        if (isNaN(Number(appId))) continue  // skip non-appId keys
+        if (isNaN(Number(appId))) continue
         items.push({
           appId:    appId,
-          name:     info.name ?? `App ${appId}`,
+          name:     info.name ?? null,
           capsule:  !!info.capsule,
           priority: info.priority ?? 999,
         })
       }
-
       page++
-      if (Object.keys(data).length < 100) break  // last page
+      if (Object.keys(data).length < 100) break
     } catch (e) {
       console.error('[wishlist] page fetch failed:', e.message)
       break
     }
   }
 
-  if (!items.length && sawPrivateSignal) {
-    console.warn('[wishlist] no items due to privacy settings')
-  }
-
-  return {
-    items: items.sort((a, b) => a.priority - b.priority),
-    isPrivate: sawPrivateSignal
-  }
+  return items.sort((a, b) => a.priority - b.priority)
 }
 
 // ─── Price checks ─────────────────────────────────────────────────────────────
@@ -257,12 +250,13 @@ async function checkPrices (appIds) {
     const chunk = appIds.slice(i, i + BATCH).join(',')
     try {
       const data = await get(
-        `https://store.steampowered.com/api/appdetails?appids=${chunk}&filters=price_overview&cc=us`
+        `https://store.steampowered.com/api/appdetails?appids=${chunk}&filters=basic,price_overview&cc=us`
       )
       for (const [id, info] of Object.entries(data)) {
         if (info?.success && info.data?.price_overview) {
           const p      = info.data.price_overview
           results[id]  = {
+            name:      info.data?.name ?? null,
             discount:  p.discount_percent,
             final:     p.final   / 100,
             initial:   p.initial / 100,
@@ -563,7 +557,9 @@ async function poll () {
     try {
       wishlist = await fetchWishlist(steamId)
       if (wishlist.length) {
-        prices = await checkPrices(wishlist.map(w => w.appId))
+        prices   = await checkPrices(wishlist.map(w => w.appId))
+        // Back-fill names from appdetails for IWishlistService items (which have name: null)
+        wishlist = wishlist.map(w => ({ ...w, name: w.name ?? prices[w.appId]?.name ?? `App ${w.appId}` }))
 
         if (settings.notifyWishlistSale) {
           const onSale = wishlist.filter(w => (prices[w.appId]?.discount ?? 0) >= 20)
@@ -686,7 +682,10 @@ ipcMain.handle('fetch-data', async () => {
   let wishlist = [], prices = {}
   if (steamId) {
     wishlist = await fetchWishlist(steamId)
-    if (wishlist.length) prices = await checkPrices(wishlist.map(w => w.appId))
+    if (wishlist.length) {
+      prices   = await checkPrices(wishlist.map(w => w.appId))
+      wishlist = wishlist.map(w => ({ ...w, name: w.name ?? prices[w.appId]?.name ?? `App ${w.appId}` }))
+    }
   }
 
   cachedData = {
