@@ -23,11 +23,15 @@ const state = {
   itadKeySet:   false,
   lastChecked:  null,
   selectedWishlistDeal: null,
+  wishlistPrivate: false,
 }
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
-const fmt$ = n => n === 0 ? 'Free' : '$' + n.toFixed(2)
+const fmt$ = n => {
+  const num = Number(n) || 0
+  return num === 0 ? 'Free' : '$' + num.toFixed(2)
+}
 
 function timeLeft (dateStr) {
   if (!dateStr) return ''
@@ -133,6 +137,7 @@ function renderWishlist () {
   const tsEl         = document.getElementById('lc-wishlist')
   const panel        = document.getElementById('wishlist-deal-panel')
 
+  updateBadges()
   if (tsEl) tsEl.textContent = fmtChecked(state.lastChecked)
 
   if (!state.steamUser) {
@@ -148,15 +153,15 @@ function renderWishlist () {
   if (!state.wishlist.length) {
     onSaleWrap.style.display = 'none'
     allWrap.style.display = 'none'
-    
+
     // Dynamic message based on privacy status
-    const titleEl = emptyEl.querySelector('.empty-title')
-    if (titleEl) {
-      titleEl.textContent = state.wishlistPrivate
+    const msgEl = document.getElementById('wishlist-empty-msg') ?? emptyEl.querySelector('p')
+    if (msgEl) {
+      msgEl.textContent = state.wishlistPrivate
         ? 'Wishlist is set to Private in Steam privacy settings.'
         : 'Wishlist is empty.'
     }
-    
+
     emptyEl.style.display = 'flex'
     if (panel) panel.style.display = 'none'
     return
@@ -168,9 +173,6 @@ function renderWishlist () {
   listAll.innerHTML  = ''
 
   const onSale = state.wishlist.filter(w => (w.priceInfo?.discount ?? 0) >= 20)
-  const badge  = document.getElementById('badge-wishlist')
-  if (badge) { badge.textContent = onSale.length; badge.classList.toggle('visible', onSale.length > 0) }
-
   onSaleWrap.style.display = onSale.length > 0 ? 'block' : 'none'
   onSale.forEach(w => listSale.appendChild(makeWishlistSaleRow(w)))
 
@@ -221,10 +223,10 @@ function makeWishlistRow (w) {
 
   const info  = document.createElement('div')
   info.style.cssText = 'min-width:0;flex:1'
-  const priceStr = p
+  const priceStr = p?.formatted
     ? (onSale
-        ? `<span style="color:var(--amber)">-${p.discount}% · ${p.formatted}</span>`
-        : `<span style="color:var(--text2)">${p.formatted}</span>`)
+        ? `<span style="color:var(--amber)">-${p.discount}% · ${escHtml(p.formatted)}</span>`
+        : `<span style="color:var(--text2)">${escHtml(p.formatted)}</span>`)
     : ''
   info.innerHTML = `<div class="wishlist-name" title="${escHtml(w.name)}">${escHtml(w.name)}</div><div class="wishlist-sub">${priceStr}</div>`
 
@@ -321,6 +323,7 @@ function renderFreeGames () {
   const emptyEl   = document.getElementById('empty-free')
   const tsEl      = document.getElementById('lc-free')
 
+  updateBadges()
   gridFree.innerHTML = ''
   gridWknd.innerHTML = ''
   if (tsEl) tsEl.textContent = fmtChecked(state.lastChecked)
@@ -338,10 +341,18 @@ function renderFreeGames () {
   } else {
     lblWknd.style.display = 'none'
   }
+}
+
+// Sidebar badges — computed from state so they stay correct even when the
+// owning page isn't the one being rendered right now
+function updateBadges () {
+  const onSale = state.wishlist.filter(w => (w.priceInfo?.discount ?? 0) >= 20).length
+  const wb = document.getElementById('badge-wishlist')
+  if (wb) { wb.textContent = onSale; wb.classList.toggle('visible', onSale > 0) }
 
   const total = state.freeGames.length + state.freeWeekends.length
-  const badge = document.getElementById('badge-free')
-  if (badge) { badge.textContent = total; badge.classList.toggle('visible', total > 0) }
+  const fb = document.getElementById('badge-free')
+  if (fb) { fb.textContent = total; fb.classList.toggle('visible', total > 0) }
 }
 
 function makeFreeCard (g, tagClass, tagText) {
@@ -351,9 +362,9 @@ function makeFreeCard (g, tagClass, tagText) {
   card.innerHTML = `
     <div class="game-thumb">
       ${g.image
-        ? `<img src="${g.image}" alt="" onerror="this.style.display='none'">`
+        ? `<img src="${escHtml(g.image)}" alt="" onerror="this.style.display='none'">`
         : `<span class="fallback">${srcIcon(g.source)}</span>`}
-      <span class="src-badge ${srcClass}">${(g.source ?? 'other').toUpperCase()}</span>
+      <span class="src-badge ${srcClass}">${escHtml(g.source ?? 'other').toUpperCase()}</span>
     </div>
     <div class="game-info">
       <div class="game-title" title="${escHtml(g.title)}">${escHtml(g.title)}</div>
@@ -575,21 +586,23 @@ async function loadData () {
 }
 
 function applyData (data) {
+  data = data || {}
   state.freeGames    = data.freeGames    ?? []
   state.freeWeekends = data.freeWeekends ?? []
   state.deals        = data.deals        ?? []
-  if (data.wishlist) {
-    state.wishlist = data.wishlist.items || []
-    state.wishlistPrivate = !!data.wishlist.isPrivate
-  } else {
-    state.wishlist = []
-    state.wishlistPrivate = false
-  }
+  // main.js sends the wishlist as a flat array plus a separate privacy flag
+  state.wishlist = Array.isArray(data.wishlist)
+    ? data.wishlist
+    : (data.wishlist?.items ?? [])
+  state.wishlistPrivate = !!data.wishlistPrivate || !!data.wishlist?.isPrivate
   if (state.selectedWishlistDeal && !state.wishlist.some(w => w.appId === state.selectedWishlistDeal.appId)) {
     state.selectedWishlistDeal = null
   }
   state.lastChecked  = data.lastChecked  ?? Date.now()
-  navigate(state.page)
+  updateBadges()
+  // Re-render the visible page — but never the settings page, so a background
+  // poll can't yank toggles/inputs out from under the user
+  if (state.page !== 'settings') navigate(state.page)
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

@@ -63,11 +63,15 @@ DealDrop is designed so **no secrets ever live in the source code**.
 | Endpoint | Purpose | Auth |
 |---|---|---|
 | `store.steampowered.com/api/featured` | Detect free Steam games | None |
-| `store.steampowered.com/api/featuredcategories` | Detect active sales | None |
-| `store.steampowered.com/wishlist/profiles/{id}/wishlistdata` | Fetch wishlist | None (profile must be public) |
-| `store.steampowered.com/api/appdetails` | Check wishlist prices | None |
+| `store.steampowered.com/api/featuredcategories` | Detect active sales & free weekends | None |
+| `api.steampowered.com/IWishlistService/GetWishlist/v1` | Fetch wishlist (app ids) | None (profile must be public) |
+| `store.steampowered.com/wishlist/profiles/{id}/wishlistdata` | Fetch wishlist (fallback, includes names) | None (profile must be public) |
+| `store.steampowered.com/api/appdetails` | Wishlist names & prices (one appid per request) | None |
 | `api.steampowered.com/ISteamUser/GetPlayerSummaries` | Profile name & avatar | Steam Web API key (optional) |
+| `steamcommunity.com/profiles/{id}/?xml=1` | Profile name/avatar fallback & wishlist privacy check | None (profile must be public) |
 | `store-site-backend-static.ak.epicgames.com/freeGamesPromotions` | Free Epic games | None |
+| `www.gamerpower.com/api/giveaways` | PC giveaway aggregation (Steam/Epic/GOG keys) | None |
+| `www.cheapshark.com/api/1.0` | Cheapest external store for a wishlist game | None |
 | `api.isthereanydeal.com/deals/v2` | Hot deals | ITAD API key (optional) |
 | `steamcommunity.com/openid/login` | Steam sign-in | Entered on Steam's own page |
 
