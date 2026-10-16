@@ -15,5 +15,5 @@ if gh release view "$tag" --repo SusieeTheLinuxUser/dealdrop >/dev/null 2>&1; th
   gh release upload "$tag" "$f" "$f.zsync" --repo SusieeTheLinuxUser/dealdrop --clobber
 else
   gh release create "$tag" "$f" "$f.zsync" --repo SusieeTheLinuxUser/dealdrop --target main \
-    --title "DealDrop $tag (Linux)" --notes "${RELEASE_NOTES:-Linux AppImage first for testing; Windows .msi and macOS .dmg follow once it is confirmed working.}"
+    --title "DealDrop $tag" --notes "${RELEASE_NOTES:-Linux AppImage first for testing; Windows .msi and macOS .dmg follow once it is confirmed working.}"
 fi
