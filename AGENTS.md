@@ -40,6 +40,8 @@ cargo tauri build --bundles appimage                 # → src-tauri/target/rele
 ## Rules
 
 - **External URLs shown to the user must be clickable.** Any external service URL presented in the UI (hints, errors, docs, sign-up pages) must be an actionable hyperlink/button using a hard-coded, reviewed HTTPS URL where possible. Never make the user type or copy a URL by hand (`<a data-href="https://…">`, handled by the delegated click listener in `renderer/app.js` → `open_url`).
+- **Opening links is centralised and validated.** All links open in the user's default browser via `open_url` / `open_in_app` (`main.rs`), which accept only plain `https` URLs with a real hostname (`safe_https`: no `file:`/`javascript:`/custom schemes, no embedded credentials, no IPs/localhost). Never open a URL any other way, and never render remote content in an in-app webview.
+- **The main webview is locked to the bundled UI** (`on_navigation` in `main.rs`) and only the `main` window has IPC permissions (`capabilities/default.json`); the Steam/GOG/Epic sign-in windows load the stores' own pages with no access to Tauri APIs.
 - **Security-sensitive destinations** (API-key, sign-in and account pages) use only the service's canonical official domain, hard-coded in the source. Never build such a URL from remotely fetched content, and never put it in a plain-text message that could be mistyped (typosquatted sites have served malware this way).
 - No secrets in the repo. API keys / tokens are user-supplied and live only in the user's config file.
 - No telemetry. All external calls go through `sources.rs` / `stores.rs`; the webview never calls external APIs.

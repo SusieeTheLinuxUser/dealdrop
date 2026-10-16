@@ -14,7 +14,7 @@ use std::time::Duration;
 use stores::Tokens;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
 use tokio::sync::{Mutex as AsyncMutex, Notify};
@@ -425,13 +425,18 @@ async fn refresh_profile(app: AppHandle) -> Option<SteamProfile> {
 
 fn open_raw(app: &AppHandle, url: &str) -> bool { app.opener().open_url(url, None::<&str>).is_ok() }
 
-/// Only http(s) and steam:// — never file:// or odd schemes from API data.
+/// Only plain `https` links to a real hostname: no other schemes (file:, javascript:, custom),
+/// no embedded credentials (`https://steampowered.com@evil.example`), no IP literals or localhost.
+fn safe_https(raw: &str) -> Option<url::Url> {
+    let u = url::Url::parse(raw).ok()?;
+    let host_ok = matches!(u.host(), Some(url::Host::Domain(d)) if d != "localhost" && d.contains('.'));
+    (u.scheme() == "https" && host_ok && u.username().is_empty() && u.password().is_none()).then_some(u)
+}
+
+/// Opens in the user's default browser (never an in-app webview).
 #[tauri::command]
 fn open_url(app: AppHandle, url: String) -> bool {
-    match url::Url::parse(&url) {
-        Ok(u) if matches!(u.scheme(), "http" | "https" | "steam") => open_raw(&app, u.as_str()),
-        _ => false,
-    }
+    safe_https(&url).is_some_and(|u| open_raw(&app, u.as_str()))
 }
 
 #[tauri::command]
@@ -447,7 +452,7 @@ fn launchers(st: State<AppState>) -> HashMap<&'static str, launchers::StoreLaunc
 /// Open a store page in the preferred installed launcher, falling back to the browser.
 #[tauri::command]
 fn open_in_app(app: AppHandle, store: String, url: String, id: Option<String>) -> bool {
-    let Ok(parsed) = url::Url::parse(&url).and_then(|u| if matches!(u.scheme(), "http" | "https") { Ok(u) } else { Err(url::ParseError::RelativeUrlWithoutBase) }) else { return false };
+    let Some(parsed) = safe_https(&url) else { return false };
     let pref = app.state::<AppState>().read(|d| match store.as_str() {
         "gog" => d.settings.launcher_gog.clone(),
         "epic" => d.settings.launcher_epic.clone(),
@@ -495,6 +500,17 @@ fn main() {
                 poll_lock: AsyncMutex::new(()),
                 wake: Notify::new(),
             });
+
+            // The main webview may only ever show the bundled UI. Anything else (a stray link,
+            // a redirect) is blocked; real links go through `open_url` to the default browser.
+            WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+                .title("DealDrop")
+                .inner_size(980.0, 660.0)
+                .min_inner_size(760.0, 540.0)
+                .decorations(false)
+                .background_color(tauri::window::Color(14, 17, 23, 255))
+                .on_navigation(|u| matches!(u.scheme(), "tauri" | "about") || u.host_str() == Some("tauri.localhost"))
+                .build()?;
 
             let menu = Menu::with_items(app, &[
                 &MenuItem::with_id(app, "open", "Open DealDrop", true, None::<&str>)?,
@@ -552,4 +568,18 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running DealDrop");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::safe_https;
+
+    #[test]
+    fn only_plain_https_hostnames() {
+        assert!(safe_https("https://store.steampowered.com/app/60").is_some());
+        for bad in ["http://store.steampowered.com", "file:///etc/passwd", "javascript:alert(1)", "steam://run/1",
+                    "https://store.steampowered.com@evil.example/", "https://127.0.0.1/", "https://localhost/", "https://[::1]/", "https://intranet/"] {
+            assert!(safe_https(bad).is_none(), "{bad} should be rejected");
+        }
+    }
 }
