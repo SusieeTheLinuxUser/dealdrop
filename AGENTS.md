@@ -77,6 +77,10 @@ Platform code: launcher detection (`has_scheme` in `launchers.rs`) is per-OS via
 - Wishlist items get `cheapest` from CheapShark (`attach_cheapest`) when another store is strictly cheaper; the UI opens that link first.
 - Version lives in four places: `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, the User-Agent in `sources.rs`, and `X-AppImage-Version` in `src-tauri/dealdrop.desktop` (how Gear Lever shows the version).
 
+## Known issues
+
+See [TODO.md](TODO.md) (e.g. the KDE minimize animation flying to the pointer instead of the taskbar icon: a Plasma-side problem, not fixable from the app).
+
 ## Known unverified paths
 
 - Windows and macOS builds are CI-built only (not yet run by the maintainer on those OSes); their `has_scheme` detection and the unsigned-install flow are untested.
