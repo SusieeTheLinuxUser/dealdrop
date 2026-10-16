@@ -15,7 +15,7 @@ No accounts. No telemetry. No secrets. Runs in your system tray.
 - **Wishlists from Steam, GOG and Epic** — sign in once, get notified when a wishlist game drops ≥20%
 - **Hot deals** — top discounts across 30+ stores. Works out of the box (CheapShark); add a free IsThereAnyDeal key to switch to ITAD. If a key is rejected the app tells you why
 - **Wishlist links go to the cheapest store** — like deals.gg, a wishlist game that is cheaper elsewhere shows the best offer and opens it
-- **Themes** — 6 built-in themes (Midnight, Lavender, Spooktober, Forest, Graphite, Daylight), optional rounded corners, plus a **seasonal theme with falling leaves / snow / petals / lanterns that unlocks and switches on automatically while each Steam sale is live** (your own pick is remembered)
+- **Themes** — 6 built-in themes (Midnight, Lavender, Spooktober, Forest, Graphite, Daylight), optional rounded window corners, plus a **seasonal theme with falling leaves / snow / petals / lanterns that unlocks and switches on automatically while each Steam sale is live** (your own pick is remembered)
 - **Open in your launcher** — Steam, Epic Games Launcher and GOG (GOG Galaxy / Heroic / Lutris) buttons appear when installed; pick your preferred one per store in Settings, ready for GOG's native Linux client
 - **Sales calendar** — Steam seasonal sales with countdown; click one to open it in Steam
 - **System tray** — minimizes to tray, polls in the background on your chosen interval

@@ -30,7 +30,7 @@ See [AGENTS.md](AGENTS.md) for the file map and commands.
 - **No telemetry.** DealDrop doesn't phone home. Don't add any.
 - **All API calls go through the Rust backend.** The webview never calls external APIs directly.
 - **Keep it dependency-light.** Think carefully before adding a crate.
-- **Three platforms.** Releases ship AppImage + .msi + .dmg (built by `.github/workflows/release.yml` on a `v*` tag). Keep OS-specific code behind `cfg` so all three compile. Test locally with `cargo tauri build --bundles appimage` on Linux.
+- **Three platforms.** Releases ship AppImage + .msi + .dmg (AppImage built locally; .msi/.dmg by `.github/workflows/release.yml`, run manually after the Linux build is tested). Keep OS-specific code behind `cfg` so all three compile. Test locally with `cargo tauri build --bundles appimage` on Linux.
 
 ## Building the AppImage (Linux)
 

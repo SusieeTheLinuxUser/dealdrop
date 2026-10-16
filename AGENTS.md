@@ -11,7 +11,7 @@ It polls store APIs, shows free games / store sales / hot deals / wishlists, and
 | `src-tauri/src/sources.rs` | Every no-account HTTP source (Steam, GOG, Epic free, GamerPower, ITAD, CheapShark) + live smoke tests |
 | `src-tauri/src/stores.rs` | Sign-in window + Steam/GOG/Epic auth, GOG & Epic wishlists, Epic sales |
 | `src-tauri/src/launchers.rs` | Open-in-launcher table, per-OS install detection, deep links |
-| `.github/workflows/release.yml` | Tag `v*` → builds AppImage + .msi + .dmg and publishes the release |
+| `.github/workflows/release.yml` | Manual dispatch → builds Windows .msi + macOS .dmg and attaches them to an existing release |
 | `renderer/api.js` | `window.api` → Tauri `invoke` bridge (the only place the UI touches the backend) |
 | `renderer/app.js` | All UI rendering. `renderer/index.html`, `renderer/style.css` |
 
@@ -30,8 +30,9 @@ cargo tauri build --bundles appimage                 # → src-tauri/target/rele
 Every release ships **Linux AppImage + Windows .msi + macOS .dmg (universal: Intel + Apple Silicon)**. Never release just one.
 
 1. Bump the version in `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json` and the User-Agent in `sources.rs`; update the docs; commit and push to `main`.
-2. `git tag vX.Y.Z && git push origin vX.Y.Z` — `.github/workflows/release.yml` builds all three on GitHub runners (`tauri-action`) and attaches them to the release for that tag. Windows/macOS can't be built locally on Linux.
-3. Check the release has all three assets before announcing it.
+2. **Linux first:** `cd src-tauri && NO_STRIP=true APPIMAGE_EXTRACT_AND_RUN=1 cargo tauri build --bundles appimage`, then `gh release create vX.Y.Z <appimage> --target main`. The maintainer tests it.
+3. **Only after the Linux build is confirmed working:** `gh workflow run release.yml -f tag=vX.Y.Z` — `.github/workflows/release.yml` builds the Windows .msi and macOS .dmg on GitHub runners and attaches them to that same release. (Windows/macOS can't be built locally on Linux; don't ship them for a build that's known broken.)
+4. Check the release has all three assets before announcing it.
 
 Builds are unsigned: Windows SmartScreen ("More info → Run anyway") and macOS Gatekeeper (right-click → Open, or `xattr -dr com.apple.quarantine /Applications/DealDrop.app`) will warn on first launch.
 

@@ -672,7 +672,7 @@ function renderSettings () {
   const s = state.settings
   renderThemeGrid()
   toggleRows(document.getElementById('look-settings'), [
-    { key: 'rounded', label: 'Rounded corners',  sub: 'Softer, rounder cards and buttons' },
+    { key: 'rounded', label: 'Rounded window',  sub: 'Round the corners of the app window' },
     { key: 'effects', label: 'Seasonal effects', sub: 'Falling leaves, snow & more during Steam sale themes' },
   ], applyTheme)
 

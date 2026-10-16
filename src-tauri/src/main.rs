@@ -508,7 +508,7 @@ fn main() {
                 .inner_size(980.0, 660.0)
                 .min_inner_size(760.0, 540.0)
                 .decorations(false)
-                .background_color(tauri::window::Color(14, 17, 23, 255))
+                .transparent(true) // the page paints the background so the window corners can be rounded
                 .on_navigation(|u| matches!(u.scheme(), "tauri" | "about") || u.host_str() == Some("tauri.localhost"))
                 .build()?;
 

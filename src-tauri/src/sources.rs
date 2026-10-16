@@ -10,7 +10,7 @@ use std::time::Duration;
 
 pub type R<T> = Result<T, String>;
 
-const UA: &str = "DealDrop/0.7.1 (+https://github.com/SusieeTheLinuxUser/dealdrop)";
+const UA: &str = "DealDrop/0.7.2 (+https://github.com/SusieeTheLinuxUser/dealdrop)";
 const UA_BROWSER: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
 
 // ─── Shapes sent to the UI (camelCase = what renderer/app.js reads) ───────────
@@ -505,7 +505,7 @@ pub async fn itad_deals(key: &str) -> R<Vec<Deal>> {
     let status = res.status().as_u16();
     if status == 401 || status == 403 {
         let why = res.text().await.unwrap_or_default();
-        return Err(format!("IsThereAnyDeal rejected the API key (HTTP {status}: {}).", why.trim().chars().take(120).collect::<String>()));
+        return Err(format!("IsThereAnyDeal rejected the API key (HTTP {status}: {}). Copy the key listed under “API Keys” on your app’s page — not the OAuth Client ID or Client Secret.", why.trim().chars().take(120).collect::<String>()));
     }
     if status >= 400 {
         return Err(format!("IsThereAnyDeal error: HTTP {status}"));
