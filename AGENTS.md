@@ -8,7 +8,7 @@ It polls store APIs, shows free games / store sales / hot deals / wishlists, and
 | Path | What |
 |---|---|
 | `src-tauri/src/main.rs` | App state, persistence (`config.json` in the OS config dir: `~/.config/dealdrop` / `%APPDATA%\dealdrop` / `~/Library/Application Support/dealdrop`), poll loop, notifications, tray, Tauri commands |
-| `src-tauri/src/sources.rs` | Every no-account HTTP source (Steam, GOG, Epic free, GamerPower, ITAD, CheapShark) + live smoke tests |
+| `src-tauri/src/sources.rs` | Every no-account HTTP source (Steam, GOG, Epic free, GamerPower, CheapShark) + live smoke tests |
 | `src-tauri/src/stores.rs` | Sign-in window + Steam/GOG/Epic auth, GOG & Epic wishlists, Epic sales |
 | `src-tauri/src/launchers.rs` | Open-in-launcher table, per-OS install detection, deep links |
 | `.github/workflows/release.yml` | Manual dispatch → builds Windows .msi + macOS .dmg and attaches them to an existing release |
@@ -58,8 +58,9 @@ Platform code: launcher detection (`has_scheme` in `launchers.rs`) is per-OS via
 - **Opening links is centralised and validated.** All links open in the user's default browser via `open_url` / `open_in_app` (`main.rs`), which accept only plain `https` URLs with a real hostname (`safe_https`: no `file:`/`javascript:`/custom schemes, no embedded credentials, no IPs/localhost). Never open a URL any other way, and never render remote content in an in-app webview.
 - **The main webview is locked to the bundled UI** (`on_navigation` in `main.rs`) and only the `main` window has IPC permissions (`capabilities/default.json`); the Steam/GOG/Epic sign-in windows load the stores' own pages with no access to Tauri APIs.
 - **Security-sensitive destinations** (API-key, sign-in and account pages) use only the service's canonical official domain, hard-coded in the source. Never build such a URL from remotely fetched content, and never put it in a plain-text message that could be mistyped (typosquatted sites have served malware this way).
-- No secrets in the repo. API keys / tokens are user-supplied and live only in the user's config file.
-- **Secrets never go in URLs.** Send API keys in headers (`ITAD-API-Key`), and strip URLs from `reqwest` errors that could carry one (`e.without_url()`). Deep links (`launchers::link`) only accept the store's own domain and plain slugs. Escape every remote string put into `innerHTML` (including attribute values).
+- No secrets in the repo. The app has no API keys; sign-in tokens live only in the user's config file.
+- Hot deals come from CheapShark only (IsThereAnyDeal was removed: its key setup kept failing for users). Avatars: Steam (public profile XML) and GOG (`userData.json`); Epic has no public avatar API.
+- **Secrets never go in URLs.** Send tokens/keys in headers, and strip URLs from `reqwest` errors that could carry one (`e.without_url()`). Deep links (`launchers::link`) only accept the store's own domain and plain slugs. Escape every remote string put into `innerHTML` (including attribute values).
 - **Rounded window = transparent window.** `main.rs` builds the window `.transparent(true)`; `html`/`body` stay transparent and `#app` paints the background (and gets the radius when `data-round="on"`). Don't give `body` a background colour: with a transparent `<html>` it spreads over the whole canvas and squares the corners off again. macOS needs `macos-private-api` (enabled in `Cargo.toml` / `tauri.conf.json`).
 - No telemetry. All external calls go through `sources.rs` / `stores.rs`; the webview never calls external APIs.
 - JSON sent to the UI is camelCase (`#[serde(rename_all = "camelCase")]`); keep it in sync with `renderer/app.js`.
@@ -73,4 +74,4 @@ Platform code: launcher detection (`has_scheme` in `launchers.rs`) is per-OS via
 
 - Windows and macOS builds are CI-built only (not yet run by the maintainer on those OSes); their `has_scheme` detection and the unsigned-install flow are untested.
 - GOG/Epic wishlist sign-in works for the maintainer's accounts but follows the launchers' unofficial OAuth flows; if one breaks, the UI shows the error above the wishlist.
-- ITAD key validation, the Epic launcher deep link on Linux, and sale themes during a live sale have not been seen end to end.
+- The Epic launcher deep link on Linux, and sale themes during a live sale have not been seen end to end.

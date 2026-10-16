@@ -10,7 +10,7 @@ use std::time::Duration;
 
 pub type R<T> = Result<T, String>;
 
-const UA: &str = "DealDrop/0.7.5 (+https://github.com/SusieeTheLinuxUser/dealdrop)";
+const UA: &str = "DealDrop/0.7.6 (+https://github.com/SusieeTheLinuxUser/dealdrop)";
 const UA_BROWSER: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
 
 // ─── Shapes sent to the UI (camelCase = what renderer/app.js reads) ───────────
@@ -381,17 +381,8 @@ pub async fn steam_profile_private(steam_id: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Returns (name, avatar). Web API when a key is set, public XML otherwise.
-pub async fn steam_profile(steam_id: &str, api_key: &str) -> (String, Option<String>) {
-    if !api_key.is_empty() {
-        let url = format!("https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key={api_key}&steamids={steam_id}");
-        if let Ok(v) = get_json(&url).await {
-            let p = &v["response"]["players"][0];
-            if let Some(name) = s(&p["personaname"]) {
-                return (name, s(&p["avatarmedium"]).or(s(&p["avatar"])));
-            }
-        }
-    }
+/// Returns (name, avatar) from the public profile XML (no API key needed).
+pub async fn steam_profile(steam_id: &str) -> (String, Option<String>) {
     static NAME: OnceLock<Regex> = OnceLock::new();
     static AVATAR: OnceLock<Regex> = OnceLock::new();
     let name_re = re(r"<steamID>(?:<!\[CDATA\[)?([^\]<]+)", &NAME);
@@ -489,49 +480,6 @@ pub async fn gog_sales() -> R<Vec<Deal>> {
 }
 
 // ─── Hot deals: ITAD, with a keyless CheapShark fallback ──────────────────────
-
-/// ITAD `sort` uses the website's syntax: `-cut` = biggest discount first.
-/// (The old `cut:desc` was silently rejected.) A rejected key is reported
-/// as such so the UI can say so instead of showing an empty list.
-pub async fn itad_deals(key: &str) -> R<Vec<Deal>> {
-    // `sort=-cut` is the website's syntax; if ITAD ever rejects it, retry unsorted and sort here.
-    // The key goes in a header, not the URL, so it can never leak through logs or error messages.
-    let base = "https://api.isthereanydeal.com/deals/v2?country=US&limit=100";
-    let req = |url: String| client().get(url).header("ITAD-API-Key", key).send();
-    let mut res = req(format!("{base}&sort=-cut")).await.map_err(|e| e.without_url().to_string())?;
-    let mut sorted = true;
-    if res.status().as_u16() == 400 {
-        res = req(base.to_string()).await.map_err(|e| e.without_url().to_string())?;
-        sorted = false;
-    }
-    let status = res.status().as_u16();
-    if status == 401 || status == 403 {
-        let why = res.text().await.unwrap_or_default();
-        return Err(format!("IsThereAnyDeal rejected the API key (HTTP {status}: {}). Copy the key listed under “API Keys” on your app’s page — not the OAuth Client ID or Client Secret.", why.trim().chars().take(120).collect::<String>()));
-    }
-    if status >= 400 {
-        return Err(format!("IsThereAnyDeal error: HTTP {status}"));
-    }
-    let v: Value = res.json().await.map_err(|e| e.to_string())?;
-    let mut out: Vec<Deal> = v["list"].as_array().into_iter().flatten().filter_map(|d| {
-        let deal = &d["deal"];
-        let cut = deal["cut"].as_u64()? as u32;
-        if cut == 0 { return None; }
-        Some(Deal {
-            id: s(&d["id"])?,
-            title: s(&d["title"])?,
-            shop: s(&deal["shop"]["name"]).unwrap_or_else(|| "unknown".into()),
-            url: s(&deal["url"])?,
-            image: s(&d["assets"]["banner300"]).or(s(&d["assets"]["boxart"])),
-            cut,
-            price: f(&deal["price"]["amount"]),
-            regular: f(&deal["regular"]["amount"]),
-            app_id: None,
-        })
-    }).collect();
-    if !sorted { out.sort_by(|a, b| b.cut.cmp(&a.cut)); }
-    Ok(out)
-}
 
 async fn cheapshark_stores() -> HashMap<String, String> {
     let Ok(v) = get_json("https://www.cheapshark.com/api/1.0/stores").await else { return HashMap::new() };

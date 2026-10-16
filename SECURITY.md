@@ -4,11 +4,11 @@
 
 DealDrop is designed so that **no secrets, API keys, or credentials ever live in the source code or repository**.
 
-All user-provided keys (Steam Web API key, IsThereAnyDeal API key) and the GOG / Epic sign-in tokens are:
-- Entered by the user at runtime through the Settings UI
+DealDrop needs no API keys. The GOG / Epic sign-in tokens (and your Steam ID) are:
+- Obtained at runtime through the stores' own sign-in pages
 - Stored locally in the OS config directory (file mode `0600`)
 - Never committed to or read from the project folder
-- Stored as plain JSON (not in the OS keyring): anyone who can read your user files can read them. The file is created `0600` on Linux/macOS and lives in your user profile on Windows. Keys are sent in request headers, never in URLs, so they can't leak through error messages.
+- Stored as plain JSON (not in the OS keyring): anyone who can read your user files can read them. The file is created `0600` on Linux/macOS and lives in your user profile on Windows. Tokens are sent in request headers, never in URLs, so they can't leak through error messages.
 
 **Storage locations (OS user data dir, never the repo):**
 | Platform | Path |

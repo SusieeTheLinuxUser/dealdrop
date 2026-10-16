@@ -6,8 +6,6 @@ const { listen } = window.__TAURI__.event
 window.api = {
   getSettings:    ()    => invoke('get_settings'),
   saveSettings:   s     => invoke('save_settings', { settings: s }),
-  hasKey:         name  => invoke('has_key', { name }),
-  saveKey:        (name, value) => invoke('save_key', { name, value }),
   fetchData:      ()    => invoke('fetch_data'),
   checkNow:       ()    => invoke('check_now'),
   openUrl:        url   => invoke('open_url', { url }),
@@ -18,7 +16,6 @@ window.api = {
   getAccounts:    ()    => invoke('get_accounts'),
   login:          store => invoke(store + '_login'),
   logout:         store => invoke('logout', { store }),
-  refreshProfile: ()    => invoke('refresh_profile'),
   fetchWishlistGameDeals: p => invoke('wishlist_game_deals', { appId: p.appId, name: p.name }),
   onDataUpdate:   cb    => listen('data-update', e => cb(e.payload)),
 }

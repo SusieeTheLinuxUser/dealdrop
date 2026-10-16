@@ -17,6 +17,8 @@ pub struct Tokens {
     pub refresh_token: String,
     pub expires_at: u64, // ms since epoch
     pub name: String,
+    #[serde(default)]
+    pub avatar: Option<String>,
 }
 
 impl Tokens {
@@ -117,6 +119,7 @@ async fn gog_token(extra: &[(&str, &str)]) -> R<Tokens> {
         refresh_token: v["refresh_token"].as_str().unwrap_or_default().into(),
         expires_at: now_ms() + v["expires_in"].as_u64().unwrap_or(3600) * 1000,
         name: String::new(),
+        avatar: None,
     })
 }
 
@@ -128,7 +131,9 @@ pub async fn gog_login(app: &AppHandle) -> R<Tokens> {
     let cb = sign_in_window(app, "gog-login", "Sign in to GOG", &start, None, |u| u.starts_with("https://embed.gog.com/on_login_success")).await?;
     let code = cb.query_pairs().find(|(k, _)| k == "code").map(|(_, v)| v.to_string()).ok_or("GOG callback had no code")?;
     let mut t = gog_token(&[("grant_type", "authorization_code"), ("code", &code), ("redirect_uri", GOG_REDIRECT)]).await?;
-    t.name = gog_user(&t.access_token).await.0;
+    let u = gog_user(&t.access_token).await;
+    t.name = u.0;
+    t.avatar = u.3;
     Ok(t)
 }
 
@@ -136,16 +141,18 @@ pub async fn gog_refresh(t: &Tokens) -> R<Tokens> {
     let mut n = gog_token(&[("grant_type", "refresh_token"), ("refresh_token", &t.refresh_token)]).await?;
     if n.refresh_token.is_empty() { n.refresh_token = t.refresh_token.clone(); }
     n.name = t.name.clone();
+    n.avatar = t.avatar.clone();
     Ok(n)
 }
 
-/// (username, country, currency) — falls back to US/USD.
-async fn gog_user(access: &str) -> (String, String, String) {
+/// (username, country, currency, avatar url) — falls back to US/USD.
+pub async fn gog_user(access: &str) -> (String, String, String, Option<String>) {
     let v = send_auth("https://embed.gog.com/userData.json", access).await.unwrap_or(Value::Null);
     (
         v["username"].as_str().unwrap_or("GOG user").into(),
         v["country"].as_str().unwrap_or("US").into(),
         v["selectedCurrency"]["code"].as_str().unwrap_or("USD").into(),
+        v["avatar"].as_str().filter(|a| a.starts_with("https://images.gog.com/")).map(|a| format!("{a}_avm.jpg")),
     )
 }
 
@@ -162,7 +169,7 @@ pub async fn gog_wishlist(access: &str) -> R<Vec<WishItem>> {
     let ids: Vec<String> = v["wishlist"].as_object().into_iter().flatten()
         .filter(|(_, on)| **on != false && **on != 0).map(|(k, _)| k.clone()).collect();
     if ids.is_empty() { return Ok(vec![]); }
-    let (_, country, currency) = gog_user(access).await;
+    let (_, country, currency, _) = gog_user(access).await;
 
     let mut out = vec![];
     for chunk in ids.chunks(50) {
@@ -233,6 +240,7 @@ async fn epic_token(extra: &[(&str, &str)]) -> R<Tokens> {
         refresh_token: v["refresh_token"].as_str().unwrap_or_default().into(),
         expires_at: now_ms() + v["expires_in"].as_u64().unwrap_or(3600) * 1000,
         name: v["displayName"].as_str().unwrap_or("Epic user").into(),
+        avatar: None, // Epic exposes no public avatar
     })
 }
 

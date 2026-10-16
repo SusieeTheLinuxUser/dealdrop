@@ -362,25 +362,20 @@ function makeFreeCard (g, tagClass, tagText) {
 
 // ─── Deals page ───────────────────────────────────────────────────────────────
 
-const ITAD_HELP = `<div>To get a key: <ol>
-  <li>Open <a data-href="https://isthereanydeal.com/apps/my/">isthereanydeal.com/apps/my</a> and register an app.</li>
-  <li>Pick <strong>“This app will NOT store OAuth secret securely”</strong>.</li>
-  <li>Copy the key under <strong>API Keys</strong> (not Client ID / Secret) and paste it in Settings.</li></ol></div>`
-
 function renderDeals () {
   const list    = document.getElementById('list-deals')
-  const notice  = document.getElementById('itad-notice')
+  const notice  = document.getElementById('info-notice')
   const emptyEl = document.getElementById('empty-deals')
   const tsEl    = document.getElementById('lc-deals')
 
   list.innerHTML = ''
   if (tsEl) tsEl.textContent = fmtChecked(state.lastChecked)
 
-  // Say why, instead of an unexplained empty list (e.g. ITAD rejecting the key)
+  // Say why, instead of an unexplained empty list
   notice.classList.toggle('err', !!state.dealsError)
   notice.style.display = state.dealsError || state.dealsSource ? 'flex' : 'none'
   notice.innerHTML = state.dealsError
-    ? `<div>${escHtml(state.dealsError)}${state.dealsSource ? ` Showing ${escHtml(state.dealsSource)} instead.` : ''}</div>${ITAD_HELP}`
+    ? `<div>${escHtml(state.dealsError)}</div>`
     : `Source: ${escHtml(state.dealsSource)}`
 
   emptyEl.style.display = state.deals.length ? 'none' : 'flex'
@@ -682,7 +677,7 @@ function renderSettings () {
     { key: 'notifyFreeGame',     label: 'Free game available',         sub: 'Epic, Steam, GOG & GamerPower giveaways' },
     { key: 'notifyFreeWeekend',  label: 'Free weekend started',        sub: 'Temporary Steam free-to-play promotions' },
     { key: 'notifyWishlistSale', label: 'Wishlist game on sale',       sub: 'Steam, GOG & Epic wishlists, drops of ≥20%' },
-    { key: 'notifyBigDeal',      label: 'Deal over 75% off',           sub: 'Hot deals list (CheapShark, or ITAD with a key)' },
+    { key: 'notifyBigDeal',      label: 'Deal over 75% off',           sub: 'Hot deals list (CheapShark)' },
   ])
 
   const ig = document.getElementById('interval-group')
@@ -726,10 +721,11 @@ function renderAccounts () {
   con.innerHTML = ''
   Object.keys(STORES).forEach(s => {
     const a = state.accounts[s]
-    const name = s === 'steam' ? a?.name : a
+    const name = a?.name
     const row = document.createElement('div')
     row.className = 'acct'
-    row.innerHTML = `<span class="acct-ico ${s}">${ACCT_ICON[s]}</span>` + (a
+    const ico = a?.avatar ? `<img src="${escHtml(a.avatar)}" alt="" data-fb="${ACCT_ICON[s]}">` : ACCT_ICON[s]
+    row.innerHTML = `<span class="acct-ico ${s}">${ico}</span>` + (a
       ? `<div class="acct-main"><span class="acct-name">${escHtml(name || STORES[s] + ' user')}</span><button class="acct-out">Sign out</button></div>`
       : `<span class="acct-label">${STORES[s]}</span><button class="acct-btn">Sign in</button>`)
     row.querySelector('.acct-out')?.addEventListener('click', async () => {
@@ -778,6 +774,8 @@ async function loadData (force = false) {
 
 function applyData (data) {
   data = data || {}
+  // pick up profile changes made during the poll (e.g. a GOG avatar fetched for an older sign-in)
+  window.api.getAccounts().then(a => { if (JSON.stringify(a) !== JSON.stringify(state.accounts)) setAccounts(a) })
   state.freeGames    = data.freeGames    ?? []
   state.freeWeekends = data.freeWeekends ?? []
   state.deals        = data.deals        ?? []
@@ -824,32 +822,6 @@ async function init () {
   // Check-now buttons
   document.getElementById('btn-check-now')?.addEventListener('click',      () => loadData(true))
   document.getElementById('btn-check-settings')?.addEventListener('click', () => loadData(true))
-
-  // ── API keys ──────────────────────────────────────────────────────────────
-  const keyInput = (id, name, btnId, after) => {
-    const input = document.getElementById(id)
-    window.api.hasKey(name).then(has => { if (input) input.value = has ? '••••••••' : '' })
-    document.getElementById(btnId)?.addEventListener('click', async () => {
-      const v = input?.value?.trim()
-      if (!v || v === '••••••••') return
-      const btn = document.getElementById(btnId)
-      btn.disabled = true
-      try {
-        await window.api.saveKey(name, v)
-        input.value = '••••••••'
-        await after()
-      } catch (e) {
-        alert(String(e))
-      } finally {
-        btn.disabled = false
-      }
-    })
-  }
-  keyInput('itad-key-input', 'itad', 'save-itad-key', async () => { const d = await window.api.checkNow(); applyData(d) })
-  keyInput('steam-api-key-input', 'steam', 'save-steam-api-key', async () => {
-    const refreshed = await window.api.refreshProfile()
-    if (refreshed) setAccounts(await window.api.getAccounts())
-  })
 
   // ── Links (only hard-coded official URLs carry data-href) ───────────────
   document.addEventListener('click', e => {

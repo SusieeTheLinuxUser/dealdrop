@@ -93,7 +93,7 @@
           <span class="last-checked" id="lc-wishlist"></span>
         </div>
         <div class="tabs" id="wishlist-tabs" style="display:none"></div>
-        <div id="wishlist-errors" class="itad-notice" style="display:none"></div>
+        <div id="wishlist-errors" class="info-notice" style="display:none"></div>
         <div id="wishlist-login-prompt" class="login-prompt" style="display:none">
           <span style="font-size:32px">🎯</span>
           <p>Sign in to Steam, GOG or Epic Games (left sidebar) to sync your wishlists and get notified when games go on sale.</p>
@@ -172,7 +172,7 @@
           <h1>Hot deals</h1>
           <span class="last-checked" id="lc-deals"></span>
         </div>
-        <div class="itad-notice" id="itad-notice" style="display:none"></div>
+        <div class="info-notice" id="info-notice" style="display:none"></div>
         <div class="deals-list" id="list-deals"></div>
         <div class="empty-state" id="empty-deals" style="display:none">
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/></svg>
@@ -200,23 +200,6 @@
         <div class="settings-group" id="notif-settings"></div>
         <div class="section-label" style="margin-top:24px">Check interval</div>
         <div class="interval-group" id="interval-group"></div>
-
-        <div class="section-label" style="margin-top:24px">IsThereAnyDeal API key</div>
-        <div class="api-key-group">
-          <input type="password" id="itad-key-input" placeholder="Paste your ITAD API key…" autocomplete="off" />
-          <button id="save-itad-key">Save</button>
-        </div>
-        <p class="hint" id="itad-hint">Optional — Hot deals work without it (CheapShark). To use IsThereAnyDeal: open <a href="#" data-href="https://isthereanydeal.com/apps/my/">isthereanydeal.com/apps/my</a>, register an app, pick <strong>“This app will NOT store OAuth secret securely”</strong>, then copy the key under <strong>API Keys</strong> (not the Client ID / Secret) and paste it here.</p>
-
-        <div class="section-label" style="margin-top:24px">
-          Steam Web API key
-          <span style="font-size:10px;color:var(--text2);font-weight:400;margin-left:4px">(optional — better profile name &amp; avatar, faster wishlist)</span>
-        </div>
-        <div class="api-key-group">
-          <input type="password" id="steam-api-key-input" placeholder="Steam Web API key…" autocomplete="off" />
-          <button id="save-steam-api-key">Save</button>
-        </div>
-        <p class="hint">Free key at <a href="#" data-href="https://steamcommunity.com/dev/apikey">steamcommunity.com/dev/apikey</a> — also enables faster wishlist sync</p>
 
         <div class="section-label" style="margin-top:24px">Data</div>
         <button class="action-btn" id="btn-check-settings">Check for updates now</button>

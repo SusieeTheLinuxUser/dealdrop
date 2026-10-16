@@ -13,7 +13,7 @@ No accounts. No telemetry. No secrets. Runs in your system tray.
 - **Free weekend alerts** — Steam free-to-play weekends
 - **Store sales** — current discounts from **Steam, GOG and Epic Games**, browsable per store
 - **Wishlists from Steam, GOG and Epic** — sign in once, get notified when a wishlist game drops ≥20%
-- **Hot deals** — top discounts across 30+ stores. Works out of the box (CheapShark); add a free IsThereAnyDeal key to switch to ITAD. If a key is rejected the app tells you why
+- **Hot deals** — top discounts across 30+ stores (via CheapShark, no key needed)
 - **Wishlist links go to the cheapest store** — like deals.gg, a wishlist game that is cheaper elsewhere shows the best offer and opens it
 - **Themes** — 6 built-in themes (Midnight, Lavender, Spooktober, Forest, Graphite, Daylight), optional rounded window corners, plus a **seasonal theme with falling leaves / snow / petals / lanterns that unlocks and switches on automatically while each Steam sale is live** (your own pick is remembered)
 - **Open in your launcher** — Steam, Epic Games Launcher and GOG (GOG Galaxy / Heroic / Lutris) buttons appear when installed; pick your preferred one per store in Settings, ready for GOG's native Linux client
@@ -63,7 +63,7 @@ cargo tauri build                           # build for your current OS
 
 DealDrop is designed so **no secrets ever live in the source code**.
 
-- All user-provided API keys are stored locally in the OS user data dir, never in the repo
+- Sign-in tokens are stored locally in the OS user data dir, never in the repo
 - Steam login uses OpenID — DealDrop never sees your password, only your public Steam ID
 - All external API calls happen in the main process (Node.js), not the renderer
 - No telemetry, no analytics, no data leaves your machine except to the APIs listed below
@@ -77,7 +77,7 @@ DealDrop is designed so **no secrets ever live in the source code**.
 | `store.steampowered.com/search/results?specials=1` | Steam sales list | None |
 | `api.steampowered.com/IWishlistService/GetWishlist` | Steam wishlist (app ids) | None (profile must be public) |
 | `api.steampowered.com/IStoreBrowseService/GetItems` | Names & prices for many apps in one request | None |
-| `api.steampowered.com/ISteamUser/GetPlayerSummaries` | Profile name & avatar | Steam Web API key (optional) |
+| `steamcommunity.com/profiles/<id>?xml=1` | Profile name & avatar | None |
 | `steamcommunity.com/openid/login`, `/profiles/{id}/?xml=1` | Steam sign-in, profile fallback, privacy check | Entered on Steam's own page |
 | `catalog.gog.com/v1/catalog` | GOG sales | None |
 | `auth.gog.com`, `embed.gog.com/user/wishlist.json`, `api.gog.com/products` | GOG sign-in, wishlist, prices | Entered on GOG's own page |
@@ -85,21 +85,13 @@ DealDrop is designed so **no secrets ever live in the source code**.
 | `store.epicgames.com/graphql` | Epic sales | None |
 | `account-public-service-prod03.ol.epicgames.com`, `launcher.store.epicgames.com/graphql` | Epic sign-in & wishlist | Entered on Epic's own page |
 | `www.gamerpower.com/api/giveaways` | PC giveaway aggregation | None |
-| `www.cheapshark.com/api/1.0` | Hot deals fallback, cheapest store for a wishlist game | None |
-| `api.isthereanydeal.com/deals/v2` | Hot deals (preferred when a key is set) | ITAD API key (optional) |
+| `www.cheapshark.com/api/1.0` | Hot deals, cheapest store for a wishlist game | None |
 
 ---
 
-## Optional API keys
+## API keys
 
-Both are free and optional — everything works without them.
-
-| Key | Where | Unlocks |
-|---|---|---|
-| Steam Web API key | [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey) | Profile name & avatar in sidebar |
-| IsThereAnyDeal key | [isthereanydeal.com/apps/my](https://isthereanydeal.com/apps/my) | Hot Deals from ITAD instead of CheapShark |
-
-**Getting the ITAD key:** register an app there, choose **“This app will NOT store OAuth secret securely”**, and copy the key listed under **API Keys** (not the Client ID / Secret). Always use the official link above.
+None needed — everything works without any key. Sign in to Steam, GOG and Epic from the sidebar; your name and avatar (Steam, GOG) show up there.
 
 ---
 

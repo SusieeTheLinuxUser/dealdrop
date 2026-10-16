@@ -61,8 +61,6 @@ struct SteamProfile { steam_id: String, name: String, avatar: Option<String> }
 #[serde(rename_all = "camelCase", default)]
 struct Db {
     settings: Settings,
-    itad_api_key: String,
-    steam_api_key: String,
     steam_id: Option<String>,
     steam_profile: Option<SteamProfile>,
     gog: Option<Tokens>,
@@ -170,8 +168,8 @@ fn keep_or_fail(res: R<Vec<WishItem>>, store: &str, prev: &Snapshot, errors: &mu
 }
 
 async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
-    let (settings, itad_key, steam_id, gog, epic) = st.read(|d| {
-        (d.settings.clone(), d.itad_api_key.clone(), d.steam_id.clone(), d.gog.clone(), d.epic.clone())
+    let (settings, steam_id, gog, epic) = st.read(|d| {
+        (d.settings.clone(), d.steam_id.clone(), d.gog.clone(), d.epic.clone())
     });
     let prev = st.snapshot.lock().unwrap().clone().unwrap_or_default();
 
@@ -196,7 +194,7 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
     let log = |name: &str, r: R<Vec<Free>>| r.unwrap_or_else(|e| { eprintln!("[{name}] {e}"); vec![] });
     let (ef, sf, sw, gp, ss, gs, es, hot) = tokio::join!(
         epic_free(), steam_free_featured(), steam_free_weekends(), gamerpower(),
-        steam_sales(), gog_sales(), stores::epic_sales(), hot_deals(&itad_key),
+        steam_sales(), gog_sales(), stores::epic_sales(), hot_deals(),
     );
     let (ef, sf, sw, gp) = (log("epic", ef), log("steam-featured", sf), log("steam-weekends", sw), log("gamerpower", gp));
     let deals_of = |name: &str, r: R<Vec<Deal>>, old: &Vec<Deal>| r.unwrap_or_else(|e| { eprintln!("[{name}] {e}"); old.clone() });
@@ -223,7 +221,15 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
         wishlist.extend(keep_or_fail(res, "steam", &prev, &mut wishlist_errors));
     }
     if let Some(t) = gog {
-        let res = match fresh_tokens(app, st, t, true).await { Ok(t) => stores::gog_wishlist(&t.access_token).await, Err(e) => Err(e) };
+        let res = match fresh_tokens(app, st, t, true).await {
+            Ok(t) => {
+                if t.avatar.is_none() {
+                    if let Some(a) = stores::gog_user(&t.access_token).await.3 { st.edit(|d| if let Some(g) = d.gog.as_mut() { g.avatar = Some(a) }); }
+                }
+                stores::gog_wishlist(&t.access_token).await
+            }
+            Err(e) => Err(e),
+        };
         wishlist.extend(keep_or_fail(res, "gog", &prev, &mut wishlist_errors));
     }
     if let Some(t) = epic {
@@ -251,19 +257,10 @@ async fn fresh_tokens(_app: &AppHandle, st: &AppState, t: Tokens, gog: bool) -> 
     Ok(n)
 }
 
-/// ITAD when a key is set (error surfaced if it's rejected), CheapShark otherwise.
-async fn hot_deals(key: &str) -> (Vec<Deal>, String, Option<String>) {
-    let mut err = None;
-    if !key.is_empty() {
-        match itad_deals(key).await {
-            Ok(d) if !d.is_empty() => return (d, "IsThereAnyDeal".into(), None),
-            Ok(_) => {}
-            Err(e) => err = Some(e),
-        }
-    }
+async fn hot_deals() -> (Vec<Deal>, String, Option<String>) {
     match cheapshark_deals().await {
-        Ok(d) => (d, "CheapShark".into(), err),
-        Err(e) => (vec![], String::new(), Some(err.unwrap_or(e))),
+        Ok(d) => (d, "CheapShark".into(), None),
+        Err(e) => (vec![], String::new(), Some(e)),
     }
 }
 
@@ -317,13 +314,16 @@ fn notify_big_deals(app: &AppHandle, st: &AppState, deals: &[Deal]) {
 // ─── Commands ─────────────────────────────────────────────────────────────────
 
 #[derive(Serialize)]
-struct Accounts { steam: Option<SteamProfile>, gog: Option<String>, epic: Option<String> }
+struct Acct { name: String, avatar: Option<String> }
+
+#[derive(Serialize)]
+struct Accounts { steam: Option<Acct>, gog: Option<Acct>, epic: Option<Acct> }
 
 fn accounts(st: &AppState) -> Accounts {
     st.read(|d| Accounts {
-        steam: d.steam_profile.clone(),
-        gog: d.gog.as_ref().map(|t| t.name.clone()),
-        epic: d.epic.as_ref().map(|t| t.name.clone()),
+        steam: d.steam_profile.as_ref().map(|p| Acct { name: p.name.clone(), avatar: p.avatar.clone() }),
+        gog: d.gog.as_ref().map(|t| Acct { name: t.name.clone(), avatar: t.avatar.clone() }),
+        epic: d.epic.as_ref().map(|t| Acct { name: t.name.clone(), avatar: t.avatar.clone() }),
     })
 }
 
@@ -334,26 +334,6 @@ fn get_settings(st: State<AppState>) -> Settings { st.read(|d| d.settings.clone(
 fn save_settings(st: State<AppState>, settings: Settings) {
     let changed = st.edit(|d| { let c = d.settings.check_interval != settings.check_interval; d.settings = settings; c });
     if changed { st.wake.notify_one(); }
-}
-
-#[tauri::command]
-fn has_key(st: State<AppState>, name: String) -> bool {
-    st.read(|d| match name.as_str() { "itad" => !d.itad_api_key.is_empty(), _ => !d.steam_api_key.is_empty() })
-}
-
-/// The ITAD key is verified before it's stored, so a typo is reported immediately.
-#[tauri::command]
-async fn save_key(app: AppHandle, name: String, value: String) -> Result<(), String> {
-    let st = app.state::<AppState>();
-    let value = value.trim().to_string();
-    if name == "itad" {
-        // Stored first so a flaky check can't lose a good key; the result tells the user if ITAD refuses it
-        st.edit(|d| d.itad_api_key = value.clone());
-        itad_deals(&value).await?;
-    } else {
-        st.edit(|d| d.steam_api_key = value);
-    }
-    Ok(())
 }
 
 #[tauri::command]
@@ -372,8 +352,7 @@ fn get_accounts(st: State<AppState>) -> Accounts { accounts(&st) }
 async fn steam_login(app: AppHandle) -> Result<Accounts, String> {
     let st = app.state::<AppState>();
     let id = stores::steam_login(&app).await?;
-    let key = st.read(|d| d.steam_api_key.clone());
-    let (name, avatar) = steam_profile(&id, &key).await;
+    let (name, avatar) = steam_profile(&id).await;
     st.edit(|d| {
         d.steam_id = Some(id.clone());
         d.steam_profile = Some(SteamProfile { steam_id: id, name, avatar });
@@ -413,17 +392,6 @@ fn logout(st: State<AppState>, store: String) -> Accounts {
     });
     if let Some(s) = st.snapshot.lock().unwrap().as_mut() { s.wishlist.retain(|w| w.store != store); }
     accounts(&st)
-}
-
-#[tauri::command]
-async fn refresh_profile(app: AppHandle) -> Option<SteamProfile> {
-    let st = app.state::<AppState>();
-    let (id, key) = st.read(|d| (d.steam_id.clone(), d.steam_api_key.clone()));
-    let id = id?;
-    let (name, avatar) = steam_profile(&id, &key).await;
-    let p = SteamProfile { steam_id: id, name, avatar };
-    st.edit(|d| d.steam_profile = Some(p.clone()));
-    Some(p)
 }
 
 fn open_raw(app: &AppHandle, url: &str) -> bool { app.opener().open_url(url, None::<&str>).is_ok() }
@@ -565,8 +533,8 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            get_settings, save_settings, has_key, save_key, fetch_data, check_now, get_accounts,
-            steam_login, gog_login, epic_login, logout, refresh_profile, open_url, open_in_app, launchers,
+            get_settings, save_settings, fetch_data, check_now, get_accounts,
+            steam_login, gog_login, epic_login, logout, open_url, open_in_app, launchers,
             window_minimize, window_close, wishlist_game_deals,
         ])
         .run(tauri::generate_context!())

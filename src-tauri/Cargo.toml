@@ -1,6 +1,6 @@
 [package]
 name = "dealdrop"
-version = "0.7.5"
+version = "0.7.6"
 description = "Game sale, giveaway & wishlist notifier"
 edition = "2021"
 license = "MIT"
