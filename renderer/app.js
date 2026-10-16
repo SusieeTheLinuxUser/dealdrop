@@ -21,7 +21,7 @@ const state = {
   dealsError:   null,
   sales:        { steam: [], gog: [], epic: [] },
   liveSale:     null,
-  launchers:    { steam: false, epic: false, gog: false },
+  launchers:    {},   // store -> { options:[{key,label}], chosen:{key,label}|null } from the backend
   salesTab:     'steam',
   wishlistTab:  'all',
   wishlistErrors: {},
@@ -29,7 +29,7 @@ const state = {
   settings:     {
     notifyMajorSale: true, notifyFreeGame: true, notifyFreeWeekend: true,
     notifyWishlistSale: true, notifyBigDeal: false, checkInterval: 60,
-    theme: 'midnight', baseTheme: 'midnight', lastSaleTheme: '', rounded: false, effects: true,
+    theme: 'midnight', baseTheme: 'midnight', lastSaleTheme: '', rounded: false, effects: true, launcherGog: 'auto', launcherEpic: 'auto',
   },
   accounts:     { steam: null, gog: null, epic: null },
   lastChecked:  null,
@@ -90,7 +90,7 @@ function tmpl (html) {
 const REPO       = 'https://github.com/SusieeTheLinuxUser/dealdrop'
 const openBrowser = url   => window.api.openUrl(url)
 const openSteam   = appId => window.api.openInApp('steam', `https://store.steampowered.com/app/${appId}`)
-const APP_LABEL   = { steam: 'Steam app', epic: 'Epic app', gog: 'GOG Galaxy' }
+const launcherOf  = store => state.launchers[store]?.chosen ?? null
 
 // ─── Shared action buttons ────────────────────────────────────────────────────
 
@@ -99,8 +99,9 @@ const APP_LABEL   = { steam: 'Steam app', epic: 'Epic app', gog: 'GOG Galaxy' }
 function makeCardActions (store, url, id) {
   const wrap     = document.createElement('div')
   wrap.className = 'card-actions'
-  if (APP_LABEL[store] && state.launchers[store]) {
-    const appBtn = tmpl(`<button class="card-btn steam-btn" title="Open in the ${APP_LABEL[store]}">${APP_LABEL[store]}</button>`)
+  const ch = launcherOf(store)
+  if (ch) {
+    const appBtn = tmpl(`<button class="card-btn steam-btn" title="Open in ${ch.label}">${ch.label}</button>`)
     appBtn.addEventListener('click', e => { e.stopPropagation(); window.api.openInApp(store, url, id) })
     wrap.append(appBtn)
   }
@@ -227,8 +228,9 @@ function makeWishlistRow (w) {
 function makeIconBtns (w) {
   const wrap     = document.createElement('div')
   wrap.className = 'wishlist-actions'
-  if (APP_LABEL[w.store] && state.launchers[w.store]) {
-    const appBtn = tmpl(`<button class="icon-btn steam-icon-btn" title="Open in the ${APP_LABEL[w.store]}">${w.store[0].toUpperCase()}</button>`)
+  const ch = launcherOf(w.store)
+  if (ch) {
+    const appBtn = tmpl(`<button class="icon-btn steam-icon-btn" title="Open in ${ch.label}">${ch.label[0]}</button>`)
     appBtn.addEventListener('click', e => { e.stopPropagation(); window.api.openInApp(w.store, w.url, w.id) })
     wrap.append(appBtn)
   }
@@ -639,6 +641,33 @@ function toggleRows (con, rows, after) {
   })
 }
 
+// "Open GOG/Epic games in": Auto prefers the store's own client, then Heroic, then Lutris
+function renderLauncherPrefs () {
+  const con = document.getElementById('launcher-prefs')
+  con.innerHTML = ''
+  ;[['gog', 'launcherGog', 'GOG'], ['epic', 'launcherEpic', 'Epic Games']].forEach(([store, key, name]) => {
+    const row = document.createElement('div')
+    row.className = 'setting-row'
+    row.innerHTML = `<div><div class="setting-label">Open ${name} games in</div>
+      <div class="setting-sub">${state.launchers[store]?.options.length ? 'Detected: ' + state.launchers[store].options.map(o => o.label).join(', ') : 'No launcher detected — opens in the browser'}</div></div><div class="theme-grid" style="margin:0"></div>`
+    const grid = row.querySelector('.theme-grid')
+    const choices = [{ key: 'auto', label: 'Auto' }, ...(state.launchers[store]?.options ?? []), { key: 'browser', label: 'Browser' }]
+    choices.forEach(c => {
+      const b = document.createElement('button')
+      b.className = 'theme-chip' + (state.settings[key] === c.key ? ' active' : '')
+      b.textContent = c.label
+      b.addEventListener('click', async () => {
+        state.settings[key] = c.key
+        await window.api.saveSettings(state.settings)
+        state.launchers = await window.api.launchers()
+        renderLauncherPrefs()
+      })
+      grid.appendChild(b)
+    })
+    con.appendChild(row)
+  })
+}
+
 function renderSettings () {
   const s = state.settings
   renderThemeGrid()
@@ -647,6 +676,7 @@ function renderSettings () {
     { key: 'effects', label: 'Seasonal effects', sub: 'Falling leaves, snow & more during Steam sale themes' },
   ], applyTheme)
 
+  renderLauncherPrefs()
   toggleRows(document.getElementById('notif-settings'), [
     { key: 'notifyMajorSale',    label: 'Steam major sale started',   sub: 'Summer, Winter, Autumn & Spring sales' },
     { key: 'notifyFreeGame',     label: 'Free game available',         sub: 'Epic, Steam, GOG & GamerPower giveaways' },
@@ -737,6 +767,7 @@ async function loadData (force = false) {
   if (dot)   dot.classList.add('active')
   if (label) label.textContent = 'checking…'
   try {
+    if (force) state.launchers = await window.api.launchers().catch(() => state.launchers)
     applyData(await (force ? window.api.checkNow() : window.api.fetchData()))
   } catch (e) {
     console.error('[fetchData]', e)

@@ -10,7 +10,7 @@ use std::time::Duration;
 
 pub type R<T> = Result<T, String>;
 
-const UA: &str = "DealDrop/0.6 (+https://github.com/SusieeTheLinuxUser/dealdrop)";
+const UA: &str = "DealDrop/0.6.1 (+https://github.com/SusieeTheLinuxUser/dealdrop)";
 const UA_BROWSER: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
 
 // ─── Shapes sent to the UI (camelCase = what renderer/app.js reads) ───────────

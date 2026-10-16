@@ -32,7 +32,10 @@ cargo tauri build --bundles appimage                 # → src-tauri/target/rele
 
 ## Launchers
 
-`has_scheme()` asks `xdg-mime` whether a handler exists for `steam`, `com.epicgames.launcher`, `goggalaxy`. `open_in_app` uses the store's app when present, otherwise the browser. Heroic/Lutris only expose `launch`, not "open store page", so there is no Heroic fallback.
+`src-tauri/src/launchers.rs` is the single table of launchers per store (`options()`), their URL schemes, and the deep links (`link()`, unit-tested). `has_scheme()` asks `xdg-mime` which are installed; "Auto" prefers `native`, then Heroic, then Lutris, then the browser, and the user can force one (or the browser) in Settings → Launchers (`launcherGog` / `launcherEpic`).
+
+- **GOG native Linux client (expected ~2027):** assumed to keep the `goggalaxy://` scheme. If it uses another, change the `native` row in `GOG` and the `("gog", "native")` arm in `link()` — nothing else needs touching.
+- Heroic only knows games in the user's library (`heroic://launch/gog/<productId>` launches or offers to install); Lutris gets `lutris:<slug>`. Both are best-effort for unowned games. Heroic isn't offered for Epic: it needs Epic's internal app name, which public APIs don't expose.
 
 ## Rules
 

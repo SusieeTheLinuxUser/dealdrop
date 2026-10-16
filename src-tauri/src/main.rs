@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod launchers;
 mod sources;
 mod stores;
 
@@ -39,13 +40,16 @@ struct Settings {
     last_sale_theme: String,
     rounded: bool,
     effects: bool,
+    /// Where GOG / Epic links open: "auto" | "native" | "heroic" | "lutris" | "browser"
+    launcher_gog: String,
+    launcher_epic: String,
 }
 impl Default for Settings {
     fn default() -> Self {
         Self { notify_major_sale: true, notify_free_game: true, notify_free_weekend: true,
                notify_wishlist_sale: true, notify_big_deal: false, check_interval: 60,
                theme: "midnight".into(), base_theme: "midnight".into(), last_sale_theme: String::new(),
-               rounded: false, effects: true }
+               rounded: false, effects: true, launcher_gog: "auto".into(), launcher_epic: "auto".into() }
     }
 }
 
@@ -430,39 +434,29 @@ fn open_url(app: AppHandle, url: String) -> bool {
     }
 }
 
-/// Is a desktop app registered for this URL scheme (xdg-mime)?
-fn has_scheme(scheme: &str) -> bool {
-    std::process::Command::new("xdg-mime")
-        .args(["query", "default", &format!("x-scheme-handler/{scheme}")])
-        .output().map(|o| !o.stdout.iter().all(u8::is_ascii_whitespace)).unwrap_or(false)
-}
-
-#[derive(Serialize)]
-struct Launchers { steam: bool, epic: bool, gog: bool }
-
 #[tauri::command]
-fn launchers() -> Launchers {
-    Launchers { steam: has_scheme("steam"), epic: has_scheme("com.epicgames.launcher"), gog: has_scheme("goggalaxy") }
+fn launchers(st: State<AppState>) -> HashMap<&'static str, launchers::StoreLaunchers> {
+    let (gog, epic) = st.read(|d| (d.settings.launcher_gog.clone(), d.settings.launcher_epic.clone()));
+    HashMap::from([
+        ("steam", launchers::resolve("steam", "auto")),
+        ("epic", launchers::resolve("epic", &epic)),
+        ("gog", launchers::resolve("gog", &gog)),
+    ])
 }
 
-/// Open a store page in that store's desktop app, or the browser if it isn't installed.
-/// (Heroic and Lutris have no "open store page" URL, so there is nothing to fall back to there.)
+/// Open a store page in the preferred installed launcher, falling back to the browser.
 #[tauri::command]
 fn open_in_app(app: AppHandle, store: String, url: String, id: Option<String>) -> bool {
-    static APP: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let app_re = APP.get_or_init(|| regex::Regex::new(r"/app/(\d+)").unwrap());
     let Ok(parsed) = url::Url::parse(&url).and_then(|u| if matches!(u.scheme(), "http" | "https") { Ok(u) } else { Err(url::ParseError::RelativeUrlWithoutBase) }) else { return false };
-    let native = match store.as_str() {
-        "steam" if has_scheme("steam") => Some(match app_re.captures(&url) {
-            Some(c) => format!("steam://store/{}", &c[1]),
-            None => format!("steam://openurl/{}", parsed.as_str()),
-        }),
-        "epic" if has_scheme("com.epicgames.launcher") => parsed.path().split_once("/p/")
-            .map(|(_, slug)| format!("com.epicgames.launcher://store/p/{}", slug.trim_end_matches('/'))),
-        "gog" if has_scheme("goggalaxy") => id.map(|i| format!("goggalaxy://openGameView/{}", i.trim_start_matches("gog-"))),
-        _ => None,
-    };
-    native.is_some_and(|n| open_raw(&app, &n)) || open_raw(&app, parsed.as_str())
+    let pref = app.state::<AppState>().read(|d| match store.as_str() {
+        "gog" => d.settings.launcher_gog.clone(),
+        "epic" => d.settings.launcher_epic.clone(),
+        _ => "auto".into(),
+    });
+    let chosen = launchers::resolve(&store, &pref).chosen;
+    chosen.and_then(|c| launchers::link(&store, c.key, &parsed, id.as_deref()))
+        .is_some_and(|l| open_raw(&app, &l))
+        || open_raw(&app, parsed.as_str())
 }
 
 #[tauri::command]
