@@ -25,7 +25,17 @@ No accounts. No telemetry. No secrets. Runs in your system tray.
 
 ## Install
 
-### AppImage
+Every release ships all three: grab the file for your OS from [Releases](../../releases).
+
+### Windows (.msi)
+
+Run `DealDrop_*.msi`. Windows SmartScreen may warn because the build is unsigned — **More info → Run anyway**.
+
+### macOS (.dmg, Intel + Apple Silicon)
+
+Open `DealDrop_*.dmg` and drag DealDrop to Applications. Unsigned build: on first launch right-click → **Open**, or run `xattr -dr com.apple.quarantine /Applications/DealDrop.app`.
+
+### Linux (AppImage)
 
 Download the latest `.AppImage` from [Releases](../../releases), then:
 
@@ -38,13 +48,13 @@ No installation needed. Needs `webkit2gtk-4.1` on the host (present on most desk
 
 ### Build from source
 
-Requires Rust, `webkit2gtk-4.1`/GTK dev packages, and `cargo install tauri-cli --version "^2"`.
+Requires Rust, `webkit2gtk-4.1`/GTK dev packages (Linux only), and `cargo install tauri-cli --version "^2"`.
 
 ```bash
 git clone https://github.com/SusieeTheLinuxUser/dealdrop
 cd dealdrop/src-tauri
 cargo tauri dev                             # run in dev mode
-cargo tauri build --bundles appimage        # build the AppImage
+cargo tauri build                           # build for your current OS
 ```
 
 ---

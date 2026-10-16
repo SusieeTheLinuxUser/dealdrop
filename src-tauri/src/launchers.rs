@@ -29,11 +29,36 @@ pub fn options(store: &str) -> &'static [Opt] {
     }
 }
 
-/// Is a desktop app registered for this URL scheme (xdg-mime)?
+/// Is a desktop app installed that handles this URL scheme?
+#[cfg(target_os = "linux")]
 fn has_scheme(scheme: &str) -> bool {
     std::process::Command::new("xdg-mime")
         .args(["query", "default", &format!("x-scheme-handler/{scheme}")])
         .output().map(|o| !o.stdout.iter().all(u8::is_ascii_whitespace)).unwrap_or(false)
+}
+
+/// Windows registers every URL handler under HKEY_CLASSES_ROOT\<scheme>.
+#[cfg(target_os = "windows")]
+fn has_scheme(scheme: &str) -> bool {
+    use std::os::windows::process::CommandExt;
+    std::process::Command::new("reg")
+        .args(["query", &format!("HKCR\\{scheme}"), "/ve"])
+        .creation_flags(0x0800_0000) // CREATE_NO_WINDOW: no console flash
+        .output().map(|o| o.status.success()).unwrap_or(false)
+}
+
+/// macOS has no scheme lookup without extra frameworks; check for the app bundle instead.
+#[cfg(target_os = "macos")]
+fn has_scheme(scheme: &str) -> bool {
+    let app = match scheme {
+        "steam" => "Steam.app",
+        "com.epicgames.launcher" => "Epic Games Launcher.app",
+        "goggalaxy" => "GOG Galaxy.app",
+        "heroic" => "Heroic.app",
+        _ => return false,
+    };
+    let home = std::env::var("HOME").unwrap_or_default();
+    [format!("/Applications/{app}"), format!("{home}/Applications/{app}")].iter().any(|p| std::path::Path::new(p).exists())
 }
 
 #[derive(Serialize)]

@@ -23,6 +23,18 @@ cargo tauri dev                                      # run the app (needs `cargo
 cargo tauri build --bundles appimage                 # → src-tauri/target/release/bundle/appimage/
 ```
 
+## Releasing — ALWAYS all three platforms
+
+Every release ships **Linux AppImage + Windows .msi + macOS .dmg (universal: Intel + Apple Silicon)**. Never release just one.
+
+1. Bump the version in `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json` and the User-Agent in `sources.rs`; update the docs; commit and push to `main`.
+2. `git tag vX.Y.Z && git push origin vX.Y.Z` — `.github/workflows/release.yml` builds all three on GitHub runners (`tauri-action`) and attaches them to the release for that tag. Windows/macOS can't be built locally on Linux.
+3. Check the release has all three assets before announcing it.
+
+Builds are unsigned: Windows SmartScreen ("More info → Run anyway") and macOS Gatekeeper (right-click → Open, or `xattr -dr com.apple.quarantine /Applications/DealDrop.app`) will warn on first launch.
+
+Platform code: launcher detection (`has_scheme` in `launchers.rs`) is per-OS via `cfg` — `xdg-mime` on Linux, a registry query on Windows, an app-bundle check on macOS. Keep any new OS-specific code behind `cfg` so all three keep compiling.
+
 ## Themes & sale themes
 
 - Themes are CSS variable sets keyed by `html[data-theme="…"]` in `renderer/style.css`; the JS lists live in `renderer/app.js` (`BASE_THEMES`, `SALE_THEMES`). Add a theme in both places.
@@ -32,7 +44,7 @@ cargo tauri build --bundles appimage                 # → src-tauri/target/rele
 
 ## Launchers
 
-`src-tauri/src/launchers.rs` is the single table of launchers per store (`options()`), their URL schemes, and the deep links (`link()`, unit-tested). `has_scheme()` asks `xdg-mime` which are installed; "Auto" prefers `native`, then Heroic, then Lutris, then the browser, and the user can force one (or the browser) in Settings → Launchers (`launcherGog` / `launcherEpic`).
+`src-tauri/src/launchers.rs` is the single table of launchers per store (`options()`), their URL schemes, and the deep links (`link()`, unit-tested). `has_scheme()` asks the OS which are installed (`xdg-mime` / Windows registry / macOS app bundles); "Auto" prefers `native`, then Heroic, then Lutris, then the browser, and the user can force one (or the browser) in Settings → Launchers (`launcherGog` / `launcherEpic`).
 
 - **GOG native Linux client (expected ~2027):** assumed to keep the `goggalaxy://` scheme. If it uses another, change the `native` row in `GOG` and the `("gog", "native")` arm in `link()` — nothing else needs touching.
 - Heroic only knows games in the user's library (`heroic://launch/gog/<productId>` launches or offers to install); Lutris gets `lutris:<slug>`. Both are best-effort for unowned games. Heroic isn't offered for Epic: it needs Epic's internal app name, which public APIs don't expose.
