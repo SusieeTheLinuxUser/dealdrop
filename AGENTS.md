@@ -30,7 +30,7 @@ cargo tauri build --bundles appimage                 # → src-tauri/target/rele
 Every release ships **Linux AppImage + Windows .msi + macOS .dmg (universal: Intel + Apple Silicon)**. Never release just one.
 
 1. Bump the version in all four places (see Rules); update the docs; commit and push to `main`.
-2. **Linux first:** `cd src-tauri && NO_STRIP=true APPIMAGE_EXTRACT_AND_RUN=1 cargo tauri build --bundles appimage`, then `gh release create vX.Y.Z <appimage> --target main`. The maintainer tests it.
+2. **Linux first:** `RELEASE_NOTES="…" scripts/release-linux.sh` builds the AppImage with embedded update info (Gear Lever / AppImageUpdate read it: `gh-releases-zsync|…|DealDrop_*_amd64.AppImage.zsync`), makes the `.zsync` and publishes both to the release. Needs `zsyncmake` (package `zsync`). The maintainer tests it.
 3. **Only after the Linux build is confirmed working:** `gh workflow run release.yml -f tag=vX.Y.Z` — `.github/workflows/release.yml` builds the Windows .msi and macOS .dmg on GitHub runners and attaches them to that same release. (Windows/macOS can't be built locally on Linux; don't ship them for a build that's known broken.)
 4. Check the release has all three assets before announcing it.
 
@@ -68,7 +68,7 @@ Platform code: launcher detection (`has_scheme` in `launchers.rs`) is per-OS via
 - Each source returns `Result`; the poll keeps the last good data when one fails and surfaces errors in the UI where it matters (hot deals, wishlists).
 - When an upstream API changes, fix it and extend the matching `#[ignore]` live test in `sources.rs`.
 - Wishlist items get `cheapest` from CheapShark (`attach_cheapest`) when another store is strictly cheaper; the UI opens that link first.
-- Version lives in four places: `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, the User-Agent in `sources.rs`, and `X-AppImage-Version` in `src-tauri/dealdrop.desktop` (that key is how Gear Lever shows the version).
+- Version lives in four places: `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, the User-Agent in `sources.rs`, and `X-AppImage-Version` in `src-tauri/dealdrop.desktop` (how Gear Lever shows the version).
 
 ## Known unverified paths
 
