@@ -39,6 +39,8 @@ cargo tauri build --bundles appimage                 # → src-tauri/target/rele
 
 ## Rules
 
+- **External URLs shown to the user must be clickable.** Any external service URL presented in the UI (hints, errors, docs, sign-up pages) must be an actionable hyperlink/button using a hard-coded, reviewed HTTPS URL where possible. Never make the user type or copy a URL by hand (`<a data-href="https://…">`, handled by the delegated click listener in `renderer/app.js` → `open_url`).
+- **Security-sensitive destinations** (API-key, sign-in and account pages) use only the service's canonical official domain, hard-coded in the source. Never build such a URL from remotely fetched content, and never put it in a plain-text message that could be mistyped (typosquatted sites have served malware this way).
 - No secrets in the repo. API keys / tokens are user-supplied and live only in the user's config file.
 - No telemetry. All external calls go through `sources.rs` / `stores.rs`; the webview never calls external APIs.
 - JSON sent to the UI is camelCase (`#[serde(rename_all = "camelCase")]`); keep it in sync with `renderer/app.js`.
