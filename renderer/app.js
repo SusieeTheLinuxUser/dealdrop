@@ -858,6 +858,7 @@ async function init () {
   })
   document.getElementById('btn-github')?.addEventListener('click', () => openBrowser(REPO))
   document.getElementById('btn-feedback')?.addEventListener('click', () => openBrowser(REPO + '/issues'))
+  window.__TAURI__.app.getVersion().then(v => { document.getElementById('app-version').textContent = 'DealDrop v' + v }).catch(() => {})
 
   // ── Load initial state ────────────────────────────────────────────────────
   Object.assign(state.settings, await window.api.getSettings())
