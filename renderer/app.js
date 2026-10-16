@@ -773,7 +773,7 @@ function setAccounts (acc) {
 
 async function loadData (force = false) {
   const btn = document.getElementById('btn-check-now')
-  if (btn) { btn.disabled = true; btn.textContent = 'Checking…' }
+  if (btn) { btn.disabled = true; btn.textContent = 'Refreshing…' }
   try {
     if (force) state.launchers = await window.api.launchers().catch(() => state.launchers)
     state.fetchError = null
@@ -783,11 +783,11 @@ async function loadData (force = false) {
     state.fetchError = `Couldn't update: ${String(e).slice(0, 90)}`
     renderErrors()
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Check now' }
+    if (btn) { btn.disabled = false; btn.textContent = 'Refresh all' }
   }
 }
 
-// Red box above "Check now": only shown when something is wrong. It says so without details;
+// Red box above "Refresh all": only shown when something is wrong. It says so without details;
 // "Copy error" puts the details on the clipboard for a bug report.
 let lastErrorText = ''
 function renderErrors () {
@@ -878,7 +878,7 @@ async function init () {
   })
   document.getElementById('btn-github')?.addEventListener('click', () => openBrowser(REPO))
   document.getElementById('btn-feedback')?.addEventListener('click', () => openBrowser(REPO + '/issues'))
-  document.querySelectorAll('.rz').forEach(el => el.addEventListener('mousedown', e => {
+  document.querySelectorAll('.rz').forEach(el => el.addEventListener('pointerdown', e => {
     if (e.button !== 0) return
     e.preventDefault()
     window.__TAURI__.window.getCurrentWindow().startResizeDragging(el.dataset.dir)

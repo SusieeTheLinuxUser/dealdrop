@@ -323,6 +323,7 @@ fn notify_big_deals(app: &AppHandle, st: &AppState, deals: &[Deal]) {
 // ─── Commands ─────────────────────────────────────────────────────────────────
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct Acct { name: String, avatar: Option<String>, profile_url: Option<String> }
 
 #[derive(Serialize)]
@@ -490,7 +491,7 @@ fn main() {
             WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                 .title("DealDrop")
                 .inner_size(980.0, 660.0)
-                .min_inner_size(520.0, 380.0)
+                .min_inner_size(570.0, 420.0)
                 .decorations(false)
                 .transparent(true) // the page paints the background so the window corners can be rounded
                 .on_navigation(|u| matches!(u.scheme(), "tauri" | "about") || u.host_str() == Some("tauri.localhost"))
@@ -498,7 +499,7 @@ fn main() {
 
             let menu = Menu::with_items(app, &[
                 &MenuItem::with_id(app, "open", "Open DealDrop", true, None::<&str>)?,
-                &MenuItem::with_id(app, "check", "Check now", true, None::<&str>)?,
+                &MenuItem::with_id(app, "check", "Refresh all", true, None::<&str>)?,
                 &PredefinedMenuItem::separator(app)?,
                 &MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?,
             ])?;
@@ -556,7 +557,13 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::safe_https;
+    use super::{safe_https, Acct};
+
+    #[test]
+    fn account_json_is_camel_case() {
+        let v = serde_json::to_value(Acct { name: "n".into(), avatar: None, profile_url: Some("https://x.y".into()) }).unwrap();
+        assert_eq!(v["profileUrl"], "https://x.y"); // the UI reads profileUrl
+    }
 
     #[test]
     fn only_plain_https_hostnames() {
