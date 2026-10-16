@@ -10,7 +10,7 @@ use std::time::Duration;
 
 pub type R<T> = Result<T, String>;
 
-const UA: &str = "DealDrop/0.5 (+https://github.com/SusieeTheLinuxUser/dealdrop)";
+const UA: &str = "DealDrop/0.6 (+https://github.com/SusieeTheLinuxUser/dealdrop)";
 const UA_BROWSER: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
 
 // ─── Shapes sent to the UI (camelCase = what renderer/app.js reads) ───────────
@@ -63,6 +63,23 @@ pub struct WishItem {
     pub image: Option<String>,
     pub url: String,
     pub price_info: Option<Price>,
+    /// Cheaper offer elsewhere (only set when strictly cheaper than this store's price)
+    pub cheapest: Option<Cheapest>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Cheapest {
+    pub store: String,
+    pub price: f64,
+    pub url: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct LiveSale {
+    pub key: String, // lunar | spring | summer | halloween | autumn | winter
+    pub name: String,
+    pub url: Option<String>,
 }
 
 #[derive(Serialize, Clone, Debug, Default)]
@@ -135,15 +152,23 @@ pub fn steam_header(app_id: &str) -> String {
 
 // ─── Steam: storefront ────────────────────────────────────────────────────────
 
-/// Name + price for many appids in ONE request (the endpoint the Steam store
-/// itself uses; no key needed). Replaces the old one-appid-per-request loop.
-pub async fn steam_items(ids: &[String]) -> R<HashMap<String, (String, Option<Price>)>> {
+#[derive(Debug)]
+pub struct SteamItem {
+    pub name: String,
+    pub price: Option<Price>,
+    pub image: String,
+}
+
+/// Name, price and artwork for many appids in ONE request (the endpoint the
+/// Steam store itself uses; no key needed). Artwork comes from the asset
+/// manifest because newer apps no longer have the legacy /apps/{id}/header.jpg.
+pub async fn steam_items(ids: &[String]) -> R<HashMap<String, SteamItem>> {
     let mut out = HashMap::new();
     for chunk in ids.chunks(100) {
         let input = json!({
             "ids": chunk.iter().filter_map(|i| i.parse::<u64>().ok()).map(|a| json!({"appid": a})).collect::<Vec<_>>(),
             "context": {"language": "english", "country_code": "US"},
-            "data_request": {"include_basic_info": true},
+            "data_request": {"include_basic_info": true, "include_assets": true},
         });
         let url = format!(
             "https://api.steampowered.com/IStoreBrowseService/GetItems/v1?input_json={}",
@@ -162,7 +187,12 @@ pub async fn steam_items(ids: &[String]) -> R<HashMap<String, (String, Option<Pr
                 let initial = if discount > 0 { f(&bo["original_price_in_cents"]) / 100.0 } else { fin };
                 Some(Price { discount, fin, initial, formatted: s(&bo["formatted_final_price"]) })
             };
-            out.insert(id, (name, price));
+            let a = &it["assets"];
+            let image = a["asset_url_format"].as_str()
+                .zip(a["header"].as_str().or(a["small_capsule"].as_str()))
+                .map(|(fmt, file)| format!("https://shared.akamai.steamstatic.com/store_item_assets/{}", fmt.replace("${FILENAME}", file)))
+                .unwrap_or_else(|| steam_header(&id));
+            out.insert(id, SteamItem { name, price, image });
         }
     }
     Ok(out)
@@ -185,12 +215,15 @@ fn spotlights(fdc: &Value) -> Vec<Value> {
         .collect()
 }
 
-/// Returns (is a major sale live, its name).
-pub async fn detect_steam_sale() -> R<(bool, Option<String>)> {
+/// A seasonal sale that is live right now, if the store is advertising one.
+/// Returns (generic "sale is on" flag, themed sale if recognised).
+pub async fn detect_steam_sale() -> R<(bool, Option<LiveSale>)> {
     static MAJOR: OnceLock<Regex> = OnceLock::new();
     static MAJOR_URL: OnceLock<Regex> = OnceLock::new();
-    let major = re(r"(?i)(summer|winter|autumn|spring|lunar|halloween|seasonal).*sale|sale.*(summer|winter|autumn|spring|lunar|halloween|seasonal)", &MAJOR);
+    static KEY: OnceLock<Regex> = OnceLock::new();
+    let major = re(r"(?i)(summer|winter|autumn|fall|spring|lunar|halloween|seasonal).*sale|sale.*(summer|winter|autumn|fall|spring|lunar|halloween|seasonal)", &MAJOR);
     let major_url = re(r"(?i)/sale/[^/]*(summer|winter|autumn|spring|lunar|halloween)", &MAJOR_URL);
+    let key_re = re(r"(?i)(summer|winter|autumn|fall|spring|lunar|halloween)", &KEY);
 
     let fdc = featured_categories().await?;
     let heavy = fdc["specials"]["items"].as_array().into_iter().flatten()
@@ -198,8 +231,16 @@ pub async fn detect_steam_sale() -> R<(bool, Option<String>)> {
     let banner = spotlights(&fdc).into_iter().find(|b| {
         major.is_match(b["name"].as_str().unwrap_or("")) || major_url.is_match(b["url"].as_str().unwrap_or(""))
     });
-    let on = banner.is_some() || heavy >= 8;
-    Ok((on, banner.and_then(|b| s(&b["name"])).or(on.then(|| "Steam Sale".into()))))
+    let live = banner.and_then(|b| {
+        let hay = format!("{} {}", b["name"].as_str().unwrap_or(""), b["url"].as_str().unwrap_or(""));
+        let key = key_re.find(&hay)?.as_str().to_lowercase();
+        Some(LiveSale {
+            key: if key == "fall" { "autumn".into() } else { key },
+            name: s(&b["name"]).unwrap_or_else(|| "Steam Sale".into()),
+            url: s(&b["url"]),
+        })
+    });
+    Ok((live.is_some() || heavy >= 8, live))
 }
 
 pub async fn steam_free_featured() -> R<Vec<Free>> {
@@ -243,10 +284,10 @@ pub async fn steam_free_weekends() -> R<Vec<Free>> {
     let names = if ids.is_empty() { HashMap::new() } else { steam_items(&ids).await.unwrap_or_default() };
     Ok(ids.into_iter().map(|id| Free {
         id: format!("steam-fw-{id}"),
-        title: names.get(&id).map(|n| n.0.clone()).unwrap_or_else(|| "Free weekend game".into()),
+        title: names.get(&id).map(|n| n.name.clone()).unwrap_or_else(|| "Free weekend game".into()),
         source: "steam".into(),
         url: format!("https://store.steampowered.com/app/{id}"),
-        image: Some(steam_header(&id)),
+        image: names.get(&id).map(|n| n.image.clone()).or_else(|| Some(steam_header(&id))),
         app_id: Some(id),
         kind: "weekend".into(),
         ..Default::default()
@@ -269,6 +310,8 @@ pub async fn steam_sales() -> R<Vec<Deal>> {
 
     let v = get_json("https://store.steampowered.com/search/results/?query&start=0&count=50&specials=1&infinite=1&cc=us&l=en&json=1").await?;
     let html = v["results_html"].as_str().ok_or("no results_html")?;
+    static CAPSULE: OnceLock<Regex> = OnceLock::new();
+    let capsule = re(r#"<img src="([^"]+)""#, &CAPSULE);
     let mut out = vec![];
     // Each result row starts at its anchor tag; chunk on the appid attribute.
     let starts: Vec<_> = row.captures_iter(html).map(|c| (c.get(0).unwrap().start(), c[1].to_string())).collect();
@@ -287,10 +330,17 @@ pub async fn steam_sales() -> R<Vec<Deal>> {
             title: unescape(&t[1]),
             shop: "Steam".into(),
             url: format!("https://store.steampowered.com/app/{id}"),
-            image: Some(steam_header(id)),
+            image: capsule.captures(chunk).map(|c| c[1].to_string()),
             cut, price, regular,
             app_id: Some(id.clone()),
         });
+    }
+    // Replace the tiny search capsules with proper header art where we can
+    let ids: Vec<String> = out.iter().filter_map(|d| d.app_id.clone()).collect();
+    if let Ok(items) = steam_items(&ids).await {
+        for d in &mut out {
+            if let Some(i) = d.app_id.as_ref().and_then(|a| items.get(a)) { d.image = Some(i.image.clone()); }
+        }
     }
     Ok(out)
 }
@@ -310,13 +360,16 @@ pub async fn steam_wishlist(steam_id: &str) -> R<Vec<WishItem>> {
     let ids: Vec<String> = raw.iter().map(|r| r.0.clone()).collect();
     let info = if ids.is_empty() { HashMap::new() } else { steam_items(&ids).await? };
     Ok(ids.into_iter().map(|id| {
-        let (name, price) = info.get(&id).cloned().unwrap_or((format!("App {id}"), None));
+        let it = info.get(&id);
         WishItem {
             store: "steam".into(),
             url: format!("https://store.steampowered.com/app/{id}"),
-            image: Some(steam_header(&id)),
+            image: Some(it.map_or_else(|| steam_header(&id), |i| i.image.clone())),
+            name: it.map_or_else(|| format!("App {id}"), |i| i.name.clone()),
+            price_info: it.and_then(|i| i.price.clone()),
             app_id: Some(id.clone()),
-            id, name, price_info: price,
+            cheapest: None,
+            id,
         }
     }).collect())
 }
@@ -441,20 +494,24 @@ pub async fn gog_sales() -> R<Vec<Deal>> {
 /// (The old `cut:desc` was silently rejected.) A rejected key is reported
 /// as such so the UI can say so instead of showing an empty list.
 pub async fn itad_deals(key: &str) -> R<Vec<Deal>> {
-    let url = format!(
-        "https://api.isthereanydeal.com/deals/v2?key={}&country=US&limit=50&sort=-cut",
-        urlenc(key)
-    );
-    let res = client().get(&url).send().await.map_err(|e| e.to_string())?;
+    // `sort=-cut` is the website's syntax; if ITAD ever rejects it, retry unsorted and sort here.
+    let base = format!("https://api.isthereanydeal.com/deals/v2?key={}&country=US&limit=100", urlenc(key));
+    let mut res = client().get(format!("{base}&sort=-cut")).send().await.map_err(|e| e.to_string())?;
+    let mut sorted = true;
+    if res.status().as_u16() == 400 {
+        res = client().get(&base).send().await.map_err(|e| e.to_string())?;
+        sorted = false;
+    }
     let status = res.status().as_u16();
     if status == 401 || status == 403 {
-        return Err("IsThereAnyDeal rejected your API key (invalid or expired). Create a new one at isthereanydeal.com/apps/".into());
+        let why = res.text().await.unwrap_or_default();
+        return Err(format!("IsThereAnyDeal rejected the API key (HTTP {status}: {}).", why.trim().chars().take(120).collect::<String>()));
     }
     if status >= 400 {
         return Err(format!("IsThereAnyDeal error: HTTP {status}"));
     }
     let v: Value = res.json().await.map_err(|e| e.to_string())?;
-    Ok(v["list"].as_array().into_iter().flatten().filter_map(|d| {
+    let mut out: Vec<Deal> = v["list"].as_array().into_iter().flatten().filter_map(|d| {
         let deal = &d["deal"];
         let cut = deal["cut"].as_u64()? as u32;
         if cut == 0 { return None; }
@@ -469,7 +526,9 @@ pub async fn itad_deals(key: &str) -> R<Vec<Deal>> {
             regular: f(&deal["regular"]["amount"]),
             app_id: None,
         })
-    }).collect())
+    }).collect();
+    if !sorted { out.sort_by(|a, b| b.cut.cmp(&a.cut)); }
+    Ok(out)
 }
 
 async fn cheapshark_stores() -> HashMap<String, String> {
@@ -499,6 +558,51 @@ pub async fn cheapshark_deals() -> R<Vec<Deal>> {
             app_id: s(&d["steamAppID"]).filter(|x| x != "0"),
         })
     }).collect())
+}
+
+/// Fill `cheapest` on wishlist items when another store beats the item's own
+/// price (what deals.gg shows: the best current price across stores).
+/// CheapShark batches Steam appids; GOG/Epic items are matched by exact title.
+pub async fn attach_cheapest(items: &mut [WishItem]) {
+    let stores = cheapshark_stores().await;
+    // (item index, cheapest price, dealID)
+    let mut found: Vec<(usize, f64, String)> = vec![];
+
+    let steam_idx: Vec<usize> = (0..items.len()).filter(|&i| items[i].app_id.is_some() && items[i].price_info.is_some()).collect();
+    for chunk in steam_idx.chunks(25) {
+        let ids: Vec<&str> = chunk.iter().filter_map(|&i| items[i].app_id.as_deref()).collect();
+        let Ok(v) = get_json(&format!("https://www.cheapshark.com/api/1.0/games?steamAppID={}", ids.join(","))).await else { continue };
+        for g in v.as_array().into_iter().flatten() {
+            let app = s(&g["steamAppID"]).unwrap_or_default();
+            if let (Some(&i), Some(deal)) = (chunk.iter().find(|&&i| items[i].app_id.as_deref() == Some(app.as_str())), s(&g["cheapestDealID"])) {
+                found.push((i, f(&g["cheapest"]), deal));
+            }
+        }
+    }
+    let other_idx: Vec<usize> = (0..items.len()).filter(|&i| items[i].app_id.is_none() && items[i].price_info.is_some()).take(30).collect();
+    let lookups = futures::future::join_all(other_idx.iter().map(|&i| {
+        let url = format!("https://www.cheapshark.com/api/1.0/games?title={}&exact=1&limit=1", urlenc(&items[i].name));
+        async move { (i, get_json(&url).await.ok()) }
+    })).await;
+    for (i, v) in lookups {
+        if let Some(g) = v.as_ref().and_then(|v| v.get(0)) {
+            if let Some(deal) = s(&g["cheapestDealID"]) { found.push((i, f(&g["cheapest"]), deal)); }
+        }
+    }
+
+    // Only look up store/link for games where somebody else is strictly cheaper
+    let cheaper: Vec<_> = found.into_iter()
+        .filter(|(i, price, _)| items[*i].price_info.as_ref().is_some_and(|p| *price + 0.005 < p.fin))
+        .collect();
+    let details = futures::future::join_all(cheaper.iter().map(|(_, _, deal)| async move {
+        get_json(&format!("https://www.cheapshark.com/api/1.0/deals?id={deal}")).await.ok()
+    })).await;
+    for ((i, price, deal), d) in cheaper.into_iter().zip(details) {
+        let store = d.and_then(|d| s(&d["gameInfo"]["storeID"])).and_then(|id| stores.get(&id).cloned());
+        if let Some(store) = store {
+            items[i].cheapest = Some(Cheapest { store, price, url: format!("https://www.cheapshark.com/redirect?dealID={deal}") });
+        }
+    }
 }
 
 /// Cheapest third-party price for one Steam game (wishlist detail panel).
@@ -538,6 +642,17 @@ mod live {
     #[tokio::test] #[ignore] async fn epic_free_live() { show("epic free", epic_free().await) }
     #[tokio::test] #[ignore] async fn gamerpower_live() { show("gamerpower", gamerpower().await) }
     #[tokio::test] #[ignore] async fn cheapshark_live() { show("cheapshark", cheapshark_deals().await) }
+    #[tokio::test] #[ignore] async fn wishlist_cheapest_live() {
+        // STEAM_ID=7656... cargo test wishlist_cheapest_live -- --ignored --nocapture
+        let id = std::env::var("STEAM_ID").expect("set STEAM_ID");
+        let mut w = steam_wishlist(&id).await.unwrap();
+        attach_cheapest(&mut w).await;
+        let n = w.iter().filter(|i| i.cheapest.is_some()).count();
+        println!("{} items, {} have a cheaper non-Steam offer", w.len(), n);
+        for i in w.iter().filter(|i| i.cheapest.is_some()).take(5) {
+            println!("{} steam ${:.2} -> {:?}", i.name, i.price_info.as_ref().unwrap().fin, i.cheapest);
+        }
+    }
     #[tokio::test] #[ignore] async fn steam_wishlist_prices_live() {
         let ids = vec!["60".to_string(), "1203620".to_string()];
         let m = steam_items(&ids).await.unwrap();

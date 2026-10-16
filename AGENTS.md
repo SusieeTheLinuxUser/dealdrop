@@ -23,6 +23,17 @@ cargo tauri dev                                      # run the app (needs `cargo
 cargo tauri build --bundles appimage                 # → src-tauri/target/release/bundle/appimage/
 ```
 
+## Themes & sale themes
+
+- Themes are CSS variable sets keyed by `html[data-theme="…"]` in `renderer/style.css`; the JS lists live in `renderer/app.js` (`BASE_THEMES`, `SALE_THEMES`). Add a theme in both places.
+- `live_sale` (from `detect_steam_sale`, the Steam spotlight banner) drives sale themes: first sight of a sale sets `settings.theme` + `lastSaleTheme`; a user's own pick afterwards sticks across restarts; when the sale ends the theme falls back to `baseTheme`.
+- Falling-glyph effects live in `startFx` (canvas `#fx`); they respect `prefers-reduced-motion` and the `effects` setting.
+- CSP forbids inline handlers (`onerror=`, `onclick=`): use listeners (see the global `error` handler for images, `data-href` for links).
+
+## Launchers
+
+`has_scheme()` asks `xdg-mime` whether a handler exists for `steam`, `com.epicgames.launcher`, `goggalaxy`. `open_in_app` uses the store's app when present, otherwise the browser. Heroic/Lutris only expose `launch`, not "open store page", so there is no Heroic fallback.
+
 ## Rules
 
 - No secrets in the repo. API keys / tokens are user-supplied and live only in the user's config file.
@@ -31,6 +42,7 @@ cargo tauri build --bundles appimage                 # → src-tauri/target/rele
 - Config keys in `Db` deliberately match the old Electron `electron-store` names so upgrades keep settings.
 - Each source returns `Result`; the poll keeps the last good data when one fails and surfaces errors in the UI where it matters (hot deals, wishlists).
 - When an upstream API changes, fix it and extend the matching `#[ignore]` live test in `sources.rs`.
+- Wishlist items get `cheapest` from CheapShark (`attach_cheapest`) when another store is strictly cheaper; the UI opens that link first.
 - Version lives in two places: `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json`.
 
 ## Known unverified paths

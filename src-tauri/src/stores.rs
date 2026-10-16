@@ -189,7 +189,7 @@ pub async fn gog_wishlist(access: &str) -> R<Vec<WishItem>> {
                 url: format!("https://www.gog.com/en/game/{}", p["slug"].as_str().unwrap_or_default()),
                 image: p["images"]["logo2x"].as_str().map(|u| format!("https:{u}")),
                 name: p["title"].as_str().unwrap_or("GOG game").into(),
-                id, app_id: None, price_info: price,
+                id, app_id: None, price_info: price, cheapest: None,
             });
         }
     }
@@ -340,6 +340,7 @@ pub async fn epic_wishlist(access: &str) -> R<Vec<WishItem>> {
                         image: epic_image(o),
                         price_info: epic_price(o),
                         app_id: None,
+                        cheapest: None,
                     })
                 }).collect());
             }

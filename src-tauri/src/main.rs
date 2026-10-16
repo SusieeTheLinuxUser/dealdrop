@@ -31,11 +31,21 @@ struct Settings {
     notify_wishlist_sale: bool,
     notify_big_deal: bool,
     check_interval: u64,
+    /// Active theme; `base_theme` is the user's own pick to return to when a sale theme ends,
+    /// `last_sale_theme` remembers which sale we already auto-switched for (so a restart
+    /// doesn't undo the user switching away from it).
+    theme: String,
+    base_theme: String,
+    last_sale_theme: String,
+    rounded: bool,
+    effects: bool,
 }
 impl Default for Settings {
     fn default() -> Self {
         Self { notify_major_sale: true, notify_free_game: true, notify_free_weekend: true,
-               notify_wishlist_sale: true, notify_big_deal: false, check_interval: 60 }
+               notify_wishlist_sale: true, notify_big_deal: false, check_interval: 60,
+               theme: "midnight".into(), base_theme: "midnight".into(), last_sale_theme: String::new(),
+               rounded: false, effects: true }
     }
 }
 
@@ -67,6 +77,7 @@ struct Snapshot {
     free_games: Vec<Free>,
     free_weekends: Vec<Free>,
     sales: Sales,
+    live_sale: Option<LiveSale>,
     deals: Vec<Deal>,
     deals_source: String,
     deals_error: Option<String>,
@@ -157,20 +168,22 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
     });
     let prev = st.snapshot.lock().unwrap().clone().unwrap_or_default();
 
-    // 1. Steam major sale
-    if settings.notify_major_sale {
-        match detect_steam_sale().await {
-            Ok((true, name)) => {
-                let key = name.clone().unwrap_or_else(|| "sale".into());
-                if st.read(|d| d.last_sale_key.as_deref() != Some(&key)) {
-                    st.edit(|d| d.last_sale_key = Some(key));
-                    notify(app, "🎉 Steam sale started!", &format!("{} is live — go grab some deals.", name.unwrap_or_default()));
+    // 1. Steam major sale (always checked: it also drives the sale themes)
+    let live_sale = match detect_steam_sale().await {
+        Ok((on, live)) => {
+            if on {
+                let name = live.as_ref().map_or("Steam Sale".to_string(), |l| l.name.clone());
+                if settings.notify_major_sale && st.read(|d| d.last_sale_key.as_deref() != Some(&name)) {
+                    notify(app, "🎉 Steam sale started!", &format!("{name} is live — go grab some deals."));
                 }
+                st.edit(|d| d.last_sale_key = Some(name));
+            } else {
+                st.edit(|d| d.last_sale_key = None);
             }
-            Ok((false, _)) => st.edit(|d| d.last_sale_key = None),
-            Err(e) => eprintln!("[sale-detect] {e}"),
+            live
         }
-    }
+        Err(e) => { eprintln!("[sale-detect] {e}"); prev.live_sale.clone() }
+    };
 
     // 2. Everything that needs no account, in parallel
     let log = |name: &str, r: R<Vec<Free>>| r.unwrap_or_else(|e| { eprintln!("[{name}] {e}"); vec![] });
@@ -211,11 +224,12 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
         wishlist.extend(keep_or_fail(res, "epic", &prev, &mut wishlist_errors));
     }
 
+    attach_cheapest(&mut wishlist).await;
     if settings.notify_wishlist_sale { notify_wishlist(app, st, &wishlist); }
     if settings.notify_big_deal { notify_big_deals(app, st, &deals); }
 
     Snapshot {
-        free_games, free_weekends, sales, deals, deals_source, deals_error,
+        free_games, free_weekends, sales, live_sale, deals, deals_source, deals_error,
         wishlist, wishlist_private, wishlist_errors, last_checked: now_ms(),
     }
 }
@@ -326,8 +340,9 @@ async fn save_key(app: AppHandle, name: String, value: String) -> Result<(), Str
     let st = app.state::<AppState>();
     let value = value.trim().to_string();
     if name == "itad" {
+        // Stored first so a flaky check can't lose a good key; the result tells the user if ITAD refuses it
+        st.edit(|d| d.itad_api_key = value.clone());
         itad_deals(&value).await?;
-        st.edit(|d| d.itad_api_key = value);
     } else {
         st.edit(|d| d.steam_api_key = value);
     }
@@ -404,19 +419,50 @@ async fn refresh_profile(app: AppHandle) -> Option<SteamProfile> {
     Some(p)
 }
 
+fn open_raw(app: &AppHandle, url: &str) -> bool { app.opener().open_url(url, None::<&str>).is_ok() }
+
 /// Only http(s) and steam:// — never file:// or odd schemes from API data.
 #[tauri::command]
 fn open_url(app: AppHandle, url: String) -> bool {
     match url::Url::parse(&url) {
-        Ok(u) if matches!(u.scheme(), "http" | "https" | "steam") => app.opener().open_url(u.as_str(), None::<&str>).is_ok(),
+        Ok(u) if matches!(u.scheme(), "http" | "https" | "steam") => open_raw(&app, u.as_str()),
         _ => false,
     }
 }
 
+/// Is a desktop app registered for this URL scheme (xdg-mime)?
+fn has_scheme(scheme: &str) -> bool {
+    std::process::Command::new("xdg-mime")
+        .args(["query", "default", &format!("x-scheme-handler/{scheme}")])
+        .output().map(|o| !o.stdout.iter().all(u8::is_ascii_whitespace)).unwrap_or(false)
+}
+
+#[derive(Serialize)]
+struct Launchers { steam: bool, epic: bool, gog: bool }
+
 #[tauri::command]
-fn open_steam(app: AppHandle, app_id: String) -> bool {
-    app_id.chars().all(|c| c.is_ascii_digit()) && !app_id.is_empty()
-        && app.opener().open_url(format!("steam://store/{app_id}"), None::<&str>).is_ok()
+fn launchers() -> Launchers {
+    Launchers { steam: has_scheme("steam"), epic: has_scheme("com.epicgames.launcher"), gog: has_scheme("goggalaxy") }
+}
+
+/// Open a store page in that store's desktop app, or the browser if it isn't installed.
+/// (Heroic and Lutris have no "open store page" URL, so there is nothing to fall back to there.)
+#[tauri::command]
+fn open_in_app(app: AppHandle, store: String, url: String, id: Option<String>) -> bool {
+    static APP: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let app_re = APP.get_or_init(|| regex::Regex::new(r"/app/(\d+)").unwrap());
+    let Ok(parsed) = url::Url::parse(&url).and_then(|u| if matches!(u.scheme(), "http" | "https") { Ok(u) } else { Err(url::ParseError::RelativeUrlWithoutBase) }) else { return false };
+    let native = match store.as_str() {
+        "steam" if has_scheme("steam") => Some(match app_re.captures(&url) {
+            Some(c) => format!("steam://store/{}", &c[1]),
+            None => format!("steam://openurl/{}", parsed.as_str()),
+        }),
+        "epic" if has_scheme("com.epicgames.launcher") => parsed.path().split_once("/p/")
+            .map(|(_, slug)| format!("com.epicgames.launcher://store/p/{}", slug.trim_end_matches('/'))),
+        "gog" if has_scheme("goggalaxy") => id.map(|i| format!("goggalaxy://openGameView/{}", i.trim_start_matches("gog-"))),
+        _ => None,
+    };
+    native.is_some_and(|n| open_raw(&app, &n)) || open_raw(&app, parsed.as_str())
 }
 
 #[tauri::command]
@@ -429,7 +475,7 @@ fn window_close(app: AppHandle) { if let Some(w) = app.get_webview_window("main"
 async fn wishlist_game_deals(app_id: String, name: String) -> Value {
     let ids = [app_id.clone()];
     let (steam, cheapest) = tokio::join!(steam_items(&ids), cheapest_for_steam_app(&app_id));
-    let steam = steam.ok().and_then(|m| m.get(&app_id).and_then(|x| x.1.clone())).map(|p| json!({
+    let steam = steam.ok().and_then(|m| m.get(&app_id).and_then(|x| x.price.clone())).map(|p| json!({
         "onSale": p.discount > 0, "discount": p.discount, "final": p.fin, "initial": p.initial, "formatted": p.formatted,
     }));
     json!({ "appId": app_id, "gameName": name, "steam": steam, "cheapest": cheapest.ok().flatten(), "checkedAt": now_ms() })
@@ -507,7 +553,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             get_settings, save_settings, has_key, save_key, fetch_data, check_now, get_accounts,
-            steam_login, gog_login, epic_login, logout, refresh_profile, open_url, open_steam,
+            steam_login, gog_login, epic_login, logout, refresh_profile, open_url, open_in_app, launchers,
             window_minimize, window_close, wishlist_game_deals,
         ])
         .run(tauri::generate_context!())

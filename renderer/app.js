@@ -20,6 +20,8 @@ const state = {
   dealsSource:  '',
   dealsError:   null,
   sales:        { steam: [], gog: [], epic: [] },
+  liveSale:     null,
+  launchers:    { steam: false, epic: false, gog: false },
   salesTab:     'steam',
   wishlistTab:  'all',
   wishlistErrors: {},
@@ -27,6 +29,7 @@ const state = {
   settings:     {
     notifyMajorSale: true, notifyFreeGame: true, notifyFreeWeekend: true,
     notifyWishlistSale: true, notifyBigDeal: false, checkInterval: 60,
+    theme: 'midnight', baseTheme: 'midnight', lastSaleTheme: '', rounded: false, effects: true,
   },
   accounts:     { steam: null, gog: null, epic: null },
   lastChecked:  null,
@@ -66,6 +69,16 @@ const STORES = { steam: 'Steam', gog: 'GOG', epic: 'Epic' }
 const hasAccount = () => Object.values(state.accounts).some(Boolean)
 const onSaleItems = () => state.wishlist.filter(w => (w.priceInfo?.discount ?? 0) >= 20)
 
+// CSP forbids inline onerror handlers, so broken <img>s are swapped for a glyph here
+document.addEventListener('error', e => {
+  const img = e.target
+  if (img.tagName !== 'IMG') return
+  const span = document.createElement('span')
+  span.className = 'fallback'
+  span.textContent = img.dataset.fb ?? ''
+  img.replaceWith(span)
+}, true)
+
 function tmpl (html) {
   const t = document.createElement('template')
   t.innerHTML = html.trim()
@@ -74,36 +87,25 @@ function tmpl (html) {
 
 // ─── Open helpers ─────────────────────────────────────────────────────────────
 
-const openSteam   = appId => window.api.openSteam(appId)
+const REPO       = 'https://github.com/SusieeTheLinuxUser/dealdrop'
 const openBrowser = url   => window.api.openUrl(url)
+const openSteam   = appId => window.api.openInApp('steam', `https://store.steampowered.com/app/${appId}`)
+const APP_LABEL   = { steam: 'Steam app', epic: 'Epic app', gog: 'GOG Galaxy' }
 
 // ─── Shared action buttons ────────────────────────────────────────────────────
 
-function makeCardActions (appId, url, source) {
+// Buttons: "<Store> app" only when that launcher is installed (the backend falls back
+// to the browser anyway), plus Browser.
+function makeCardActions (store, url, id) {
   const wrap     = document.createElement('div')
   wrap.className = 'card-actions'
-
-  const steamBtn = source !== 'steam' || !appId ? null : tmpl(`<button class="card-btn steam-btn" title="Open in Steam client">
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
-      <rect width="24" height="24" rx="3" fill="#1b2838"/>
-      <path d="M12 3C7.03 3 3 7.03 3 12c0 4.09 2.6 7.58 6.26 8.9l2.27-4.54A3 3 0 1 1 15 12h.05l2.6-5.22A9 9 0 0 0 12 3z" fill="#c7d5e0"/>
-      <circle cx="16" cy="12" r="2" fill="#c7d5e0"/>
-    </svg>
-    Steam app
-  </button>`)
-  steamBtn?.addEventListener('click', e => { e.stopPropagation(); openSteam(appId) })
-
-  const webBtn = tmpl(`<button class="card-btn" title="Open in browser">
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <circle cx="12" cy="12" r="10"/>
-      <line x1="2" y1="12" x2="22" y2="12"/>
-      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-    </svg>
-    Browser
-  </button>`)
+  if (APP_LABEL[store] && state.launchers[store]) {
+    const appBtn = tmpl(`<button class="card-btn steam-btn" title="Open in the ${APP_LABEL[store]}">${APP_LABEL[store]}</button>`)
+    appBtn.addEventListener('click', e => { e.stopPropagation(); window.api.openInApp(store, url, id) })
+    wrap.append(appBtn)
+  }
+  const webBtn = tmpl(`<button class="card-btn" title="Open in browser">🌐 Browser</button>`)
   webBtn.addEventListener('click', e => { e.stopPropagation(); openBrowser(url) })
-
-  if (steamBtn) wrap.append(steamBtn)
   wrap.append(webBtn)
   return wrap
 }
@@ -172,6 +174,9 @@ function renderWishlist () {
 
 const storeTag = s => `<span class="store-tag ${s}">${STORES[s] ?? s}</span>`
 
+// Where "open" should go: the cheapest known offer if another store beats this one
+const bestUrl = w => w.cheapest?.url ?? w.url
+
 function makeWishlistSaleRow (w) {
   const p   = w.priceInfo
   const row = document.createElement('div')
@@ -179,19 +184,17 @@ function makeWishlistSaleRow (w) {
   row.innerHTML = `
     <div>
       <div class="deal-name">${escHtml(w.name)}</div>
-      <div class="deal-store">${storeTag(w.store)}</div>
+      <div class="deal-store">${storeTag(w.store)}${w.cheapest ? `<span class="cheapest-tag">↘ ${escHtml(w.cheapest.store)} ${fmt$(w.cheapest.price)}</span>` : ''}</div>
     </div>
     <span class="deal-orig">${fmt$(p.initial)}</span>
     <span class="deal-cut">-${p.discount}%</span>
     <span class="deal-price">${escHtml(p.formatted ?? fmt$(p.final))}</span>`
-  const btn = tmpl(`<button class="deal-open" title="Open store page">↗</button>`)
-  btn.addEventListener('click', e => { e.stopPropagation(); openWishlistItem(w) })
+  const btn = tmpl(`<button class="deal-open" title="${w.cheapest ? 'Open cheapest offer' : 'Open store page'}">↗</button>`)
+  btn.addEventListener('click', e => { e.stopPropagation(); openBrowser(bestUrl(w)) })
   row.appendChild(btn)
-  row.addEventListener('click', () => openBrowser(w.url))
+  row.addEventListener('click', () => openBrowser(bestUrl(w)))
   return row
 }
-
-const openWishlistItem = w => w.store === 'steam' ? openSteam(w.appId) : openBrowser(w.url)
 
 function makeWishlistRow (w) {
   const p      = w.priceInfo
@@ -203,7 +206,8 @@ function makeWishlistRow (w) {
   thumb.className = 'wishlist-thumb'
   thumb.src   = w.image ?? ''
   thumb.alt   = ''
-  thumb.addEventListener('error', () => { thumb.style.visibility = 'hidden' })
+  thumb.dataset.fb = ''
+  thumb.style.visibility = w.image ? '' : 'hidden'
 
   const info  = document.createElement('div')
   info.style.cssText = 'min-width:0;flex:1'
@@ -212,23 +216,24 @@ function makeWishlistRow (w) {
         ? `<span style="color:var(--amber)">-${p.discount}% · ${escHtml(p.formatted)}</span>`
         : `<span style="color:var(--text2)">${escHtml(p.formatted)}</span>`)
     : ''
-  info.innerHTML = `<div class="wishlist-name" title="${escHtml(w.name)}">${storeTag(w.store)}${escHtml(w.name)}</div><div class="wishlist-sub">${priceStr}</div>`
+  const cheap = w.cheapest ? ` <span class="cheapest-tag">↘ cheaper at ${escHtml(w.cheapest.store)}: ${fmt$(w.cheapest.price)}</span>` : ''
+  info.innerHTML = `<div class="wishlist-name" title="${escHtml(w.name)}">${storeTag(w.store)}${escHtml(w.name)}</div><div class="wishlist-sub">${priceStr}${cheap}</div>`
 
   row.append(thumb, info, makeIconBtns(w))
-  row.addEventListener('click', () => w.store === 'steam' ? selectWishlistGame(w) : openBrowser(w.url))
+  row.addEventListener('click', () => w.store === 'steam' ? selectWishlistGame(w) : openBrowser(bestUrl(w)))
   return row
 }
 
 function makeIconBtns (w) {
   const wrap     = document.createElement('div')
   wrap.className = 'wishlist-actions'
-  if (w.store === 'steam') {
-    const steamBtn = tmpl(`<button class="icon-btn steam-icon-btn" title="Open in Steam client">S</button>`)
-    steamBtn.addEventListener('click', e => { e.stopPropagation(); openSteam(w.appId) })
-    wrap.append(steamBtn)
+  if (APP_LABEL[w.store] && state.launchers[w.store]) {
+    const appBtn = tmpl(`<button class="icon-btn steam-icon-btn" title="Open in the ${APP_LABEL[w.store]}">${w.store[0].toUpperCase()}</button>`)
+    appBtn.addEventListener('click', e => { e.stopPropagation(); window.api.openInApp(w.store, w.url, w.id) })
+    wrap.append(appBtn)
   }
-  const webBtn = tmpl(`<button class="icon-btn" title="Open in browser">↗</button>`)
-  webBtn.addEventListener('click', e => { e.stopPropagation(); openBrowser(w.url) })
+  const webBtn = tmpl(`<button class="icon-btn" title="${w.cheapest ? `Open cheapest offer (${escHtml(w.cheapest.store)})` : 'Open in browser'}">${w.cheapest ? '↘' : '↗'}</button>`)
+  webBtn.addEventListener('click', e => { e.stopPropagation(); openBrowser(bestUrl(w)) })
   wrap.append(webBtn)
   return wrap
 }
@@ -338,7 +343,7 @@ function makeFreeCard (g, tagClass, tagText) {
   card.innerHTML = `
     <div class="game-thumb">
       ${g.image
-        ? `<img src="${escHtml(g.image)}" alt="" onerror="this.style.display='none'">`
+        ? `<img src="${escHtml(g.image)}" alt="" data-fb="${srcIcon(g.source)}">`
         : `<span class="fallback">${srcIcon(g.source)}</span>`}
       <span class="src-badge ${srcClass}">${escHtml(g.source ?? 'other').toUpperCase()}</span>
     </div>
@@ -349,11 +354,16 @@ function makeFreeCard (g, tagClass, tagText) {
         ${g.endDate ? `<span class="time-left">${timeLeft(g.endDate)}</span>` : ''}
       </div>
     </div>`
-  card.appendChild(makeCardActions(g.appId ?? null, g.url, g.source))
+  card.appendChild(makeCardActions(g.source, g.url, g.appId))
   return card
 }
 
 // ─── Deals page ───────────────────────────────────────────────────────────────
+
+const ITAD_HELP = `<div>To get a key: <ol>
+  <li>Open <a data-href="https://isthereanydeal.com/apps/my/">isthereanydeal.com/apps/my</a> and register an app.</li>
+  <li>Pick <strong>“This app will NOT store OAuth secret securely”</strong>.</li>
+  <li>Copy the key under <strong>API Keys</strong> (not Client ID / Secret) and paste it in Settings.</li></ol></div>`
 
 function renderDeals () {
   const list    = document.getElementById('list-deals')
@@ -365,10 +375,11 @@ function renderDeals () {
   if (tsEl) tsEl.textContent = fmtChecked(state.lastChecked)
 
   // Say why, instead of an unexplained empty list (e.g. ITAD rejecting the key)
-  const note = state.dealsError ?? (state.dealsSource ? `Source: ${state.dealsSource}` : '')
   notice.classList.toggle('err', !!state.dealsError)
-  notice.style.display = note ? 'flex' : 'none'
-  notice.textContent = state.dealsError ? `${state.dealsError}${state.dealsSource ? ` Showing ${state.dealsSource} instead.` : ''}` : note
+  notice.style.display = state.dealsError || state.dealsSource ? 'flex' : 'none'
+  notice.innerHTML = state.dealsError
+    ? `<div>${escHtml(state.dealsError)}${state.dealsSource ? ` Showing ${escHtml(state.dealsSource)} instead.` : ''}</div>${ITAD_HELP}`
+    : `Source: ${escHtml(state.dealsSource)}`
 
   emptyEl.style.display = state.deals.length ? 'none' : 'flex'
   state.deals.forEach(d => list.appendChild(makeDealRow(d)))
@@ -421,7 +432,7 @@ function makeSaleCard (d) {
   card.className = 'game-card'
   card.innerHTML = `
     <div class="game-thumb">
-      ${d.image ? `<img src="${escHtml(d.image)}" alt="" onerror="this.style.display='none'">` : `<span class="fallback">${srcIcon(src)}</span>`}
+      ${d.image ? `<img src="${escHtml(d.image)}" alt="" data-fb="${srcIcon(src)}">` : `<span class="fallback">${srcIcon(src)}</span>`}
       <span class="src-badge ${src}">${escHtml(d.shop)}</span>
     </div>
     <div class="game-info">
@@ -432,11 +443,20 @@ function makeSaleCard (d) {
         <span class="price-now">${fmt$(d.price)}</span>
       </div>
     </div>`
-  card.appendChild(makeCardActions(d.appId ?? null, d.url, src === 'steam' ? 'steam' : src))
+  card.appendChild(makeCardActions(src, d.url, d.appId ?? d.id))
   return card
 }
 
 // ─── Sales calendar ───────────────────────────────────────────────────────────
+
+const saleKey = s => ['lunar', 'spring', 'summer', 'halloween', 'autumn', 'winter'].find(k => s.name.toLowerCase().includes(k))
+
+// Live sale → its real banner page; otherwise Steam's Specials. Opens the Steam app if installed.
+function openSale (s) {
+  const live = state.liveSale
+  const url = live && live.key === saleKey(s) && live.url ? live.url : 'https://store.steampowered.com/specials'
+  window.api.openInApp('steam', url)
+}
 
 function renderSalesCalendar () {
   const banner   = document.getElementById('next-sale-banner')
@@ -447,6 +467,8 @@ function renderSalesCalendar () {
   const next = SALES.find(s => new Date(s.start) > now)
   if (next) {
     const days = Math.ceil((new Date(next.start) - now) / 86400000)
+    banner.style.cursor = 'pointer'
+    banner.onclick = () => openSale(next)
     banner.innerHTML = `
       <div class="nsb-icon">${next.icon}</div>
       <div class="nsb-info">
@@ -469,7 +491,9 @@ function renderSalesCalendar () {
     const isLive = start <= now && end >= now
     const isNext = s === next
     const item   = document.createElement('div')
-    item.className = 'timeline-item' + (isPast ? ' past' : '') + (isNext ? ' next' : '')
+    item.className = 'timeline-item clickable' + (isPast ? ' past' : '') + (isNext ? ' next' : '')
+    item.title = 'Open on Steam'
+    item.addEventListener('click', () => openSale(s))
     item.innerHTML = `
       <div class="tl-dot"></div>
       <span class="tl-name">
@@ -484,19 +508,117 @@ function renderSalesCalendar () {
 
 // ─── Settings page ────────────────────────────────────────────────────────────
 
-function renderSettings () {
-  const s   = state.settings
-  const con = document.getElementById('notif-settings')
+// ─── Themes ───────────────────────────────────────────────────────────────────
+// Base themes are always available; a sale theme is only offered (and auto-applied)
+// while that Steam sale is live.
+
+const BASE_THEMES = {
+  midnight:   { name: 'Midnight',   sw: ['#0e1117', '#66c0f4'] },
+  lavender:   { name: 'Lavender',   sw: ['#13101f', '#c4a1ff', '#ff9ed2'] },
+  spooktober: { name: 'Spooktober', sw: ['#0a0a0a', '#ff7a1a'] },
+  forest:     { name: 'Forest',     sw: ['#0b1310', '#5fd38d'] },
+  graphite:   { name: 'Graphite',   sw: ['#0f1011', '#e6e8eb'] },
+  daylight:   { name: 'Daylight',   sw: ['#f2f4f8', '#1f73d1'] },
+}
+const SALE_THEMES = {
+  lunar:     { name: 'Lunar New Year', sw: ['#1a0808', '#f7c948'], fx: ['🏮', '🧧', '✨'] },
+  spring:    { name: 'Spring Sale',    sw: ['#190f16', '#ff9ec7'], fx: ['🌸', '🌷'] },
+  summer:    { name: 'Summer Sale',    sw: ['#06161b', '#ffc83d'], fx: ['○', '◌', '☀'], rise: true },
+  halloween: { name: 'Halloween Sale', sw: ['#0c0812', '#ff8a1f'], fx: ['🦇', '🎃', '👻'] },
+  autumn:    { name: 'Autumn Sale',    sw: ['#150f0a', '#e8843a'], fx: ['🍂', '🍁', '🍃'] },
+  winter:    { name: 'Winter Sale',    sw: ['#08121c', '#9bd7ff'], fx: ['❄', '❅', '❆'] },
+}
+
+function applyTheme () {
+  const s = state.settings
+  const root = document.documentElement
+  root.dataset.theme = s.theme
+  root.dataset.round = s.rounded ? 'on' : 'off'
+  const fxKey = s.theme + s.effects
+  if (fxKey !== applyTheme.fxKey) { applyTheme.fxKey = fxKey; startFx(SALE_THEMES[s.theme]) }
+}
+
+// A sale starting switches to its theme once. If the user picks something else, lastSaleTheme
+// stays set, so a restart doesn't switch back. When the sale ends its theme is dropped.
+function syncSaleTheme () {
+  const s = state.settings
+  const key = state.liveSale?.key ?? ''
+  let dirty = false
+  if (key && SALE_THEMES[key]) {
+    if (s.lastSaleTheme !== key) { s.lastSaleTheme = key; s.theme = key; dirty = true }
+  } else {
+    if (SALE_THEMES[s.theme]) { s.theme = BASE_THEMES[s.baseTheme] ? s.baseTheme : 'midnight'; dirty = true }
+    if (s.lastSaleTheme) { s.lastSaleTheme = ''; dirty = true }
+  }
+  if (dirty) window.api.saveSettings(s)
+  applyTheme()
+}
+
+// Falling-glyph effect on a click-through canvas; off for reduced-motion or when disabled
+let fxFrame = 0
+function startFx (cfg) {
+  cancelAnimationFrame(fxFrame)
+  const cv = document.getElementById('fx')
+  const ctx = cv.getContext('2d')
+  const dpr = window.devicePixelRatio || 1
+  cv.width = innerWidth * dpr; cv.height = innerHeight * dpr
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  ctx.clearRect(0, 0, innerWidth, innerHeight)
+  if (!cfg || !state.settings.effects || matchMedia('(prefers-reduced-motion: reduce)').matches) return
+
+  const dir = cfg.rise ? -1 : 1
+  const parts = Array.from({ length: 34 }, () => ({
+    x: Math.random() * innerWidth, y: Math.random() * innerHeight,
+    g: cfg.fx[Math.floor(Math.random() * cfg.fx.length)],
+    size: 12 + Math.random() * 14, v: 0.25 + Math.random() * 0.7,
+    ph: Math.random() * 6.28, sway: 0.2 + Math.random() * 0.6, rot: (Math.random() - .5) * 0.02, a: 0,
+  }))
+  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--acc')
+  const tick = () => {
+    ctx.clearRect(0, 0, innerWidth, innerHeight)
+    for (const p of parts) {
+      p.y += p.v * dir; p.ph += 0.015; p.a += p.rot
+      p.x += Math.sin(p.ph) * p.sway
+      if (dir > 0 && p.y > innerHeight + 30) { p.y = -30; p.x = Math.random() * innerWidth }
+      if (dir < 0 && p.y < -30) { p.y = innerHeight + 30; p.x = Math.random() * innerWidth }
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.a)
+      ctx.globalAlpha = 0.7; ctx.font = `${p.size}px sans-serif`; ctx.fillText(p.g, 0, 0)
+      ctx.restore()
+    }
+    fxFrame = requestAnimationFrame(tick)
+  }
+  tick()
+}
+addEventListener('resize', () => startFx(SALE_THEMES[state.settings.theme]))
+
+function swatch (cols) { return `<span class="swatch">${cols.map(c => `<i style="background:${c}"></i>`).join('')}</span>` }
+
+function renderThemeGrid () {
+  const s = state.settings
+  const grid = document.getElementById('theme-grid')
+  grid.innerHTML = ''
+  const entries = Object.entries(BASE_THEMES).map(([k, v]) => [k, v, false])
+  const live = state.liveSale?.key
+  if (live && SALE_THEMES[live]) entries.push([live, SALE_THEMES[live], true])
+  entries.forEach(([key, th, isSale]) => {
+    const b = document.createElement('button')
+    b.className = 'theme-chip' + (s.theme === key ? ' active' : '') + (isSale ? ' sale' : '')
+    b.innerHTML = `${swatch(th.sw)}${th.name}${isSale ? ' · live' : ''}`
+    b.addEventListener('click', () => {
+      s.theme = key
+      if (!isSale) s.baseTheme = key
+      window.api.saveSettings(s)
+      applyTheme(); renderThemeGrid()
+    })
+    grid.appendChild(b)
+  })
+}
+
+// ─── Settings page ────────────────────────────────────────────────────────────
+
+function toggleRows (con, rows, after) {
+  const s = state.settings
   con.innerHTML = ''
-
-  const rows = [
-    { key: 'notifyMajorSale',    label: 'Steam major sale started',   sub: 'Summer, Winter, Autumn & Spring sales' },
-    { key: 'notifyFreeGame',     label: 'Free game available',         sub: 'Epic, Steam, GOG & GamerPower giveaways' },
-    { key: 'notifyFreeWeekend',  label: 'Free weekend started',        sub: 'Temporary Steam free-to-play promotions' },
-    { key: 'notifyWishlistSale', label: 'Wishlist game on sale',       sub: 'Steam, GOG & Epic wishlists, drops of ≥20%' },
-    { key: 'notifyBigDeal',      label: 'Deal over 75% off',           sub: 'Hot deals list (CheapShark, or ITAD with a key)' },
-  ]
-
   rows.forEach(r => {
     const row = document.createElement('div')
     row.className = 'setting-row'
@@ -511,9 +633,27 @@ function renderSettings () {
       btn.classList.toggle('on')
       s[r.key] = btn.classList.contains('on')
       window.api.saveSettings(s)
+      after?.()
     })
     con.appendChild(row)
   })
+}
+
+function renderSettings () {
+  const s = state.settings
+  renderThemeGrid()
+  toggleRows(document.getElementById('look-settings'), [
+    { key: 'rounded', label: 'Rounded corners',  sub: 'Softer, rounder cards and buttons' },
+    { key: 'effects', label: 'Seasonal effects', sub: 'Falling leaves, snow & more during Steam sale themes' },
+  ], applyTheme)
+
+  toggleRows(document.getElementById('notif-settings'), [
+    { key: 'notifyMajorSale',    label: 'Steam major sale started',   sub: 'Summer, Winter, Autumn & Spring sales' },
+    { key: 'notifyFreeGame',     label: 'Free game available',         sub: 'Epic, Steam, GOG & GamerPower giveaways' },
+    { key: 'notifyFreeWeekend',  label: 'Free weekend started',        sub: 'Temporary Steam free-to-play promotions' },
+    { key: 'notifyWishlistSale', label: 'Wishlist game on sale',       sub: 'Steam, GOG & Epic wishlists, drops of ≥20%' },
+    { key: 'notifyBigDeal',      label: 'Deal over 75% off',           sub: 'Hot deals list (CheapShark, or ITAD with a key)' },
+  ])
 
   const ig = document.getElementById('interval-group')
   ig.innerHTML = ''
@@ -613,6 +753,8 @@ function applyData (data) {
   state.dealsSource  = data.dealsSource  ?? ''
   state.dealsError   = data.dealsError   ?? null
   state.sales        = { steam: [], gog: [], epic: [], ...(data.sales ?? {}) }
+  state.liveSale     = data.liveSale ?? null
+  syncSaleTheme()
   state.wishlist     = data.wishlist ?? []
   state.wishlistErrors  = data.wishlistErrors ?? {}
   state.wishlistPrivate = !!data.wishlistPrivate
@@ -678,13 +820,18 @@ async function init () {
     if (refreshed) setAccounts(await window.api.getAccounts())
   })
 
-  // ── Hint links ────────────────────────────────────────────────────────────
-  document.querySelectorAll('.hint a[data-href]').forEach(a =>
-    a.addEventListener('click', e => { e.preventDefault(); window.api.openUrl(a.dataset.href) })
-  )
+  // ── Links (only hard-coded official URLs carry data-href) ───────────────
+  document.addEventListener('click', e => {
+    const a = e.target.closest('a[data-href]')
+    if (a) { e.preventDefault(); window.api.openUrl(a.dataset.href) }
+  })
+  document.getElementById('btn-github')?.addEventListener('click', () => openBrowser(REPO))
+  document.getElementById('btn-feedback')?.addEventListener('click', () => openBrowser(REPO + '/issues'))
 
   // ── Load initial state ────────────────────────────────────────────────────
   Object.assign(state.settings, await window.api.getSettings())
+  applyTheme()
+  state.launchers = await window.api.launchers().catch(() => state.launchers)
   setAccounts(await window.api.getAccounts())
 
   // Listen for background push updates from main process

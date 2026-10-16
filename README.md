@@ -14,7 +14,10 @@ No accounts. No telemetry. No secrets. Runs in your system tray.
 - **Store sales** — current discounts from **Steam, GOG and Epic Games**, browsable per store
 - **Wishlists from Steam, GOG and Epic** — sign in once, get notified when a wishlist game drops ≥20%
 - **Hot deals** — top discounts across 30+ stores. Works out of the box (CheapShark); add a free IsThereAnyDeal key to switch to ITAD. If a key is rejected the app tells you why
-- **Sales calendar** — Steam seasonal sales with countdown
+- **Wishlist links go to the cheapest store** — like deals.gg, a wishlist game that is cheaper elsewhere shows the best offer and opens it
+- **Themes** — 6 built-in themes (Midnight, Lavender, Spooktober, Forest, Graphite, Daylight), optional rounded corners, plus a **seasonal theme with falling leaves / snow / petals / lanterns that unlocks and switches on automatically while each Steam sale is live** (your own pick is remembered)
+- **Open in your launcher** — Steam / Epic Games Launcher / GOG Galaxy buttons appear when that app is installed
+- **Sales calendar** — Steam seasonal sales with countdown; click one to open it in Steam
 - **System tray** — minimizes to tray, polls in the background on your chosen interval
 - Native Rust backend (Tauri) — small AppImage, low memory
 
@@ -84,7 +87,9 @@ Both are free and optional — everything works without them.
 | Key | Where | Unlocks |
 |---|---|---|
 | Steam Web API key | [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey) | Profile name & avatar in sidebar |
-| IsThereAnyDeal key | [isthereanydeal.com/apps/](https://isthereanydeal.com/apps/) | Hot Deals from ITAD instead of CheapShark |
+| IsThereAnyDeal key | [isthereanydeal.com/apps/my](https://isthereanydeal.com/apps/my) | Hot Deals from ITAD instead of CheapShark |
+
+**Getting the ITAD key:** register an app there, choose **“This app will NOT store OAuth secret securely”**, and copy the key listed under **API Keys** (not the Client ID / Secret). Always use the official link above.
 
 ---
 
