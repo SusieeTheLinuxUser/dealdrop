@@ -10,7 +10,7 @@ use std::time::Duration;
 
 pub type R<T> = Result<T, String>;
 
-const UA: &str = "DealDrop/0.7.3 (+https://github.com/SusieeTheLinuxUser/dealdrop)";
+const UA: &str = "DealDrop/0.7.4 (+https://github.com/SusieeTheLinuxUser/dealdrop)";
 const UA_BROWSER: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
 
 // ─── Shapes sent to the UI (camelCase = what renderer/app.js reads) ───────────
@@ -495,11 +495,13 @@ pub async fn gog_sales() -> R<Vec<Deal>> {
 /// as such so the UI can say so instead of showing an empty list.
 pub async fn itad_deals(key: &str) -> R<Vec<Deal>> {
     // `sort=-cut` is the website's syntax; if ITAD ever rejects it, retry unsorted and sort here.
-    let base = format!("https://api.isthereanydeal.com/deals/v2?key={}&country=US&limit=100", urlenc(key));
-    let mut res = client().get(format!("{base}&sort=-cut")).send().await.map_err(|e| e.to_string())?;
+    // The key goes in a header, not the URL, so it can never leak through logs or error messages.
+    let base = "https://api.isthereanydeal.com/deals/v2?country=US&limit=100";
+    let req = |url: String| client().get(url).header("ITAD-API-Key", key).send();
+    let mut res = req(format!("{base}&sort=-cut")).await.map_err(|e| e.without_url().to_string())?;
     let mut sorted = true;
     if res.status().as_u16() == 400 {
-        res = client().get(&base).send().await.map_err(|e| e.to_string())?;
+        res = req(base.to_string()).await.map_err(|e| e.without_url().to_string())?;
         sorted = false;
     }
     let status = res.status().as_u16();

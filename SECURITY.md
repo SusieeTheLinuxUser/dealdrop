@@ -8,6 +8,7 @@ All user-provided keys (Steam Web API key, IsThereAnyDeal API key) and the GOG /
 - Entered by the user at runtime through the Settings UI
 - Stored locally in the OS config directory (file mode `0600`)
 - Never committed to or read from the project folder
+- Stored as plain JSON (not in the OS keyring): anyone who can read your user files can read them. The file is created `0600` on Linux/macOS and lives in your user profile on Windows. Keys are sent in request headers, never in URLs, so they can't leak through error messages.
 
 **Storage locations (OS user data dir, never the repo):**
 | Platform | Path |
@@ -23,11 +24,15 @@ All user-provided keys (Steam Web API key, IsThereAnyDeal API key) and the GOG /
 
 ## API calls
 
-All API calls are made by the **Rust backend**, never the webview. The UI talks to it through a fixed set of Tauri commands, and `open_url` only accepts `http`, `https` and `steam` links.
+All API calls are made by the **Rust backend**, never the webview. The UI talks to it through a fixed set of Tauri commands, and `open_url` / `open_in_app` only accept plain `https` links with a real hostname (no credentials, IPs, `localhost` or other schemes) and open them in your default browser. Launcher deep links (`steam://`, `goggalaxy://`, …) are built only from the store's own domain and plain slugs/numeric ids.
 
 ## Content Security Policy
 
-Set in `src-tauri/tauri.conf.json`: scripts only from the app itself (no inline scripts, no `eval`), network access only through the Tauri IPC bridge, images from `https:` and fonts from Google Fonts.
+Set in `src-tauri/tauri.conf.json`: scripts only from the app itself (no inline scripts, no `eval`), network access only through the Tauri IPC bridge, images from `https:` and fonts from Google Fonts (so Google sees a font request when the app starts). The main window can't navigate away from the bundled UI, only it has access to the Tauri API, and the sign-in windows are limited to `https`.
+
+## Releases & dependencies
+
+The release workflow pins every GitHub Action to a commit SHA. `cargo audit` reports no known vulnerabilities (two transitive "unmaintained/unsound" notices from Tauri's Linux GTK stack). Windows and macOS builds are unsigned.
 
 ## Reporting a vulnerability
 

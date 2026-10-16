@@ -86,17 +86,26 @@ fn numeric(id: Option<&str>) -> Option<&str> {
     id.map(|i| i.trim_start_matches("gog-")).filter(|i| !i.is_empty() && i.bytes().all(|b| b.is_ascii_digit()))
 }
 
+/// A plain URL slug (letters, digits, `-`, `_`) or nothing.
+fn slug(s: &str) -> Option<&str> {
+    Some(s.trim_end_matches('/')).filter(|s| !s.is_empty() && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_'))
+}
+
 /// Deep link for one launcher, if we have the data it needs.
 pub fn link(store: &str, key: &str, url: &Url, id: Option<&str>) -> Option<String> {
+    // The URL comes from remote data: only act on the store's own domain and plain slugs.
+    let domain = match store { "steam" => "steampowered.com", "epic" => "epicgames.com", "gog" => "gog.com", _ => return None };
+    let host = url.host_str()?;
+    if host != domain && !host.ends_with(&format!(".{domain}")) { return None; }
     match (store, key) {
         ("steam", _) => Some(match url.path().split_once("/app/").and_then(|(_, r)| r.split('/').next()).filter(|a| a.bytes().all(|b| b.is_ascii_digit())) {
             Some(app) => format!("steam://store/{app}"),
             None => format!("steam://openurl/{url}"),
         }),
-        ("epic", _) => url.path().split_once("/p/").map(|(_, slug)| format!("com.epicgames.launcher://store/p/{}", slug.trim_end_matches('/'))),
+        ("epic", _) => url.path().split_once("/p/").and_then(|(_, s)| slug(s)).map(|s| format!("com.epicgames.launcher://store/p/{s}")),
         ("gog", "native") => numeric(id).map(|i| format!("goggalaxy://openGameView/{i}")),
         ("gog", "heroic") => numeric(id).map(|i| format!("heroic://launch/gog/{i}")),
-        ("gog", "lutris") => url.path().split_once("/game/").map(|(_, slug)| format!("lutris:{}", slug.trim_end_matches('/').replace('_', "-"))),
+        ("gog", "lutris") => url.path().split_once("/game/").and_then(|(_, s)| slug(s)).map(|s| format!("lutris:{}", s.replace('_', "-"))),
         _ => None,
     }
 }
@@ -118,5 +127,10 @@ mod tests {
         assert_eq!(link("steam", "native", &steam, None).unwrap(), "steam://store/60");
         let sale = Url::parse("https://store.steampowered.com/specials").unwrap();
         assert_eq!(link("steam", "native", &sale, None).unwrap(), "steam://openurl/https://store.steampowered.com/specials");
+        // remote data can't aim a launcher at another site or smuggle odd characters into a slug
+        let evil = Url::parse("https://evil.example/app/60/").unwrap();
+        assert!(link("steam", "native", &evil, None).is_none());
+        let odd = Url::parse("https://www.gog.com/en/game/a%20b;c").unwrap();
+        assert!(link("gog", "lutris", &odd, None).is_none());
     }
 }

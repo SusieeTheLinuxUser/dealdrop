@@ -435,7 +435,7 @@ function makeSaleCard (d) {
   card.innerHTML = `
     <div class="game-thumb">
       ${d.image ? `<img src="${escHtml(d.image)}" alt="" data-fb="${srcIcon(src)}">` : `<span class="fallback">${srcIcon(src)}</span>`}
-      <span class="src-badge ${src}">${escHtml(d.shop)}</span>
+      <span class="src-badge ${escHtml(src)}">${escHtml(d.shop)}</span>
     </div>
     <div class="game-info">
       <div class="game-title" title="${escHtml(d.title)}">${escHtml(d.title)}</div>

@@ -59,6 +59,7 @@ Platform code: launcher detection (`has_scheme` in `launchers.rs`) is per-OS via
 - **The main webview is locked to the bundled UI** (`on_navigation` in `main.rs`) and only the `main` window has IPC permissions (`capabilities/default.json`); the Steam/GOG/Epic sign-in windows load the stores' own pages with no access to Tauri APIs.
 - **Security-sensitive destinations** (API-key, sign-in and account pages) use only the service's canonical official domain, hard-coded in the source. Never build such a URL from remotely fetched content, and never put it in a plain-text message that could be mistyped (typosquatted sites have served malware this way).
 - No secrets in the repo. API keys / tokens are user-supplied and live only in the user's config file.
+- **Secrets never go in URLs.** Send API keys in headers (`ITAD-API-Key`), and strip URLs from `reqwest` errors that could carry one (`e.without_url()`). Deep links (`launchers::link`) only accept the store's own domain and plain slugs. Escape every remote string put into `innerHTML` (including attribute values).
 - No telemetry. All external calls go through `sources.rs` / `stores.rs`; the webview never calls external APIs.
 - JSON sent to the UI is camelCase (`#[serde(rename_all = "camelCase")]`); keep it in sync with `renderer/app.js`.
 - Config keys in `Db` deliberately match the old Electron `electron-store` names so upgrades keep settings.

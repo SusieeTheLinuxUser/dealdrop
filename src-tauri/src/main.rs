@@ -107,9 +107,12 @@ impl AppState {
         if let Some(dir) = self.path.parent() { let _ = std::fs::create_dir_all(dir); }
         if let Ok(text) = serde_json::to_string_pretty(&*db) {
             let tmp = self.path.with_extension("tmp");
-            if std::fs::write(&tmp, text).is_ok() {
-                #[cfg(unix)]
-                { use std::os::unix::fs::PermissionsExt; let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600)); }
+            // Created 0600 from the start (never briefly world-readable), then swapped in atomically.
+            let mut o = std::fs::OpenOptions::new();
+            o.write(true).create(true).truncate(true);
+            #[cfg(unix)]
+            { use std::os::unix::fs::OpenOptionsExt; o.mode(0o600); }
+            if o.open(&tmp).and_then(|mut f| std::io::Write::write_all(&mut f, text.as_bytes())).is_ok() {
                 let _ = std::fs::rename(&tmp, &self.path);
             }
         }

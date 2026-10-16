@@ -48,7 +48,7 @@ pub async fn sign_in_window(
                 let _ = tx_nav.send(Some(u.clone()));
                 false
             } else {
-                true
+                u.scheme() == "https" // sign-in pages never need anything else
             }
         });
     if let Some(js) = init_script {
@@ -91,6 +91,7 @@ pub async fn steam_login(app: &AppHandle) -> R<String> {
         return Err("Steam did not confirm the sign-in".into());
     }
     let claimed = cb.query_pairs().find(|(k, _)| k == "openid.claimed_id").map(|(_, v)| v.to_string()).unwrap_or_default();
+    if !claimed.starts_with("https://steamcommunity.com/openid/id/") { return Err("Steam callback had an unexpected identity".into()); }
     claimed.rsplit('/').next().filter(|id| id.len() >= 17 && id.chars().all(|c| c.is_ascii_digit()))
         .map(str::to_string).ok_or_else(|| "Steam callback missing claimed_id".into())
 }
@@ -209,7 +210,7 @@ const EPIC_UA_BROWSER: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/2
 // sign_in_window intercepts.
 const EPIC_JS: &str = r#"
 document.addEventListener('DOMContentLoaded', () => {
-  if (location.pathname !== '/id/api/redirect') return
+  if (location.hostname !== 'www.epicgames.com' || location.pathname !== '/id/api/redirect') return
   try {
     const code = JSON.parse(document.body.innerText).authorizationCode
     if (code) location.href = 'https://dealdrop.invalid/epic?code=' + encodeURIComponent(code)
