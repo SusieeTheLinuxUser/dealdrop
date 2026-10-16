@@ -7,9 +7,11 @@ It polls store APIs, shows free games / store sales / hot deals / wishlists, and
 
 | Path | What |
 |---|---|
-| `src-tauri/src/main.rs` | App state, persistence (`~/.config/dealdrop/config.json`), poll loop, notifications, tray, Tauri commands |
+| `src-tauri/src/main.rs` | App state, persistence (`config.json` in the OS config dir: `~/.config/dealdrop` / `%APPDATA%\dealdrop` / `~/Library/Application Support/dealdrop`), poll loop, notifications, tray, Tauri commands |
 | `src-tauri/src/sources.rs` | Every no-account HTTP source (Steam, GOG, Epic free, GamerPower, ITAD, CheapShark) + live smoke tests |
 | `src-tauri/src/stores.rs` | Sign-in window + Steam/GOG/Epic auth, GOG & Epic wishlists, Epic sales |
+| `src-tauri/src/launchers.rs` | Open-in-launcher table, per-OS install detection, deep links |
+| `.github/workflows/release.yml` | Tag `v*` → builds AppImage + .msi + .dmg and publishes the release |
 | `renderer/api.js` | `window.api` → Tauri `invoke` bridge (the only place the UI touches the backend) |
 | `renderer/app.js` | All UI rendering. `renderer/index.html`, `renderer/style.css` |
 
@@ -62,8 +64,10 @@ Platform code: launcher detection (`has_scheme` in `launchers.rs`) is per-OS via
 - Each source returns `Result`; the poll keeps the last good data when one fails and surfaces errors in the UI where it matters (hot deals, wishlists).
 - When an upstream API changes, fix it and extend the matching `#[ignore]` live test in `sources.rs`.
 - Wishlist items get `cheapest` from CheapShark (`attach_cheapest`) when another store is strictly cheaper; the UI opens that link first.
-- Version lives in two places: `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json`.
+- Version lives in three places: `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json` and the User-Agent in `sources.rs`.
 
 ## Known unverified paths
 
-GOG and Epic **wishlist** sign-in can't be tested without real accounts. They follow the launchers' public OAuth flow; if one breaks, the UI shows the error above the wishlist.
+- Windows and macOS builds are CI-built only (not yet run by the maintainer on those OSes); their `has_scheme` detection and the unsigned-install flow are untested.
+- GOG/Epic wishlist sign-in works for the maintainer's accounts but follows the launchers' unofficial OAuth flows; if one breaks, the UI shows the error above the wishlist.
+- ITAD key validation, the Epic launcher deep link on Linux, and sale themes during a live sale have not been seen end to end.
