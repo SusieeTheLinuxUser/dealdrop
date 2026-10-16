@@ -14,8 +14,8 @@
 }
 
 html,body{height:100%;color:var(--text0);font-family:var(--sans);font-size:14px;overflow:hidden}
-html{background:transparent}
-body{background:var(--bg0)}
+html,body{background:transparent} /* window is transparent; #app paints the colour so its corners can be rounded */
+#app{height:100%;background:var(--bg0);overflow:hidden}
 
 /* ── titlebar ── */
 .titlebar{height:38px;background:var(--bg1);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 12px 0 16px;-webkit-app-region:drag;flex-shrink:0}
@@ -210,7 +210,7 @@ body{background:var(--bg0)}
 .itad-notice.err{border-color:rgba(244,96,96,.4);color:var(--red)}
 
 /* ── rounded window option (the window is transparent; the body draws the shape) ── */
-html[data-round="on"] body{border-radius:14px}
+html[data-round="on"] #app,html[data-round="on"] #fx{border-radius:14px}
 
 /* ── titlebar extras ── */
 .tb-left{display:flex;align-items:center;gap:6px;pointer-events:auto}
