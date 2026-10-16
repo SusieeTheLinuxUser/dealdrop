@@ -86,6 +86,8 @@ struct Snapshot {
     wishlist: Vec<WishItem>,
     wishlist_private: bool,
     wishlist_errors: HashMap<String, String>,
+    /// Sources that failed this round ("Epic sales: HTTP 500"); the sidebar shows them in a red box.
+    source_errors: Vec<String>,
     last_checked: u64,
 }
 
@@ -155,6 +157,11 @@ async fn poll(app: &AppHandle) -> Snapshot {
     snap
 }
 
+/// "Epic sales: <reason>": not shown, only copied by the sidebar's "Copy error" button.
+fn failure(name: &str, err: &str) -> String {
+    format!("{name}: {}", err.chars().take(400).collect::<String>())
+}
+
 /// Fetch one wishlist store; on failure keep the last good items for that store.
 fn keep_or_fail(res: R<Vec<WishItem>>, store: &str, prev: &Snapshot, errors: &mut HashMap<String, String>) -> Vec<WishItem> {
     match res {
@@ -173,6 +180,8 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
     });
     let prev = st.snapshot.lock().unwrap().clone().unwrap_or_default();
 
+    let source_errors = Mutex::new(Vec::<String>::new());
+
     // 1. Steam major sale (always checked: it also drives the sale themes)
     let live_sale = match detect_steam_sale().await {
         Ok((on, live)) => {
@@ -187,21 +196,21 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
             }
             live
         }
-        Err(e) => { eprintln!("[sale-detect] {e}"); prev.live_sale.clone() }
+        Err(e) => { eprintln!("[sale-detect] {e}"); source_errors.lock().unwrap().push(failure("Steam sale detection", &e)); prev.live_sale.clone() }
     };
 
     // 2. Everything that needs no account, in parallel
-    let log = |name: &str, r: R<Vec<Free>>| r.unwrap_or_else(|e| { eprintln!("[{name}] {e}"); vec![] });
+    let log = |name: &str, r: R<Vec<Free>>| r.unwrap_or_else(|e| { eprintln!("[{name}] {e}"); source_errors.lock().unwrap().push(failure(name, &e)); vec![] });
     let (ef, sf, sw, gp, ss, gs, es, hot) = tokio::join!(
         epic_free(), steam_free_featured(), steam_free_weekends(), gamerpower(),
         steam_sales(), gog_sales(), stores::epic_sales(), hot_deals(),
     );
-    let (ef, sf, sw, gp) = (log("epic", ef), log("steam-featured", sf), log("steam-weekends", sw), log("gamerpower", gp));
-    let deals_of = |name: &str, r: R<Vec<Deal>>, old: &Vec<Deal>| r.unwrap_or_else(|e| { eprintln!("[{name}] {e}"); old.clone() });
+    let (ef, sf, sw, gp) = (log("Epic free games", ef), log("Steam free games", sf), log("Steam free weekends", sw), log("GamerPower giveaways", gp));
+    let deals_of = |name: &str, r: R<Vec<Deal>>, old: &Vec<Deal>| r.unwrap_or_else(|e| { eprintln!("[{name}] {e}"); source_errors.lock().unwrap().push(failure(name, &e)); old.clone() });
     let sales = Sales {
-        steam: deals_of("steam-sales", ss, &prev.sales.steam),
-        gog: deals_of("gog-sales", gs, &prev.sales.gog),
-        epic: deals_of("epic-sales", es, &prev.sales.epic),
+        steam: deals_of("Steam sales", ss, &prev.sales.steam),
+        gog: deals_of("GOG sales", gs, &prev.sales.gog),
+        epic: deals_of("Epic sales", es, &prev.sales.epic),
     };
     let (deals, deals_source, deals_error) = hot;
 
@@ -243,7 +252,7 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
 
     Snapshot {
         free_games, free_weekends, sales, live_sale, deals, deals_source, deals_error,
-        wishlist, wishlist_private, wishlist_errors, last_checked: now_ms(),
+        wishlist, wishlist_private, wishlist_errors, source_errors: source_errors.into_inner().unwrap(), last_checked: now_ms(),
     }
 }
 
@@ -314,16 +323,20 @@ fn notify_big_deals(app: &AppHandle, st: &AppState, deals: &[Deal]) {
 // ─── Commands ─────────────────────────────────────────────────────────────────
 
 #[derive(Serialize)]
-struct Acct { name: String, avatar: Option<String> }
+struct Acct { name: String, avatar: Option<String>, profile_url: Option<String> }
 
 #[derive(Serialize)]
 struct Accounts { steam: Option<Acct>, gog: Option<Acct>, epic: Option<Acct> }
 
 fn accounts(st: &AppState) -> Accounts {
     st.read(|d| Accounts {
-        steam: d.steam_profile.as_ref().map(|p| Acct { name: p.name.clone(), avatar: p.avatar.clone() }),
-        gog: d.gog.as_ref().map(|t| Acct { name: t.name.clone(), avatar: t.avatar.clone() }),
-        epic: d.epic.as_ref().map(|t| Acct { name: t.name.clone(), avatar: t.avatar.clone() }),
+        steam: d.steam_profile.as_ref().map(|p| Acct { name: p.name.clone(), avatar: p.avatar.clone(),
+            profile_url: Some(format!("https://steamcommunity.com/profiles/{}", p.steam_id)) }),
+        gog: d.gog.as_ref().map(|t| Acct { name: t.name.clone(), avatar: t.avatar.clone(),
+            profile_url: url::Url::parse("https://www.gog.com/u/").and_then(|u| u.join(&t.name)).ok().map(String::from) }),
+        // Epic has no public profile page; its account page is the closest thing.
+        epic: d.epic.as_ref().map(|t| Acct { name: t.name.clone(), avatar: t.avatar.clone(),
+            profile_url: Some("https://www.epicgames.com/account/personal".into()) }),
     })
 }
 
@@ -477,7 +490,7 @@ fn main() {
             WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                 .title("DealDrop")
                 .inner_size(980.0, 660.0)
-                .min_inner_size(760.0, 540.0)
+                .min_inner_size(520.0, 380.0)
                 .decorations(false)
                 .transparent(true) // the page paints the background so the window corners can be rounded
                 .on_navigation(|u| matches!(u.scheme(), "tauri" | "about") || u.host_str() == Some("tauri.localhost"))

@@ -94,9 +94,9 @@ fn slug(s: &str) -> Option<&str> {
 /// Deep link for one launcher, if we have the data it needs.
 pub fn link(store: &str, key: &str, url: &Url, id: Option<&str>) -> Option<String> {
     // The URL comes from remote data: only act on the store's own domain and plain slugs.
-    let domain = match store { "steam" => "steampowered.com", "epic" => "epicgames.com", "gog" => "gog.com", _ => return None };
+    let domains: &[&str] = match store { "steam" => &["steampowered.com", "steamcommunity.com"], "epic" => &["epicgames.com"], "gog" => &["gog.com"], _ => return None };
     let host = url.host_str()?;
-    if host != domain && !host.ends_with(&format!(".{domain}")) { return None; }
+    if !domains.iter().any(|d| host == *d || host.ends_with(&format!(".{d}"))) { return None; }
     match (store, key) {
         ("steam", _) => Some(match url.path().split_once("/app/").and_then(|(_, r)| r.split('/').next()).filter(|a| a.bytes().all(|b| b.is_ascii_digit())) {
             Some(app) => format!("steam://store/{app}"),
@@ -127,6 +127,8 @@ mod tests {
         assert_eq!(link("steam", "native", &steam, None).unwrap(), "steam://store/60");
         let sale = Url::parse("https://store.steampowered.com/specials").unwrap();
         assert_eq!(link("steam", "native", &sale, None).unwrap(), "steam://openurl/https://store.steampowered.com/specials");
+        let profile = Url::parse("https://steamcommunity.com/profiles/76561199193167076").unwrap();
+        assert_eq!(link("steam", "native", &profile, None).unwrap(), "steam://openurl/https://steamcommunity.com/profiles/76561199193167076");
         // remote data can't aim a launcher at another site or smuggle odd characters into a slug
         let evil = Url::parse("https://evil.example/app/60/").unwrap();
         assert!(link("steam", "native", &evil, None).is_none());

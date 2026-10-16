@@ -16,6 +16,7 @@ No accounts. No telemetry. No secrets. Runs in your system tray.
 - **Hot deals** — top discounts across 30+ stores (via CheapShark, no key needed)
 - **Wishlist links go to the cheapest store** — like deals.gg, a wishlist game that is cheaper elsewhere shows the best offer and opens it
 - **Themes** — 6 built-in themes (Midnight, Lavender, Spooktober, Forest, Graphite, Daylight), optional rounded window corners, plus a **seasonal theme with falling leaves / snow / petals / lanterns that unlocks and switches on automatically while each Steam sale is live** (your own pick is remembered)
+- **Your accounts in the sidebar** — avatar (or store logo), store tag, click to open your profile; a red "Something went wrong" box with a **Copy error** button appears only when a source fails
 - **Open in your launcher** — Steam, Epic Games Launcher and GOG (GOG Galaxy / Heroic / Lutris) buttons appear when installed; pick your preferred one per store in Settings, ready for GOG's native Linux client
 - **Sales calendar** — Steam seasonal sales with countdown; click one to open it in Steam
 - **System tray** — minimizes to tray, polls in the background on your chosen interval

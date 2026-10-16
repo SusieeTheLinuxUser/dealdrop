@@ -27,10 +27,10 @@ html,body{background:transparent} /* window is transparent; #app paints the colo
 .tb-close:hover{background:#5c1a1a;color:#ffb3b3}
 
 /* ── layout ── */
-.layout{display:grid;grid-template-columns:208px 1fr;height:calc(100vh - 38px);overflow:hidden}
+.layout{display:grid;grid-template-columns:clamp(150px,26vw,208px) minmax(0,1fr);height:calc(100vh - 38px);overflow:hidden}
 
 /* ── sidebar ── */
-.sidebar{background:var(--bg1);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.sidebar{background:var(--bg1);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-x:hidden;overflow-y:auto;min-width:0}
 
 .steam-account{padding:12px 14px;border-bottom:1px solid var(--border)}
 .steam-prompt{font-size:11px;color:var(--text2);margin-bottom:8px}
@@ -45,7 +45,7 @@ html,body{background:transparent} /* window is transparent; #app paints the colo
 .steam-logout-btn{background:none;border:none;font-size:11px;color:var(--text2);cursor:pointer;padding:0;margin-top:2px}
 .steam-logout-btn:hover{color:var(--red)}
 
-.nav-items{flex:1;padding:8px 0;overflow-y:auto}
+.nav-items{flex:1 0 auto;padding:8px 0}
 .nav-item{width:100%;display:flex;align-items:center;gap:10px;padding:9px 16px;font-size:13px;color:var(--text1);background:transparent;border:none;border-left:2px solid transparent;cursor:pointer;text-align:left;transition:all .12s}
 .nav-item:hover{color:var(--text0);background:rgba(255,255,255,0.03)}
 .nav-item.active{color:var(--acc);border-left-color:var(--acc);background:var(--acc-d)}
@@ -53,15 +53,12 @@ html,body{background:transparent} /* window is transparent; #app paints the colo
 .nav-item .badge.visible{display:inline-block}
 
 .sidebar-footer{padding:12px 14px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:8px}
-.monitor-status{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text1)}
-.status-dot{width:7px;height:7px;border-radius:50%;background:var(--text2);flex-shrink:0;transition:all .3s}
-.status-dot.active{background:var(--green);box-shadow:0 0 6px var(--green)}
 .check-now-btn{width:100%;padding:7px;font-size:12px;font-family:var(--sans);background:var(--bg3);border:1px solid var(--bord2);border-radius:var(--r);color:var(--text0);cursor:pointer;transition:background .12s}
 .check-now-btn:hover{background:var(--bg4)}
 .check-now-btn:active{transform:scale(0.98)}
 
 /* ── main ── */
-.main-content{overflow-y:auto;background:var(--bg0)}
+.main-content{overflow-y:auto;overflow-x:hidden;min-width:0;background:var(--bg0)}
 .page{display:none;padding:20px 24px 32px}
 .page.active{display:block}
 .page-header{display:flex;align-items:baseline;gap:12px;margin-bottom:20px}
@@ -191,9 +188,13 @@ html,body{background:transparent} /* window is transparent; #app paints the colo
 .acct{display:flex;align-items:center;gap:8px;font-size:12px;min-height:30px}
 .acct-ico img{width:100%;height:100%;object-fit:cover}
 .acct-ico{overflow:hidden;width:24px;height:24px;border-radius:var(--rs);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;font-family:var(--mono);flex-shrink:0}
-.acct-ico.steam{background:#1b2838;color:var(--acc)}.acct-ico.gog{background:#4a2c99;color:#d4b8ff}.acct-ico.epic{background:#2a2a2a;color:#fff}
+
 .acct-main{flex:1;min-width:0}
-.acct-name{display:block;color:var(--text0);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.acct-sub{display:flex;align-items:center;margin-top:2px;overflow:hidden;white-space:nowrap}
+.acct-name{display:block;max-width:100%;text-align:left;padding:0;background:none;border:none;font:inherit;color:var(--text0);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.acct-name:hover{text-decoration:underline}
+.acct-ico{cursor:pointer}
+.acct-ico.steam,.acct-ico.gog,.acct-ico.epic{background:#3b3f47;color:#d5d8de}
 .acct-btn{background:var(--bg3);border:1px solid var(--bord2);border-radius:var(--rs);color:var(--text0);font-size:11px;padding:4px 8px;cursor:pointer}
 .acct-btn:hover{background:var(--bg4)}.acct-btn:disabled{opacity:.5}
 .acct-out{background:none;border:none;color:var(--text2);font-size:11px;cursor:pointer;padding:0}.acct-out:hover{color:var(--red)}
@@ -204,7 +205,7 @@ html,body{background:transparent} /* window is transparent; #app paints the colo
 .tab{padding:5px 12px;font-size:12px;border-radius:14px;background:var(--bg2);border:1px solid var(--border);color:var(--text1);cursor:pointer}
 .tab:hover{color:var(--text0)}.tab.active{background:var(--acc-d);border-color:var(--acc);color:var(--acc)}
 .store-tag{font-size:9px;font-weight:600;font-family:var(--mono);padding:1px 5px;border-radius:var(--rs);margin-right:6px;text-transform:uppercase}
-.store-tag.steam{background:#1b2838;color:var(--acc)}.store-tag.gog{background:#4a2c99;color:#d4b8ff}.store-tag.epic{background:#2a2a2a;color:#fff}
+.store-tag.steam,.store-tag.gog,.store-tag.epic{background:#3b3f47;color:#d5d8de} /* same grey on every theme */
 .tag-sale{font-size:11px;font-weight:600;font-family:var(--mono);color:#0a1a10;background:var(--green);padding:1px 6px;border-radius:var(--rs)}
 .price-was{font-size:11px;color:var(--text2);text-decoration:line-through;font-family:var(--mono)}
 .price-now{font-size:12px;color:var(--text0);font-family:var(--mono)}
@@ -253,3 +254,23 @@ html[data-theme="summer"]{--bg0:#06161b;--bg1:#0a2028;--bg2:#10303a;--bg3:#16425
 html[data-theme="halloween"]{--bg0:#0c0812;--bg1:#140d1d;--bg2:#1e1430;--bg3:#2a1c42;--bg4:#3a2858;--acc:#ff8a1f;--acc2:#e66d00;--acc-d:rgba(255,138,31,.16);--green:#a971ff;--grn-d:rgba(169,113,255,.16);--amber:#ff8a1f;--text0:#f6ecff;--text1:#b19bcc;--text2:#6f5a8d}
 html[data-theme="autumn"]{--bg0:#150f0a;--bg1:#1e150e;--bg2:#2a1d13;--bg3:#38271a;--bg4:#4b3523;--acc:#e8843a;--acc2:#cf6b22;--acc-d:rgba(232,132,58,.15);--green:#c9b13d;--grn-d:rgba(201,177,61,.15);--amber:#e8843a;--text0:#fbeedd;--text1:#c0a58a;--text2:#82694f}
 html[data-theme="winter"]{--bg0:#08121c;--bg1:#0d1b2a;--bg2:#14283c;--bg3:#1c3650;--bg4:#264765;--acc:#9bd7ff;--acc2:#6fc0f5;--acc-d:rgba(155,215,255,.15);--green:#8ff0d2;--grn-d:rgba(143,240,210,.14);--amber:#ffe08a;--text0:#eef8ff;--text1:#8fb2cc;--text2:#56778f}
+
+/* ── window resize handles (the window has no OS frame; corners get priority over edges) ── */
+.rz{position:fixed;z-index:1000}
+.rz[data-dir=North]{top:0;left:12px;right:12px;height:5px;cursor:ns-resize}
+.rz[data-dir=South]{bottom:0;left:18px;right:18px;height:6px;cursor:ns-resize}
+.rz[data-dir=West]{left:0;top:12px;bottom:18px;width:6px;cursor:ew-resize}
+.rz[data-dir=East]{right:0;top:12px;bottom:18px;width:6px;cursor:ew-resize}
+.rz[data-dir=NorthWest]{top:0;left:0;width:12px;height:12px;cursor:nwse-resize}
+.rz[data-dir=NorthEast]{top:0;right:0;width:12px;height:12px;cursor:nesw-resize}
+.rz[data-dir=SouthWest]{bottom:0;left:0;width:18px;height:18px;cursor:nesw-resize}
+.rz[data-dir=SouthEast]{bottom:0;right:0;width:18px;height:18px;cursor:nwse-resize}
+
+/* ── red error box (only when something failed); sits above the divider over "Check now" ── */
+.sidebar-errors{margin:0 14px 10px;padding:8px 10px;font-size:11px;line-height:1.4;color:#ffd9d9;background:rgba(220,60,60,.16);border:1px solid rgba(244,96,96,.55);border-radius:var(--r);overflow-wrap:anywhere}
+.sidebar-errors strong{display:block;color:#ff8c8c;margin-bottom:6px}
+.copy-err-btn{width:100%;padding:5px;font-size:11px;font-family:var(--sans);color:#ffd9d9;background:rgba(220,60,60,.22);border:1px solid rgba(244,96,96,.55);border-radius:var(--rs);cursor:pointer}
+.copy-err-btn:hover{background:rgba(220,60,60,.4)}
+.app-logo{border-radius:4px;display:block}
+.arrow-down{vertical-align:-1px}
+.icon-btn .logo{display:block}
