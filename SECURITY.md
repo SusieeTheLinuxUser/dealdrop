@@ -4,9 +4,9 @@
 
 DealDrop is designed so that **no secrets, API keys, or credentials ever live in the source code or repository**.
 
-All user-provided keys (Steam Web API key, IsThereAnyDeal API key) are:
+All user-provided keys (Steam Web API key, IsThereAnyDeal API key) and the GOG / Epic sign-in tokens are:
 - Entered by the user at runtime through the Settings UI
-- Stored locally by `electron-store` in the OS user data directory
+- Stored locally in the OS config directory (file mode `0600`)
 - Never committed to or read from the project folder
 
 **Storage locations (OS user data dir, never the repo):**
@@ -16,30 +16,18 @@ All user-provided keys (Steam Web API key, IsThereAnyDeal API key) are:
 | Windows | `%APPDATA%\dealdrop\config.json` |
 | macOS   | `~/Library/Application Support/dealdrop/config.json` |
 
-## Steam login
+## Store sign-in
 
-Authentication uses **Steam OpenID** — the same open standard used by thousands of websites. The flow:
-
-1. DealDrop opens a real `steamcommunity.com` login page in a child window
-2. The user logs in directly on Steam's servers
-3. Steam redirects back with a signed assertion containing only the user's **public Steam ID**
-4. DealDrop never sees, handles, or stores the user's Steam password
-
-The Steam ID is public information (visible on any public profile URL). DealDrop uses it solely to fetch the public wishlist endpoint.
+- **Steam** uses **OpenID**. DealDrop opens the real `steamcommunity.com` login page, Steam redirects back with a signed assertion containing only your **public Steam ID**, and DealDrop asks Steam to confirm the signature (`check_authentication`) before trusting it. Your password is never seen.
+- **GOG** and **Epic Games** use the same OAuth flow as their official launchers (public launcher client ids, as used by Heroic/Lutris/legendary). You type your password on gog.com / epicgames.com in a sign-in window; DealDrop only receives an access/refresh token, stored locally and used solely to read your wishlist. Sign out in the sidebar deletes it.
 
 ## API calls
 
-All API calls are made from the **main (Node.js) process**, not the renderer. This means:
-- No CORS issues
-- The renderer never directly touches external APIs
-- All data flows through IPC with `contextIsolation: true` and `nodeIntegration: false`
+All API calls are made by the **Rust backend**, never the webview. The UI talks to it through a fixed set of Tauri commands, and `open_url` only accepts `http`, `https` and `steam` links.
 
 ## Content Security Policy
 
-The renderer enforces a strict CSP (see `renderer/index.html`):
-- No inline scripts (except `unsafe-inline` for the bundled app.js — this should be moved to a proper bundler in future)
-- External resources restricted to Google Fonts and `https:` image sources
-- No `eval`, no remote code execution
+Set in `src-tauri/tauri.conf.json`: scripts only from the app itself (no inline scripts, no `eval`), network access only through the Tauri IPC bridge, images from `https:` and fonts from Google Fonts.
 
 ## Reporting a vulnerability
 

@@ -3,8 +3,6 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https:;" />
   <title>DealDrop</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -15,7 +13,7 @@
 <div id="app">
 
   <!-- Titlebar -->
-  <div class="titlebar">
+  <div class="titlebar" data-tauri-drag-region>
     <div class="titlebar-drag">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="4" fill="#1b2838"/><path d="M12 3C7.03 3 3 7.03 3 12c0 4.09 2.6 7.58 6.26 8.9l2.27-4.54A3 3 0 1 1 15 12h.05l2.6-5.22A9 9 0 0 0 12 3z" fill="#c7d5e0"/><circle cx="16" cy="12" r="2" fill="#c7d5e0"/></svg>
       <span class="app-name">DealDrop</span>
@@ -35,26 +33,8 @@
     <!-- Sidebar -->
     <nav class="sidebar">
 
-      <!-- Steam account -->
-      <div class="steam-account" id="steam-account">
-        <div id="steam-logged-out" class="steam-loggedout">
-          <p class="steam-prompt">Sign in to sync wishlist</p>
-          <button class="steam-login-btn" id="btn-steam-login">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="3" fill="#1b2838"/><path d="M12 3C7.03 3 3 7.03 3 12c0 4.09 2.6 7.58 6.26 8.9l2.27-4.54A3 3 0 1 1 15 12h.05l2.6-5.22A9 9 0 0 0 12 3z" fill="#c7d5e0"/><circle cx="16" cy="12" r="2" fill="#c7d5e0"/></svg>
-            Sign in via Steam
-          </button>
-        </div>
-        <div id="steam-logged-in" class="steam-loggedin" style="display:none">
-          <div class="steam-user-row">
-            <img id="steam-avatar" class="steam-avatar" src="" alt="" style="display:none" />
-            <div id="steam-avatar-placeholder" class="steam-avatar-placeholder">👤</div>
-            <div class="steam-user-info">
-              <span id="steam-username" class="steam-username">Steam user</span>
-              <button class="steam-logout-btn" id="btn-steam-logout">Sign out</button>
-            </div>
-          </div>
-        </div>
-      </div>
+      <!-- Store accounts (rendered by app.js) -->
+      <div class="accounts" id="accounts"></div>
 
       <!-- Nav -->
       <div class="nav-items">
@@ -68,13 +48,17 @@
           Free now
           <span class="badge" id="badge-free"></span>
         </button>
+        <button class="nav-item" data-page="storesales">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+          Store sales
+        </button>
         <button class="nav-item" data-page="deals">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
           Hot deals
         </button>
         <button class="nav-item" data-page="sales">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-          Sales calendar
+          Calendar
         </button>
         <button class="nav-item" data-page="settings">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -100,10 +84,11 @@
           <h1>Wishlist</h1>
           <span class="last-checked" id="lc-wishlist"></span>
         </div>
+        <div class="tabs" id="wishlist-tabs" style="display:none"></div>
+        <div id="wishlist-errors" class="itad-notice" style="display:none"></div>
         <div id="wishlist-login-prompt" class="login-prompt" style="display:none">
-          <svg width="36" height="36" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="5" fill="#1b2838"/><path d="M12 3C7.03 3 3 7.03 3 12c0 4.09 2.6 7.58 6.26 8.9l2.27-4.54A3 3 0 1 1 15 12h.05l2.6-5.22A9 9 0 0 0 12 3z" fill="#c7d5e0"/><circle cx="16" cy="12" r="2" fill="#c7d5e0"/></svg>
-          <p>Sign in via Steam to sync your wishlist and get notified when games go on sale.</p>
-          <button class="action-btn" id="btn-steam-login-main">Sign in via Steam</button>
+          <span style="font-size:32px">🎯</span>
+          <p>Sign in to Steam, GOG or Epic Games (left sidebar) to sync your wishlists and get notified when games go on sale.</p>
         </div>
         <div id="wishlist-on-sale" style="display:none">
           <div class="section-label">On sale now</div>
@@ -160,28 +145,38 @@
         </div>
       </section>
 
+      <!-- STORE SALES -->
+      <section class="page" id="page-storesales">
+        <div class="page-header">
+          <h1>Store sales</h1>
+          <span class="last-checked" id="lc-storesales"></span>
+        </div>
+        <div class="tabs" id="sales-tabs"></div>
+        <div class="game-grid" id="grid-storesales"></div>
+        <div class="empty-state" id="empty-storesales" style="display:none">
+          <p>No discounts loaded for this store right now.</p>
+        </div>
+      </section>
+
       <!-- HOT DEALS -->
       <section class="page" id="page-deals">
         <div class="page-header">
           <h1>Hot deals</h1>
           <span class="last-checked" id="lc-deals"></span>
         </div>
-        <div class="itad-notice" id="itad-notice">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          Add your <strong>IsThereAnyDeal API key</strong> in Settings to see top deals.
-        </div>
+        <div class="itad-notice" id="itad-notice" style="display:none"></div>
         <div class="deals-list" id="list-deals"></div>
         <div class="empty-state" id="empty-deals" style="display:none">
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/></svg>
-          <p>No deals loaded. Add your ITAD API key in Settings.</p>
+          <p>No deals could be loaded right now.</p>
         </div>
       </section>
 
       <!-- SALES CALENDAR -->
       <section class="page" id="page-sales">
-        <div class="page-header"><h1>Sales calendar</h1></div>
+        <div class="page-header"><h1>Calendar</h1></div>
         <div class="next-sale-banner" id="next-sale-banner"></div>
-        <div class="section-label">2026 schedule</div>
+        <div class="section-label">Steam seasonal sales</div>
         <div class="sale-timeline" id="sale-timeline"></div>
       </section>
 
@@ -198,7 +193,7 @@
           <input type="password" id="itad-key-input" placeholder="Paste your ITAD API key…" autocomplete="off" />
           <button id="save-itad-key">Save</button>
         </div>
-        <p class="hint">Free key at <a href="#" data-href="https://isthereanydeal.com/dev/app/">isthereanydeal.com/dev/app/</a> — unlocks the Hot Deals tab</p>
+        <p class="hint" id="itad-hint">Optional — Hot deals work without it (CheapShark). Free key at <a href="#" data-href="https://isthereanydeal.com/apps/">isthereanydeal.com/apps/</a> switches the list to IsThereAnyDeal (30+ stores).</p>
 
         <div class="section-label" style="margin-top:24px">
           Steam Web API key
@@ -217,6 +212,7 @@
     </main>
   </div>
 </div>
+<script src="api.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

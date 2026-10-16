@@ -8,14 +8,15 @@ No accounts. No telemetry. No secrets. Runs in your system tray.
 
 ## Features
 
-- **Steam sale alerts** — notified the moment a major seasonal sale (Summer, Winter, Autumn, Spring) goes live
-- **Free game alerts** — Epic, Steam, and GOG giveaways detected automatically
+- **Steam sale alerts** — notified the moment a major seasonal sale goes live
+- **Free game alerts** — Epic, Steam and GOG giveaways, de-duplicated across sources
 - **Free weekend alerts** — Steam free-to-play weekends
-- **Wishlist sync** — sign in via Steam OpenID, get notified when your wishlist games drop in price
-- **Hot deals tab** — top discounts from IsThereAnyDeal (optional, free API key)
-- **Sales calendar** — full 2026 schedule with countdown to next sale
-- **Open in Steam or browser** — every game card has both options
+- **Store sales** — current discounts from **Steam, GOG and Epic Games**, browsable per store
+- **Wishlists from Steam, GOG and Epic** — sign in once, get notified when a wishlist game drops ≥20%
+- **Hot deals** — top discounts across 30+ stores. Works out of the box (CheapShark); add a free IsThereAnyDeal key to switch to ITAD. If a key is rejected the app tells you why
+- **Sales calendar** — Steam seasonal sales with countdown
 - **System tray** — minimizes to tray, polls in the background on your chosen interval
+- Native Rust backend (Tauri) — small AppImage, low memory
 
 ---
 
@@ -26,24 +27,21 @@ No accounts. No telemetry. No secrets. Runs in your system tray.
 Download the latest `.AppImage` from [Releases](../../releases), then:
 
 ```bash
-chmod +x dealdrop.AppImage
-./dealdrop.AppImage
+chmod +x DealDrop_*.AppImage
+./DealDrop_*.AppImage
 ```
 
-No installation needed. Move it wherever you like.
+No installation needed. Needs `webkit2gtk-4.1` on the host (present on most desktop distros). Existing settings and Steam sign-in from the Electron versions are picked up automatically.
 
 ### Build from source
 
-Requires [Node.js 18+](https://nodejs.org/).
+Requires Rust, `webkit2gtk-4.1`/GTK dev packages, and `cargo install tauri-cli --version "^2"`.
 
 ```bash
 git clone https://github.com/SusieeTheLinuxUser/dealdrop
-cd dealdrop
-npm install
-npm start              # run in dev mode
-npm run dist           # build AppImage
-npm run dist:win       # build Windows installer
-npm run dist:mac       # build macOS DMG
+cd dealdrop/src-tauri
+cargo tauri dev                             # run in dev mode
+cargo tauri build --bundles appimage        # build the AppImage
 ```
 
 ---
@@ -62,38 +60,40 @@ DealDrop is designed so **no secrets ever live in the source code**.
 
 | Endpoint | Purpose | Auth |
 |---|---|---|
-| `store.steampowered.com/api/featured` | Detect free Steam games | None |
-| `store.steampowered.com/api/featuredcategories` | Detect active sales & free weekends | None |
-| `api.steampowered.com/IWishlistService/GetWishlist/v1` | Fetch wishlist (app ids) | None (profile must be public) |
-| `store.steampowered.com/wishlist/profiles/{id}/wishlistdata` | Fetch wishlist (fallback, includes names) | None (profile must be public) |
-| `store.steampowered.com/api/appdetails` | Wishlist names & prices (one appid per request) | None |
+| `store.steampowered.com/api/featured`, `/featuredcategories` | Free Steam games, sale & free-weekend detection | None |
+| `store.steampowered.com/search/results?specials=1` | Steam sales list | None |
+| `api.steampowered.com/IWishlistService/GetWishlist` | Steam wishlist (app ids) | None (profile must be public) |
+| `api.steampowered.com/IStoreBrowseService/GetItems` | Names & prices for many apps in one request | None |
 | `api.steampowered.com/ISteamUser/GetPlayerSummaries` | Profile name & avatar | Steam Web API key (optional) |
-| `steamcommunity.com/profiles/{id}/?xml=1` | Profile name/avatar fallback & wishlist privacy check | None (profile must be public) |
+| `steamcommunity.com/openid/login`, `/profiles/{id}/?xml=1` | Steam sign-in, profile fallback, privacy check | Entered on Steam's own page |
+| `catalog.gog.com/v1/catalog` | GOG sales | None |
+| `auth.gog.com`, `embed.gog.com/user/wishlist.json`, `api.gog.com/products` | GOG sign-in, wishlist, prices | Entered on GOG's own page |
 | `store-site-backend-static.ak.epicgames.com/freeGamesPromotions` | Free Epic games | None |
-| `www.gamerpower.com/api/giveaways` | PC giveaway aggregation (Steam/Epic/GOG keys) | None |
-| `www.cheapshark.com/api/1.0` | Cheapest external store for a wishlist game | None |
-| `api.isthereanydeal.com/deals/v2` | Hot deals | ITAD API key (optional) |
-| `steamcommunity.com/openid/login` | Steam sign-in | Entered on Steam's own page |
+| `store.epicgames.com/graphql` | Epic sales | None |
+| `account-public-service-prod03.ol.epicgames.com`, `launcher.store.epicgames.com/graphql` | Epic sign-in & wishlist | Entered on Epic's own page |
+| `www.gamerpower.com/api/giveaways` | PC giveaway aggregation | None |
+| `www.cheapshark.com/api/1.0` | Hot deals fallback, cheapest store for a wishlist game | None |
+| `api.isthereanydeal.com/deals/v2` | Hot deals (preferred when a key is set) | ITAD API key (optional) |
 
 ---
 
 ## Optional API keys
 
-Both are free and optional — core features work without them.
+Both are free and optional — everything works without them.
 
 | Key | Where | Unlocks |
 |---|---|---|
 | Steam Web API key | [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey) | Profile name & avatar in sidebar |
-| IsThereAnyDeal key | [isthereanydeal.com/dev/app/](https://isthereanydeal.com/dev/app/) | Hot Deals tab (30+ stores) |
+| IsThereAnyDeal key | [isthereanydeal.com/apps/](https://isthereanydeal.com/apps/) | Hot Deals from ITAD instead of CheapShark |
 
 ---
 
-## Wishlist sync
+## Wishlists
 
-1. Click **Sign in via Steam** in the sidebar
-2. Log in on Steam's own page (DealDrop never handles your password)
-3. Set your Steam wishlist to **Public** in Steam → Privacy Settings
-4. DealDrop syncs and checks prices on your chosen interval
+- **Steam** — click *Sign in* next to Steam, log in on Steam's page, and set your wishlist to **Public** in Steam → Privacy Settings.
+- **GOG** / **Epic Games** — click *Sign in* next to the store and log in on its own page. The wishlist then appears in the same tab, filterable per store.
+
+> GOG and Epic wishlist sync use the launchers' public OAuth flows. If a store changes its API the wishlist tab shows the error instead of staying silently empty.
 
 ---
 

@@ -4,57 +4,39 @@ Thanks for wanting to help! DealDrop is free and open source — contributions o
 
 ## Getting started
 
+Requires Rust (stable), `webkit2gtk-4.1` + GTK dev packages on Linux, and `cargo install tauri-cli --version "^2"`.
+
 ```bash
-git clone https://github.com/your-username/dealdrop
-cd dealdrop
-npm install
-npm start
+git clone https://github.com/SusieeTheLinuxUser/dealdrop
+cd dealdrop/src-tauri
+cargo tauri dev
 ```
 
-That's it. No build step, no bundler, no config needed.
+The UI is plain HTML/CSS/JS in `renderer/` — no build step.
 
 ## Project layout
 
-```
-main.js          — Electron main process
-                   All API polling, tray, notifications, and Steam OpenID live here.
-                   If you're adding a new data source, this is where it goes.
-
-preload.js       — IPC bridge
-                   Exposes a controlled window.api surface to the renderer.
-                   Any new IPC handler in main.js needs a corresponding entry here.
-
-renderer/
-  index.html     — App shell and page markup
-  style.css      — All styles (CSS variables at the top for theming)
-  app.js         — All UI rendering logic, navigation, event wiring
-```
+See [AGENTS.md](AGENTS.md) for the file map and commands.
 
 ## Adding a new data source
 
-1. Write a `fetchXxx()` async function in `main.js` (see `fetchEpicFreeGames` as a pattern)
-2. Call it inside the `poll()` function and include the result in the `data-update` push
-3. Also include it in the `fetch-data` IPC handler so the renderer can request it on load
-4. Render it in `renderer/app.js`
+1. Write an `async fn` returning `R<Vec<…>>` in `src-tauri/src/sources.rs` (see `gog_sales` as a pattern) and add an `#[ignore]` live test next to it
+2. Call it from `run_poll` in `main.rs` and add the result to `Snapshot`
+3. Render it in `renderer/app.js`
 
 ## Golden rules
 
 - **No secrets in the code.** API keys are always user-supplied at runtime. See [SECURITY.md](SECURITY.md).
 - **No telemetry.** DealDrop doesn't phone home. Don't add any.
-- **All API calls go in `main.js`.** The renderer never calls external APIs directly.
-- **Keep it dependency-light.** Currently only `electron-store` as a runtime dep. Think carefully before adding more.
-- **AppImage first.** The primary distribution target is Linux AppImage. Test builds with `npm run dist` before opening a PR.
+- **All API calls go through the Rust backend.** The webview never calls external APIs directly.
+- **Keep it dependency-light.** Think carefully before adding a crate.
+- **AppImage first.** Test with `cargo tauri build --bundles appimage` before opening a PR.
 
 ## Building the AppImage
 
 ```bash
-npm run dist
-# dist/DealDrop-x.x.x.AppImage
-```
-
-For all platforms:
-```bash
-npm run dist:all
+cd src-tauri && cargo tauri build --bundles appimage
+# src-tauri/target/release/bundle/appimage/DealDrop_x.x.x_amd64.AppImage
 ```
 
 ## Opening a PR
@@ -65,4 +47,4 @@ npm run dist:all
 
 ## Code style
 
-No linter configured (yet). Just match the surrounding style — 2-space indents, single quotes, `const`/`let` only.
+`cargo fmt`-style Rust; in `renderer/` match the surrounding style — 2-space indents, single quotes, `const`/`let` only.

@@ -1,12 +1,15 @@
 'use strict'
 
-const SALES_2026 = [
+const SALES = [
   { name: 'Lunar New Year Sale', start: '2026-02-06', end: '2026-02-13', icon: '🧧' },
   { name: 'Spring Sale',         start: '2026-03-19', end: '2026-03-26', icon: '🌸' },
   { name: 'Summer Sale',         start: '2026-06-26', end: '2026-07-10', icon: '☀️', est: true },
   { name: 'Halloween Sale',      start: '2026-10-29', end: '2026-11-02', icon: '🎃', est: true },
   { name: 'Autumn Sale',         start: '2026-11-25', end: '2026-12-02', icon: '🍂', est: true },
   { name: 'Winter Sale',         start: '2026-12-19', end: '2027-01-02', icon: '❄️', est: true },
+  { name: 'Lunar New Year Sale', start: '2027-02-04', end: '2027-02-11', icon: '🧧', est: true },
+  { name: 'Spring Sale',         start: '2027-03-18', end: '2027-03-25', icon: '🌸', est: true },
+  { name: 'Summer Sale',         start: '2027-06-24', end: '2027-07-08', icon: '☀️', est: true },
 ]
 
 const state = {
@@ -14,13 +17,18 @@ const state = {
   freeGames:    [],
   freeWeekends: [],
   deals:        [],
+  dealsSource:  '',
+  dealsError:   null,
+  sales:        { steam: [], gog: [], epic: [] },
+  salesTab:     'steam',
+  wishlistTab:  'all',
+  wishlistErrors: {},
   wishlist:     [],
   settings:     {
     notifyMajorSale: true, notifyFreeGame: true, notifyFreeWeekend: true,
     notifyWishlistSale: true, notifyBigDeal: false, checkInterval: 60,
   },
-  steamUser:    null,
-  itadKeySet:   false,
+  accounts:     { steam: null, gog: null, epic: null },
   lastChecked:  null,
   selectedWishlistDeal: null,
   wishlistPrivate: false,
@@ -54,6 +62,9 @@ function fmtChecked (ts) {
 }
 
 const srcIcon = src => ({ steam: '🎮', epic: '🕹️', gog: '⚔️' }[src] ?? '🎮')
+const STORES = { steam: 'Steam', gog: 'GOG', epic: 'Epic' }
+const hasAccount = () => Object.values(state.accounts).some(Boolean)
+const onSaleItems = () => state.wishlist.filter(w => (w.priceInfo?.discount ?? 0) >= 20)
 
 function tmpl (html) {
   const t = document.createElement('template')
@@ -72,7 +83,7 @@ function makeCardActions (appId, url, source) {
   const wrap     = document.createElement('div')
   wrap.className = 'card-actions'
 
-  const steamBtn = tmpl(`<button class="card-btn steam-btn" title="Open in Steam client">
+  const steamBtn = source !== 'steam' || !appId ? null : tmpl(`<button class="card-btn steam-btn" title="Open in Steam client">
     <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
       <rect width="24" height="24" rx="3" fill="#1b2838"/>
       <path d="M12 3C7.03 3 3 7.03 3 12c0 4.09 2.6 7.58 6.26 8.9l2.27-4.54A3 3 0 1 1 15 12h.05l2.6-5.22A9 9 0 0 0 12 3z" fill="#c7d5e0"/>
@@ -80,10 +91,7 @@ function makeCardActions (appId, url, source) {
     </svg>
     Steam app
   </button>`)
-  steamBtn.addEventListener('click', e => {
-    e.stopPropagation()
-    source === 'steam' && appId ? openSteam(appId) : openBrowser(url)
-  })
+  steamBtn?.addEventListener('click', e => { e.stopPropagation(); openSteam(appId) })
 
   const webBtn = tmpl(`<button class="card-btn" title="Open in browser">
     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -95,131 +103,107 @@ function makeCardActions (appId, url, source) {
   </button>`)
   webBtn.addEventListener('click', e => { e.stopPropagation(); openBrowser(url) })
 
-  wrap.append(steamBtn, webBtn)
-  return wrap
-}
-
-function makeIconBtns (appId, url) {
-  const wrap     = document.createElement('div')
-  wrap.className = 'wishlist-actions'
-
-  const steamBtn = tmpl(`<button class="icon-btn steam-icon-btn" title="Open in Steam client">
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
-      <rect width="24" height="24" rx="3" fill="#1b2838"/>
-      <path d="M12 3C7.03 3 3 7.03 3 12c0 4.09 2.6 7.58 6.26 8.9l2.27-4.54A3 3 0 1 1 15 12h.05l2.6-5.22A9 9 0 0 0 12 3z" fill="currentColor"/>
-      <circle cx="16" cy="12" r="2" fill="currentColor"/>
-    </svg>
-  </button>`)
-  steamBtn.addEventListener('click', e => { e.stopPropagation(); openSteam(appId) })
-
-  const webBtn = tmpl(`<button class="icon-btn" title="Open in browser">
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <circle cx="12" cy="12" r="10"/>
-      <line x1="2" y1="12" x2="22" y2="12"/>
-      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-    </svg>
-  </button>`)
-  webBtn.addEventListener('click', e => { e.stopPropagation(); openBrowser(url) })
-
-  wrap.append(steamBtn, webBtn)
+  if (steamBtn) wrap.append(steamBtn)
+  wrap.append(webBtn)
   return wrap
 }
 
 // ─── Wishlist page ────────────────────────────────────────────────────────────
 
 function renderWishlist () {
-  const loginPrompt  = document.getElementById('wishlist-login-prompt')
-  const onSaleWrap   = document.getElementById('wishlist-on-sale')
-  const allWrap      = document.getElementById('wishlist-all-section')
-  const listSale     = document.getElementById('list-wishlist-sale')
-  const listAll      = document.getElementById('list-wishlist-all')
-  const emptyEl      = document.getElementById('empty-wishlist')
-  const tsEl         = document.getElementById('lc-wishlist')
-  const panel        = document.getElementById('wishlist-deal-panel')
+  const $ = id => document.getElementById(id)
+  const loginPrompt = $('wishlist-login-prompt'), onSaleWrap = $('wishlist-on-sale')
+  const allWrap = $('wishlist-all-section'), emptyEl = $('empty-wishlist')
+  const panel = $('wishlist-deal-panel'), tabs = $('wishlist-tabs'), errs = $('wishlist-errors')
 
   updateBadges()
-  if (tsEl) tsEl.textContent = fmtChecked(state.lastChecked)
+  if ($('lc-wishlist')) $('lc-wishlist').textContent = fmtChecked(state.lastChecked)
+  const hide = (...els) => els.forEach(e => { if (e) e.style.display = 'none' })
 
-  if (!state.steamUser) {
-    loginPrompt.style.display  = 'flex'
-    onSaleWrap.style.display   = 'none'
-    allWrap.style.display      = 'none'
-    emptyEl.style.display      = 'none'
-    if (panel) panel.style.display = 'none'
+  if (!hasAccount()) {
+    loginPrompt.style.display = 'flex'
+    hide(onSaleWrap, allWrap, emptyEl, panel, tabs, errs)
     return
   }
-  loginPrompt.style.display = 'none'
+  hide(loginPrompt)
 
-  if (!state.wishlist.length) {
-    onSaleWrap.style.display = 'none'
-    allWrap.style.display = 'none'
+  // Per-store failures (e.g. Epic rejecting the token) shown instead of silently empty
+  const failed = Object.entries(state.wishlistErrors).filter(([s]) => state.accounts[s])
+  errs.classList.add('err')
+  errs.style.display = failed.length ? 'flex' : 'none'
+  errs.textContent = failed.map(([s, e]) => `${STORES[s]} wishlist: ${e}`).join('  ·  ')
 
-    // Dynamic message based on privacy status
-    const msgEl = document.getElementById('wishlist-empty-msg') ?? emptyEl.querySelector('p')
-    if (msgEl) {
-      msgEl.textContent = state.wishlistPrivate
-        ? 'Wishlist is set to Private in Steam privacy settings.'
-        : 'Wishlist is empty.'
-    }
+  // Store filter tabs (only for signed-in stores)
+  const stores = Object.keys(STORES).filter(s => state.accounts[s])
+  if (!stores.includes(state.wishlistTab)) state.wishlistTab = 'all'
+  tabs.style.display = stores.length > 1 ? 'flex' : 'none'
+  tabs.innerHTML = ''
+  ;['all', ...stores].forEach(s => {
+    const n = s === 'all' ? state.wishlist.length : state.wishlist.filter(w => w.store === s).length
+    const b = document.createElement('button')
+    b.className = 'tab' + (state.wishlistTab === s ? ' active' : '')
+    b.textContent = `${s === 'all' ? 'All' : STORES[s]} (${n})`
+    b.addEventListener('click', () => { state.wishlistTab = s; renderWishlist() })
+    tabs.appendChild(b)
+  })
 
+  const items = state.wishlistTab === 'all' ? state.wishlist : state.wishlist.filter(w => w.store === state.wishlistTab)
+  if (!items.length) {
+    hide(onSaleWrap, allWrap, panel)
+    const steamOnly = state.wishlistTab === 'steam' || (state.wishlistTab === 'all' && state.accounts.steam && !state.accounts.gog && !state.accounts.epic)
+    $('wishlist-empty-msg').textContent = steamOnly && state.wishlistPrivate
+      ? 'Your Steam wishlist is set to Private. Make it Public in Steam → Privacy Settings.'
+      : failed.length ? 'Wishlist could not be loaded (see above).' : 'Wishlist is empty.'
     emptyEl.style.display = 'flex'
-    if (panel) panel.style.display = 'none'
     return
   }
   emptyEl.style.display = 'none'
-  if (panel) panel.style.display = 'block'
 
-  listSale.innerHTML = ''
-  listAll.innerHTML  = ''
-
-  const onSale = state.wishlist.filter(w => (w.priceInfo?.discount ?? 0) >= 20)
-  onSaleWrap.style.display = onSale.length > 0 ? 'block' : 'none'
+  const listSale = $('list-wishlist-sale'), listAll = $('list-wishlist-all')
+  listSale.innerHTML = ''; listAll.innerHTML = ''
+  const onSale = items.filter(w => (w.priceInfo?.discount ?? 0) >= 20)
+  onSaleWrap.style.display = onSale.length ? 'block' : 'none'
   onSale.forEach(w => listSale.appendChild(makeWishlistSaleRow(w)))
-
   allWrap.style.display = 'block'
-  state.wishlist.forEach(w => listAll.appendChild(makeWishlistRow(w)))
+  items.forEach(w => listAll.appendChild(makeWishlistRow(w)))
+  panel.style.display = state.selectedWishlistDeal ? 'block' : 'none'
   renderWishlistDealPanel()
 }
 
+const storeTag = s => `<span class="store-tag ${s}">${STORES[s] ?? s}</span>`
+
 function makeWishlistSaleRow (w) {
   const p   = w.priceInfo
-  const url = `https://store.steampowered.com/app/${w.appId}`
   const row = document.createElement('div')
   row.className = 'deal-row'
   row.innerHTML = `
     <div>
       <div class="deal-name">${escHtml(w.name)}</div>
-      <div class="deal-store">steam</div>
+      <div class="deal-store">${storeTag(w.store)}</div>
     </div>
     <span class="deal-orig">${fmt$(p.initial)}</span>
     <span class="deal-cut">-${p.discount}%</span>
-    <span class="deal-price">${p.formatted}</span>`
-
-  const btn = tmpl(`<button class="deal-open" title="Open in Steam client">
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
-      <rect width="24" height="24" rx="3" fill="#1b2838"/>
-      <path d="M12 3C7.03 3 3 7.03 3 12c0 4.09 2.6 7.58 6.26 8.9l2.27-4.54A3 3 0 1 1 15 12h.05l2.6-5.22A9 9 0 0 0 12 3z" fill="currentColor"/>
-      <circle cx="16" cy="12" r="2" fill="currentColor"/>
-    </svg>
-  </button>`)
-  btn.addEventListener('click', e => { e.stopPropagation(); openSteam(w.appId) })
+    <span class="deal-price">${escHtml(p.formatted ?? fmt$(p.final))}</span>`
+  const btn = tmpl(`<button class="deal-open" title="Open store page">↗</button>`)
+  btn.addEventListener('click', e => { e.stopPropagation(); openWishlistItem(w) })
   row.appendChild(btn)
-  row.addEventListener('click', () => openBrowser(url))
+  row.addEventListener('click', () => openBrowser(w.url))
   return row
 }
 
+const openWishlistItem = w => w.store === 'steam' ? openSteam(w.appId) : openBrowser(w.url)
+
 function makeWishlistRow (w) {
   const p      = w.priceInfo
-  const url    = `https://store.steampowered.com/app/${w.appId}`
   const onSale = (p?.discount ?? 0) >= 20
   const row    = document.createElement('div')
   row.className = 'wishlist-row' + (onSale ? ' on-sale' : '')
 
   const thumb = document.createElement('img')
   thumb.className = 'wishlist-thumb'
-  thumb.src   = `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${w.appId}/capsule_sm_120.jpg`
+  thumb.src   = w.image ?? ''
   thumb.alt   = ''
-  thumb.addEventListener('error', () => { thumb.style.display = 'none' })
+  thumb.addEventListener('error', () => { thumb.style.visibility = 'hidden' })
 
   const info  = document.createElement('div')
   info.style.cssText = 'min-width:0;flex:1'
@@ -228,50 +212,44 @@ function makeWishlistRow (w) {
         ? `<span style="color:var(--amber)">-${p.discount}% · ${escHtml(p.formatted)}</span>`
         : `<span style="color:var(--text2)">${escHtml(p.formatted)}</span>`)
     : ''
-  info.innerHTML = `<div class="wishlist-name" title="${escHtml(w.name)}">${escHtml(w.name)}</div><div class="wishlist-sub">${priceStr}</div>`
+  info.innerHTML = `<div class="wishlist-name" title="${escHtml(w.name)}">${storeTag(w.store)}${escHtml(w.name)}</div><div class="wishlist-sub">${priceStr}</div>`
 
-  row.append(thumb, info, makeIconBtns(w.appId, url))
-  row.addEventListener('click', () => selectWishlistGame(w))
+  row.append(thumb, info, makeIconBtns(w))
+  row.addEventListener('click', () => w.store === 'steam' ? selectWishlistGame(w) : openBrowser(w.url))
   return row
 }
 
-async function selectWishlistGame (w) {
-  state.selectedWishlistDeal = {
-    loading: true,
-    appId: w.appId,
-    gameName: w.name,
-    steam: null,
-    cheapest: null,
-    checkedAt: Date.now(),
+function makeIconBtns (w) {
+  const wrap     = document.createElement('div')
+  wrap.className = 'wishlist-actions'
+  if (w.store === 'steam') {
+    const steamBtn = tmpl(`<button class="icon-btn steam-icon-btn" title="Open in Steam client">S</button>`)
+    steamBtn.addEventListener('click', e => { e.stopPropagation(); openSteam(w.appId) })
+    wrap.append(steamBtn)
   }
-  renderWishlistDealPanel()
+  const webBtn = tmpl(`<button class="icon-btn" title="Open in browser">↗</button>`)
+  webBtn.addEventListener('click', e => { e.stopPropagation(); openBrowser(w.url) })
+  wrap.append(webBtn)
+  return wrap
+}
+
+async function selectWishlistGame (w) {
+  const empty = { loading: false, appId: w.appId, gameName: w.name, steam: null, cheapest: null, checkedAt: Date.now() }
+  state.selectedWishlistDeal = { ...empty, loading: true }
+  renderWishlist()
   try {
-    const res = await window.api.fetchWishlistGameDeals({ appId: w.appId, name: w.name })
-    if (res?.ok && res.data) state.selectedWishlistDeal = { loading: false, ...res.data }
-    else state.selectedWishlistDeal = { loading: false, appId: w.appId, gameName: w.name, steam: null, cheapest: null, checkedAt: Date.now() }
+    state.selectedWishlistDeal = { loading: false, ...(await window.api.fetchWishlistGameDeals({ appId: w.appId, name: w.name })) }
   } catch (e) {
     console.error('[wishlist-deal-panel]', e)
-    state.selectedWishlistDeal = { loading: false, appId: w.appId, gameName: w.name, steam: null, cheapest: null, checkedAt: Date.now() }
+    state.selectedWishlistDeal = empty
   }
-  renderWishlistDealPanel()
+  renderWishlist()
 }
 
 function renderWishlistDealPanel () {
   const panel = document.getElementById('wishlist-deal-panel')
-  if (!panel || !state.steamUser || !state.wishlist.length) return
-
   const d = state.selectedWishlistDeal
-  if (!d) {
-    panel.querySelector('#wishlist-deal-title').textContent = 'Select a game'
-    panel.querySelector('#wishlist-deal-updated').textContent = ''
-    panel.querySelector('#wishlist-steam-price').textContent = '-'
-    panel.querySelector('#wishlist-steam-sub').textContent = 'Click any wishlist game to load Steam pricing.'
-    panel.querySelector('#wishlist-cheapest-price').textContent = '-'
-    panel.querySelector('#wishlist-cheapest-sub').textContent = 'Click any wishlist game to load the cheapest store deal.'
-    panel.querySelector('#wishlist-open-cheapest').style.display = 'none'
-    panel.querySelector('#wishlist-open-steam').onclick = null
-    return
-  }
+  if (!panel || !d) return
 
   panel.querySelector('#wishlist-deal-title').textContent = d.gameName ?? `App ${d.appId}`
   panel.querySelector('#wishlist-deal-updated').textContent = d.loading ? 'Loading…' : fmtChecked(d.checkedAt)
@@ -305,13 +283,11 @@ function renderWishlistDealPanel () {
     cheapestBtn.onclick = () => d.cheapest.url && openBrowser(d.cheapest.url)
   } else {
     cheapestPrice.textContent = '-'
-    cheapestSub.textContent = 'No third-party deals found yet for this app.'
+    cheapestSub.textContent = 'No third-party deals found for this game.'
     cheapestBtn.style.display = 'none'
     cheapestBtn.onclick = null
   }
-
-  const steamBtn = panel.querySelector('#wishlist-open-steam')
-  steamBtn.onclick = () => openSteam(d.appId)
+  panel.querySelector('#wishlist-open-steam').onclick = () => openSteam(d.appId)
 }
 
 // ─── Free games page ──────────────────────────────────────────────────────────
@@ -346,7 +322,7 @@ function renderFreeGames () {
 // Sidebar badges — computed from state so they stay correct even when the
 // owning page isn't the one being rendered right now
 function updateBadges () {
-  const onSale = state.wishlist.filter(w => (w.priceInfo?.discount ?? 0) >= 20).length
+  const onSale = onSaleItems().length
   const wb = document.getElementById('badge-wishlist')
   if (wb) { wb.textContent = onSale; wb.classList.toggle('visible', onSale > 0) }
 
@@ -388,15 +364,13 @@ function renderDeals () {
   list.innerHTML = ''
   if (tsEl) tsEl.textContent = fmtChecked(state.lastChecked)
 
-  if (!state.itadKeySet) {
-    notice.style.display  = 'flex'
-    emptyEl.style.display = 'none'
-    return
-  }
-  notice.style.display = 'none'
+  // Say why, instead of an unexplained empty list (e.g. ITAD rejecting the key)
+  const note = state.dealsError ?? (state.dealsSource ? `Source: ${state.dealsSource}` : '')
+  notice.classList.toggle('err', !!state.dealsError)
+  notice.style.display = note ? 'flex' : 'none'
+  notice.textContent = state.dealsError ? `${state.dealsError}${state.dealsSource ? ` Showing ${state.dealsSource} instead.` : ''}` : note
 
-  if (!state.deals.length) { emptyEl.style.display = 'flex'; return }
-  emptyEl.style.display = 'none'
+  emptyEl.style.display = state.deals.length ? 'none' : 'flex'
   state.deals.forEach(d => list.appendChild(makeDealRow(d)))
 }
 
@@ -411,17 +385,55 @@ function makeDealRow (d) {
     <span class="deal-orig">${fmt$(d.regular)}</span>
     <span class="deal-cut">-${d.cut}%</span>
     <span class="deal-price">${fmt$(d.price)}</span>`
-  const btn = tmpl(`<button class="deal-open" title="Open store page">
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-      <polyline points="15 3 21 3 21 9"/>
-      <line x1="10" y1="14" x2="21" y2="3"/>
-    </svg>
-  </button>`)
+  const btn = tmpl(`<button class="deal-open" title="Open store page">↗</button>`)
   btn.addEventListener('click', e => { e.stopPropagation(); openBrowser(d.url) })
   row.appendChild(btn)
   row.addEventListener('click', () => openBrowser(d.url))
   return row
+}
+
+// ─── Store sales page ─────────────────────────────────────────────────────────
+
+function renderStoreSales () {
+  const tabs = document.getElementById('sales-tabs')
+  const grid = document.getElementById('grid-storesales')
+  const emptyEl = document.getElementById('empty-storesales')
+  document.getElementById('lc-storesales').textContent = fmtChecked(state.lastChecked)
+
+  tabs.innerHTML = ''
+  Object.keys(STORES).forEach(s => {
+    const b = document.createElement('button')
+    b.className = 'tab' + (state.salesTab === s ? ' active' : '')
+    b.textContent = `${STORES[s]} (${state.sales[s]?.length ?? 0})`
+    b.addEventListener('click', () => { state.salesTab = s; renderStoreSales() })
+    tabs.appendChild(b)
+  })
+
+  grid.innerHTML = ''
+  const list = state.sales[state.salesTab] ?? []
+  emptyEl.style.display = list.length ? 'none' : 'flex'
+  list.forEach(d => grid.appendChild(makeSaleCard(d)))
+}
+
+function makeSaleCard (d) {
+  const src = d.shop.toLowerCase()
+  const card = document.createElement('div')
+  card.className = 'game-card'
+  card.innerHTML = `
+    <div class="game-thumb">
+      ${d.image ? `<img src="${escHtml(d.image)}" alt="" onerror="this.style.display='none'">` : `<span class="fallback">${srcIcon(src)}</span>`}
+      <span class="src-badge ${src}">${escHtml(d.shop)}</span>
+    </div>
+    <div class="game-info">
+      <div class="game-title" title="${escHtml(d.title)}">${escHtml(d.title)}</div>
+      <div class="price-row">
+        <span class="tag-sale">-${d.cut}%</span>
+        <span class="price-was">${fmt$(d.regular)}</span>
+        <span class="price-now">${fmt$(d.price)}</span>
+      </div>
+    </div>`
+  card.appendChild(makeCardActions(d.appId ?? null, d.url, src === 'steam' ? 'steam' : src))
+  return card
 }
 
 // ─── Sales calendar ───────────────────────────────────────────────────────────
@@ -432,7 +444,7 @@ function renderSalesCalendar () {
   const now      = new Date()
   timeline.innerHTML = ''
 
-  const next = SALES_2026.find(s => new Date(s.start) > now)
+  const next = SALES.find(s => new Date(s.start) > now)
   if (next) {
     const days = Math.ceil((new Date(next.start) - now) / 86400000)
     banner.innerHTML = `
@@ -449,8 +461,8 @@ function renderSalesCalendar () {
     banner.innerHTML = `<div class="nsb-icon">✅</div><div class="nsb-info"><div class="nsb-title">No upcoming sales found</div></div>`
   }
 
-  const fmtDate = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-  SALES_2026.forEach(s => {
+  const fmtDate = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: d.getFullYear() === now.getFullYear() ? undefined : 'numeric' })
+  SALES.forEach(s => {
     const start  = new Date(s.start)
     const end    = new Date(s.end)
     const isPast = end < now
@@ -481,8 +493,8 @@ function renderSettings () {
     { key: 'notifyMajorSale',    label: 'Steam major sale started',   sub: 'Summer, Winter, Autumn & Spring sales' },
     { key: 'notifyFreeGame',     label: 'Free game available',         sub: 'Epic, Steam, GOG & GamerPower giveaways' },
     { key: 'notifyFreeWeekend',  label: 'Free weekend started',        sub: 'Temporary Steam free-to-play promotions' },
-    { key: 'notifyWishlistSale', label: 'Wishlist game on sale',       sub: 'Notify when synced wishlist games drop ≥20%' },
-    { key: 'notifyBigDeal',      label: 'Deal over 75% off',           sub: 'Requires IsThereAnyDeal API key' },
+    { key: 'notifyWishlistSale', label: 'Wishlist game on sale',       sub: 'Steam, GOG & Epic wishlists, drops of ≥20%' },
+    { key: 'notifyBigDeal',      label: 'Deal over 75% off',           sub: 'Hot deals list (CheapShark, or ITAD with a key)' },
   ]
 
   rows.forEach(r => {
@@ -528,56 +540,64 @@ function navigate (page) {
   switch (page) {
     case 'wishlist':  renderWishlist();      break
     case 'free':      renderFreeGames();     break
+    case 'storesales': renderStoreSales();   break
     case 'deals':     renderDeals();         break
     case 'sales':     renderSalesCalendar(); break
     case 'settings':  renderSettings();      break
   }
 }
 
-// ─── Steam account UI ────────────────────────────────────────────────────────
+// ─── Store accounts (sidebar) ─────────────────────────────────────────────────
 
-function updateSteamUI (user) {
-  state.steamUser = user
-  const loggedOut = document.getElementById('steam-logged-out')
-  const loggedIn  = document.getElementById('steam-logged-in')
+const ACCT_ICON = { steam: 'ST', gog: 'GOG', epic: 'EGS' }
 
-  if (!user) {
-    loggedOut.style.display = 'block'
-    loggedIn.style.display  = 'none'
-    if (state.page === 'wishlist') renderWishlist()
-    return
-  }
+function renderAccounts () {
+  const con = document.getElementById('accounts')
+  con.innerHTML = ''
+  Object.keys(STORES).forEach(s => {
+    const a = state.accounts[s]
+    const name = s === 'steam' ? a?.name : a
+    const row = document.createElement('div')
+    row.className = 'acct'
+    row.innerHTML = `<span class="acct-ico ${s}">${ACCT_ICON[s]}</span>` + (a
+      ? `<div class="acct-main"><span class="acct-name">${escHtml(name || STORES[s] + ' user')}</span><button class="acct-out">Sign out</button></div>`
+      : `<span class="acct-label">${STORES[s]}</span><button class="acct-btn">Sign in</button>`)
+    row.querySelector('.acct-out')?.addEventListener('click', async () => {
+      setAccounts(await window.api.logout(s))
+      state.wishlist = state.wishlist.filter(w => w.store !== s)
+      navigate(state.page)
+    })
+    const inBtn = row.querySelector('.acct-btn')
+    inBtn?.addEventListener('click', async () => {
+      inBtn.disabled = true; inBtn.textContent = 'Opening…'
+      try {
+        setAccounts(await window.api.login(s))
+        await loadData()
+      } catch (e) {
+        if (String(e) !== 'Cancelled') alert(`${STORES[s]} sign-in failed: ${e}`)
+      } finally {
+        renderAccounts()
+      }
+    })
+    con.appendChild(row)
+  })
+}
 
-  loggedOut.style.display = 'none'
-  loggedIn.style.display  = 'block'
-
-  const usernameEl = document.getElementById('steam-username')
-  const avatarEl   = document.getElementById('steam-avatar')
-  const avatarPh   = document.getElementById('steam-avatar-placeholder')
-
-  if (usernameEl) usernameEl.textContent = user.name ?? 'Steam user'
-
-  if (user.avatar) {
-    if (avatarEl)  { avatarEl.src = user.avatar; avatarEl.style.display = 'block' }
-    if (avatarPh)    avatarPh.style.display = 'none'
-  } else {
-    if (avatarEl)  avatarEl.style.display = 'none'
-    if (avatarPh)  avatarPh.style.display = 'flex'
-  }
-
+function setAccounts (acc) {
+  state.accounts = { steam: acc?.steam ?? null, gog: acc?.gog ?? null, epic: acc?.epic ?? null }
+  renderAccounts()
   if (state.page === 'wishlist') renderWishlist()
 }
 
 // ─── Data loading ─────────────────────────────────────────────────────────────
 
-async function loadData () {
+async function loadData (force = false) {
   const dot   = document.getElementById('status-dot')
   const label = document.getElementById('status-label')
   if (dot)   dot.classList.add('active')
   if (label) label.textContent = 'checking…'
   try {
-    const data = await window.api.fetchData()
-    applyData(data)
+    applyData(await (force ? window.api.checkNow() : window.api.fetchData()))
   } catch (e) {
     console.error('[fetchData]', e)
   } finally {
@@ -590,11 +610,12 @@ function applyData (data) {
   state.freeGames    = data.freeGames    ?? []
   state.freeWeekends = data.freeWeekends ?? []
   state.deals        = data.deals        ?? []
-  // main.js sends the wishlist as a flat array plus a separate privacy flag
-  state.wishlist = Array.isArray(data.wishlist)
-    ? data.wishlist
-    : (data.wishlist?.items ?? [])
-  state.wishlistPrivate = !!data.wishlistPrivate || !!data.wishlist?.isPrivate
+  state.dealsSource  = data.dealsSource  ?? ''
+  state.dealsError   = data.dealsError   ?? null
+  state.sales        = { steam: [], gog: [], epic: [], ...(data.sales ?? {}) }
+  state.wishlist     = data.wishlist ?? []
+  state.wishlistErrors  = data.wishlistErrors ?? {}
+  state.wishlistPrivate = !!data.wishlistPrivate
   if (state.selectedWishlistDeal && !state.wishlist.some(w => w.appId === state.selectedWishlistDeal.appId)) {
     state.selectedWishlistDeal = null
   }
@@ -628,69 +649,33 @@ async function init () {
   )
 
   // Check-now buttons
-  document.getElementById('btn-check-now')?.addEventListener('click',      () => loadData())
-  document.getElementById('btn-check-settings')?.addEventListener('click', () => loadData())
+  document.getElementById('btn-check-now')?.addEventListener('click',      () => loadData(true))
+  document.getElementById('btn-check-settings')?.addEventListener('click', () => loadData(true))
 
-  // ── Steam login / logout ──────────────────────────────────────────────────
-  const doLogin = async () => {
-    const btns = [
-      document.getElementById('btn-steam-login'),
-      document.getElementById('btn-steam-login-main'),
-    ].filter(Boolean)
-    btns.forEach(b => { b.textContent = 'Opening Steam…'; b.disabled = true })
-    try {
-      const res = await window.api.steamLogin()
-      if (res.ok) {
-        updateSteamUI(res.profile)
-        await loadData()   // refresh wishlist immediately after login
-      } else {
-        alert('Steam sign-in failed: ' + (res.error ?? 'unknown error'))
+  // ── API keys ──────────────────────────────────────────────────────────────
+  const keyInput = (id, name, btnId, after) => {
+    const input = document.getElementById(id)
+    window.api.hasKey(name).then(has => { if (input) input.value = has ? '••••••••' : '' })
+    document.getElementById(btnId)?.addEventListener('click', async () => {
+      const v = input?.value?.trim()
+      if (!v || v === '••••••••') return
+      const btn = document.getElementById(btnId)
+      btn.disabled = true
+      try {
+        await window.api.saveKey(name, v)
+        input.value = '••••••••'
+        await after()
+      } catch (e) {
+        alert(String(e))
+      } finally {
+        btn.disabled = false
       }
-    } finally {
-      btns.forEach(b => {
-        b.disabled = false
-        if (b.id === 'btn-steam-login') b.innerHTML = svgSteamIcon() + ' Sign in via Steam'
-        else b.textContent = 'Sign in via Steam'
-      })
-    }
+    })
   }
-  document.getElementById('btn-steam-login')?.addEventListener('click',      doLogin)
-  document.getElementById('btn-steam-login-main')?.addEventListener('click', doLogin)
-
-  document.getElementById('btn-steam-logout')?.addEventListener('click', async () => {
-    await window.api.steamLogout()
-    state.wishlist = []
-    updateSteamUI(null)
-  })
-
-  // ── ITAD API key ──────────────────────────────────────────────────────────
-  const itadInput = document.getElementById('itad-key-input')
-  const itadKey   = await window.api.getItadKey()
-  state.itadKeySet = !!itadKey
-  if (itadInput) itadInput.value = itadKey ? '••••••••' : ''
-
-  document.getElementById('save-itad-key')?.addEventListener('click', async () => {
-    const v = itadInput?.value?.trim()
-    if (!v || v === '••••••••') return
-    await window.api.saveItadKey(v)
-    state.itadKeySet = true
-    if (itadInput) itadInput.value = '••••••••'
-    loadData()
-  })
-
-  // ── Steam Web API key ─────────────────────────────────────────────────────
-  const sApiInput = document.getElementById('steam-api-key-input')
-  const sKey      = await window.api.getSteamApiKey()
-  if (sApiInput) sApiInput.value = sKey ? '••••••••' : ''
-
-  document.getElementById('save-steam-api-key')?.addEventListener('click', async () => {
-    const v = sApiInput?.value?.trim()
-    if (!v || v === '••••••••') return
-    await window.api.saveSteamApiKey(v)
-    if (sApiInput) sApiInput.value = '••••••••'
-    // Refresh profile with new key so name/avatar update immediately
+  keyInput('itad-key-input', 'itad', 'save-itad-key', async () => { const d = await window.api.checkNow(); applyData(d) })
+  keyInput('steam-api-key-input', 'steam', 'save-steam-api-key', async () => {
     const refreshed = await window.api.refreshProfile()
-    if (refreshed) updateSteamUI(refreshed)
+    if (refreshed) setAccounts(await window.api.getAccounts())
   })
 
   // ── Hint links ────────────────────────────────────────────────────────────
@@ -699,12 +684,8 @@ async function init () {
   )
 
   // ── Load initial state ────────────────────────────────────────────────────
-  const saved = await window.api.getSettings()
-  Object.assign(state.settings, saved)
-  state.itadKeySet = !!itadKey
-
-  const user = await window.api.getSteamUser()
-  updateSteamUI(user)
+  Object.assign(state.settings, await window.api.getSettings())
+  setAccounts(await window.api.getAccounts())
 
   // Listen for background push updates from main process
   window.api.onDataUpdate(data => applyData(data))
@@ -719,14 +700,6 @@ async function init () {
     const tsEl = document.getElementById('lc-' + state.page)
     if (tsEl && state.lastChecked) tsEl.textContent = fmtChecked(state.lastChecked)
   }, 30_000)
-}
-
-function svgSteamIcon () {
-  return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="flex-shrink:0">
-    <rect width="24" height="24" rx="3" fill="#1b2838"/>
-    <path d="M12 3C7.03 3 3 7.03 3 12c0 4.09 2.6 7.58 6.26 8.9l2.27-4.54A3 3 0 1 1 15 12h.05l2.6-5.22A9 9 0 0 0 12 3z" fill="#c7d5e0"/>
-    <circle cx="16" cy="12" r="2" fill="#c7d5e0"/>
-  </svg>`
 }
 
 document.addEventListener('DOMContentLoaded', init)
