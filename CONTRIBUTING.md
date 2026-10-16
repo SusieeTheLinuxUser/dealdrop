@@ -41,6 +41,7 @@ cd src-tauri && cargo tauri build --bundles appimage
 
 ## Opening a PR
 
+- Branch from `dev` (work happens there; `main` only holds released code)
 - Keep PRs focused — one feature or fix per PR
 - No need for a formal issue first for small things, just open the PR
 - Large features: open an issue to discuss first so work doesn't get duplicated

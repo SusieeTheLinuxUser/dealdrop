@@ -44,3 +44,7 @@ config.local.*
 # Rust / Tauri
 src-tauri/target/
 src-tauri/gen/
+
+# Release artifacts
+*.zsync
+*.AppImage

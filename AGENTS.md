@@ -25,11 +25,16 @@ cargo tauri dev                                      # run the app (needs `cargo
 cargo tauri build --bundles appimage                 # → src-tauri/target/release/bundle/appimage/
 ```
 
+## Branches
+
+- `main` = what has been released (the fallback; every release is also a `vX.Y.Z` tag). Don't commit work-in-progress to it.
+- `dev` = day-to-day work. Commit and push here; to release, fast-forward `main` to `dev` (`git switch main && git merge --ff-only dev && git push`), then follow Releasing below and switch back to `dev`.
+
 ## Releasing — ALWAYS all three platforms
 
 Every release ships **Linux AppImage + Windows .msi + macOS .dmg (universal: Intel + Apple Silicon)**. Never release just one.
 
-1. Bump the version in all four places (see Rules); update the docs; commit and push to `main`.
+1. On `dev`: bump the version in all four places (see Rules); update the docs; commit; then fast-forward `main` to `dev` and push both.
 2. **Linux first:** `RELEASE_NOTES="…" scripts/release-linux.sh` builds the AppImage with embedded update info (Gear Lever / AppImageUpdate read it: `gh-releases-zsync|…|DealDrop_*_amd64.AppImage.zsync`), makes the `.zsync` and publishes both to the release. Needs `zsyncmake` (package `zsync`). The maintainer tests it.
 3. **Only after the Linux build is confirmed working:** `gh workflow run release.yml -f tag=vX.Y.Z` — `.github/workflows/release.yml` builds the Windows .msi and macOS .dmg on GitHub runners and attaches them to that same release. (Windows/macOS can't be built locally on Linux; don't ship them for a build that's known broken.)
 4. Check the release has all three assets before announcing it.
