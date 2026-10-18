@@ -54,6 +54,8 @@ pub struct Price {
     pub fin: f64,
     pub initial: f64,
     pub formatted: Option<String>,
+    /// ISO code when known (Steam/Epic are fetched for the US store)
+    pub currency: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -68,6 +70,8 @@ pub struct WishItem {
     pub price_info: Option<Price>,
     /// Cheaper offer elsewhere (only set when strictly cheaper than this store's price)
     pub cheapest: Option<Cheapest>,
+    /// CheapShark's all-time low (USD)
+    pub lowest: Option<f64>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -188,7 +192,7 @@ pub async fn steam_items(ids: &[String]) -> R<HashMap<String, SteamItem>> {
                 let fin = f(&bo["final_price_in_cents"]) / 100.0;
                 let discount = bo["discount_pct"].as_u64().unwrap_or(0) as u32;
                 let initial = if discount > 0 { f(&bo["original_price_in_cents"]) / 100.0 } else { fin };
-                Some(Price { discount, fin, initial, formatted: s(&bo["formatted_final_price"]) })
+                Some(Price { discount, fin, initial, formatted: s(&bo["formatted_final_price"]), currency: Some("USD".into()) })
             };
             let a = &it["assets"];
             let image = a["asset_url_format"].as_str()
@@ -475,6 +479,7 @@ pub async fn steam_wishlist(steam_id: &str) -> R<Vec<WishItem>> {
             price_info: it.and_then(|i| i.price.clone()),
             app_id: Some(id.clone()),
             cheapest: None,
+            lowest: None,
             id,
         }
     }).collect())
@@ -671,16 +676,20 @@ pub async fn cheapshark_deals() -> R<Vec<Deal>> {
     let body = body?;
     let mut deals = parse_cheapshark_deals(&body, &stores)?;
     let game_by_deal = cheapshark_deals_by_game(&body);
-    let game_ids: Vec<String> = game_by_deal.values().cloned().collect::<std::collections::HashSet<_>>().into_iter().collect();
-    let results = futures::future::join_all(game_ids.chunks(25).map(|chunk| async move {
-        get_text(&format!("https://www.cheapshark.com/api/1.0/games?ids={}", chunk.join(","))).await.ok()
-    })).await;
-    let lowest: HashMap<String, f64> = results.into_iter().flatten()
-        .flat_map(|body| parse_cheapshark_lowest(&body)).collect();
+    let lowest = cheapshark_lowest(game_by_deal.values().cloned()).await;
     for deal in &mut deals {
         deal.lowest = game_by_deal.get(&deal.id).and_then(|id| lowest.get(id)).copied();
     }
     Ok(deals)
+}
+
+/// gameID → all-time low, 25 ids per request; failed batches are just missing.
+async fn cheapshark_lowest(ids: impl IntoIterator<Item = String>) -> HashMap<String, f64> {
+    let ids: Vec<String> = ids.into_iter().collect::<std::collections::HashSet<_>>().into_iter().collect();
+    let results = futures::future::join_all(ids.chunks(25).map(|chunk| async move {
+        get_text(&format!("https://www.cheapshark.com/api/1.0/games?ids={}", chunk.join(","))).await.ok()
+    })).await;
+    results.into_iter().flatten().flat_map(|body| parse_cheapshark_lowest(&body)).collect()
 }
 
 fn cheapshark_deals_by_game(body: &str) -> HashMap<String, String> {
@@ -719,19 +728,13 @@ fn parse_cheapshark_deals(body: &str, stores: &HashMap<String, String>) -> R<Vec
 /// CheapShark batches Steam appids; GOG/Epic items are matched by exact title.
 pub async fn attach_cheapest(items: &mut [WishItem]) {
     let stores = cheapshark_stores().await;
-    // (item index, cheapest price, dealID)
-    let mut found: Vec<(usize, f64, String)> = vec![];
+    let mut found: Vec<GameMatch> = vec![];
 
     let steam_idx: Vec<usize> = (0..items.len()).filter(|&i| items[i].app_id.is_some() && items[i].price_info.is_some()).collect();
     for chunk in steam_idx.chunks(25) {
         let ids: Vec<&str> = chunk.iter().filter_map(|&i| items[i].app_id.as_deref()).collect();
         let Ok(v) = get_json(&format!("https://www.cheapshark.com/api/1.0/games?steamAppID={}", ids.join(","))).await else { continue };
-        for g in v.as_array().into_iter().flatten() {
-            let app = s(&g["steamAppID"]).unwrap_or_default();
-            if let (Some(&i), Some(deal)) = (chunk.iter().find(|&&i| items[i].app_id.as_deref() == Some(app.as_str())), s(&g["cheapestDealID"])) {
-                found.push((i, f(&g["cheapest"]), deal));
-            }
-        }
+        found.extend(cheapshark_matches(items, chunk, &v));
     }
     let other_idx: Vec<usize> = (0..items.len()).filter(|&i| items[i].app_id.is_none() && items[i].price_info.is_some()).take(30).collect();
     let lookups = futures::future::join_all(other_idx.iter().map(|&i| {
@@ -739,24 +742,51 @@ pub async fn attach_cheapest(items: &mut [WishItem]) {
         async move { (i, get_json(&url).await.ok()) }
     })).await;
     for (i, v) in lookups {
-        if let Some(g) = v.as_ref().and_then(|v| v.get(0)) {
-            if let Some(deal) = s(&g["cheapestDealID"]) { found.push((i, f(&g["cheapest"]), deal)); }
-        }
+        if let Some(v) = v { found.extend(cheapshark_matches(items, &[i], &v)); }
     }
 
+    // Lowest-ever only matters (and is only shown) for games on sale
+    let games: Vec<(usize, String)> = found.iter()
+        .filter(|m| items[m.0].price_info.as_ref().is_some_and(|p| p.discount > 0))
+        .filter_map(|m| Some((m.0, m.3.clone()?))).collect();
     // Only look up store/link for games where somebody else is strictly cheaper
     let cheaper: Vec<_> = found.into_iter()
+        .filter_map(|(i, price, deal, _)| Some((i, price, deal?)))
         .filter(|(i, price, _)| items[*i].price_info.as_ref().is_some_and(|p| *price + 0.005 < p.fin))
         .collect();
-    let details = futures::future::join_all(cheaper.iter().map(|(_, _, deal)| async move {
-        get_json(&format!("https://www.cheapshark.com/api/1.0/deals?id={deal}")).await.ok()
-    })).await;
+    let (lowest, details) = futures::join!(
+        cheapshark_lowest(games.iter().map(|(_, g)| g.clone())),
+        futures::future::join_all(cheaper.iter().map(|(_, _, deal)| async move {
+            get_json(&format!("https://www.cheapshark.com/api/1.0/deals?id={deal}")).await.ok()
+        }))
+    );
+    assign_lowest(items, &games, &lowest);
     for ((i, price, deal), d) in cheaper.into_iter().zip(details) {
         let store = d.and_then(|d| s(&d["gameInfo"]["storeID"])).and_then(|id| stores.get(&id).cloned());
         if let Some(store) = store {
             items[i].cheapest = Some(Cheapest { store, price, url: format!("https://www.cheapshark.com/redirect?dealID={deal}") });
         }
     }
+}
+
+/// (item index, cheapest price, cheapestDealID, gameID)
+type GameMatch = (usize, f64, Option<String>, Option<String>);
+
+/// Pairs a CheapShark `games?` response with the items it was asked for:
+/// a Steam batch matches by appid, a title lookup (one item) takes its first entry.
+fn cheapshark_matches(items: &[WishItem], idx: &[usize], v: &Value) -> Vec<GameMatch> {
+    let entries = v.as_array().map_or(&[][..], |a| a.as_slice());
+    entries.iter().filter_map(|g| {
+        let i = match idx {
+            [i] if items[*i].app_id.is_none() => *i,
+            _ => *idx.iter().find(|&&i| items[i].app_id.is_some() && items[i].app_id == s(&g["steamAppID"]))?,
+        };
+        Some((i, f(&g["cheapest"]), s(&g["cheapestDealID"]), s(&g["gameID"])))
+    }).collect()
+}
+
+fn assign_lowest(items: &mut [WishItem], games: &[(usize, String)], lowest: &HashMap<String, f64>) {
+    for (i, game) in games { items[*i].lowest = lowest.get(game).copied(); }
 }
 
 /// Cheapest third-party price for one Steam game (wishlist detail panel).
@@ -823,7 +853,7 @@ mod live {
         let mut w = steam_wishlist(&id).await.unwrap();
         attach_cheapest(&mut w).await;
         let n = w.iter().filter(|i| i.cheapest.is_some()).count();
-        println!("{} items, {} have a cheaper non-Steam offer", w.len(), n);
+        println!("{} items, {} have a cheaper non-Steam offer, {} have a lowest-ever price", w.len(), n, w.iter().filter(|i| i.lowest.is_some()).count());
         for i in w.iter().filter(|i| i.cheapest.is_some()).take(5) {
             println!("{} steam ${:.2} -> {:?}", i.name, i.price_info.as_ref().unwrap().fin, i.cheapest);
         }
@@ -1037,6 +1067,34 @@ mod unit {
         assert_eq!(super::cheapshark_deals_by_game(body).get("AbC").map(String::as_str), Some("10"));
         let history = r#"{"10":{"cheapestPriceEver":{"price":"4.25"}},"11":{"cheapestPriceEver":{"price":"2.50"}}}"#;
         assert_eq!(super::parse_cheapshark_lowest(history).get("10"), Some(&4.25));
+    }
+
+    #[test]
+    fn wishlist_lowest_matches_game_ids() {
+        use super::WishItem;
+        use serde_json::json;
+        let item = |app: Option<&str>| WishItem { app_id: app.map(str::to_string), ..Default::default() };
+        let mut items = vec![item(Some("620")), item(Some("400")), item(None)];
+        // Steam batch: matched by appid, in any order; an unknown appid is ignored
+        let steam = json!([
+            {"gameID": "7", "steamAppID": "400", "cheapest": "1.99", "cheapestDealID": "d400"},
+            {"gameID": "36", "steamAppID": "620", "cheapest": "9.99", "cheapestDealID": "d620"},
+            {"gameID": "99", "steamAppID": "1", "cheapest": "0.50", "cheapestDealID": "d1"}
+        ]);
+        let mut found = super::cheapshark_matches(&items, &[0, 1], &steam);
+        // Title lookup for the non-Steam item, missing its deal id
+        found.extend(super::cheapshark_matches(&items, &[2], &json!([{"gameID": "55", "cheapest": "3.00"}])));
+        found.extend(super::cheapshark_matches(&items, &[2], &json!({"error": "nope"})));
+        let games: Vec<(usize, String)> = found.iter().filter_map(|m| Some((m.0, m.3.clone()?))).collect();
+        assert_eq!(games, vec![(1, "7".into()), (0, "36".into()), (2, "55".into())]);
+        assert_eq!(found[1].2.as_deref(), Some("d620"));
+        assert_eq!(found[2].2, None);
+
+        let lowest = super::parse_cheapshark_lowest(r#"{"36":{"cheapestPriceEver":{"price":"1.99"}},"7":{"cheapestPriceEver":{}}}"#);
+        super::assign_lowest(&mut items, &games, &lowest);
+        assert_eq!(items[0].lowest, Some(1.99));
+        assert_eq!(items[1].lowest, None);
+        assert_eq!(items[2].lowest, None);
     }
 
     #[test]

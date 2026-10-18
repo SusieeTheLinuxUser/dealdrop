@@ -615,6 +615,14 @@ function renderTabList (container, choices, selected, label, onSelect) {
   })
 }
 
+// CheapShark's all-time low is in USD, so only USD store prices are compared.
+function wishlistLowestTag (w) {
+  const p = w.priceInfo
+  return w.lowest != null && p?.currency === 'USD' && p.discount > 0 && p.final <= w.lowest + 0.005
+    ? ' <span class="deal-lowest-tag" aria-hidden="true">Lowest ever</span><span class="sr-only"> Lowest price ever.</span>'
+    : ''
+}
+
 function makeWishlistSaleRow (w) {
   const p   = w.priceInfo
   const row = document.createElement('div')
@@ -625,7 +633,7 @@ function makeWishlistSaleRow (w) {
   main.innerHTML = `
     <div>
       <div class="deal-name">${escHtml(w.name)}</div>
-      <div class="deal-store">${storeTag(w.store)}${w.cheapest ? `<span class="cheapest-tag">↘ ${escHtml(w.cheapest.store)} ${fmt$(w.cheapest.price)}</span>` : ''}</div>
+      <div class="deal-store">${storeTag(w.store)}${w.cheapest ? `<span class="cheapest-tag">↘ ${escHtml(w.cheapest.store)} ${fmt$(w.cheapest.price)}</span>` : ''}${wishlistLowestTag(w)}</div>
     </div>
     <span class="sr-only">${escHtml(salePriceDescription(p.initial, p.final, p.discount, p.formatted))}</span>
     <span class="deal-orig" aria-hidden="true">${fmt$(p.initial)}</span>
@@ -663,7 +671,7 @@ function makeWishlistRow (w) {
         : `<span style="color:var(--text2)">${escHtml(p.formatted)}</span>`)
     : ''
   const cheap = w.cheapest ? ` <span class="cheapest-tag">${ARROW_DOWN} cheaper at ${escHtml(w.cheapest.store)}: ${fmt$(w.cheapest.price)}</span>` : ''
-  info.innerHTML = `<div class="wishlist-name">${storeTag(w.store)}${escHtml(w.name)}</div><div class="wishlist-sub">${priceStr}${cheap}</div>`
+  info.innerHTML = `<div class="wishlist-name">${storeTag(w.store)}${escHtml(w.name)}</div><div class="wishlist-sub">${priceStr}${cheap}${wishlistLowestTag(w)}</div>`
   info.querySelector('.wishlist-name').setAttribute('title', w.name)
 
   main.append(thumb, info)

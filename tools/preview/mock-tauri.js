@@ -28,9 +28,9 @@
     cut, price, regular, lowest, appId,
   })
   const wishlistItems = [
-    { store: 'steam', id: 'steam-440', appId: '440', name: 'Team Fortress 2', image: null, url: 'https://store.steampowered.com/app/440', priceInfo: { discount: 50, final: 4.99, initial: 9.99, formatted: '$4.99' }, cheapest: { store: 'GOG', price: 3.99, url: 'https://www.gog.com/game/classic_quest' } },
-    { store: 'gog', id: 'gog-123456', appId: null, name: 'Classic Quest', image: null, url: 'https://www.gog.com/game/classic_quest', priceInfo: { discount: 0, final: 9.99, initial: 9.99, formatted: '$9.99' }, cheapest: null },
-    { store: 'epic', id: 'epic-123', appId: null, name: 'Skyward Bound', image: null, url: 'https://store.epicgames.com/', priceInfo: { discount: 20, final: 7.99, initial: 9.99, formatted: '$7.99' }, cheapest: null },
+    { store: 'steam', id: 'steam-440', appId: '440', name: 'Team Fortress 2', image: null, url: 'https://store.steampowered.com/app/440', priceInfo: { discount: 50, final: 4.99, initial: 9.99, formatted: '$4.99', currency: 'USD' }, cheapest: { store: 'GOG', price: 3.99, url: 'https://www.gog.com/game/classic_quest' }, lowest: 4.99 },
+    { store: 'gog', id: 'gog-123456', appId: null, name: 'Classic Quest', image: null, url: 'https://www.gog.com/game/classic_quest', priceInfo: { discount: 0, final: 9.99, initial: 9.99, formatted: '$9.99', currency: 'USD' }, cheapest: null, lowest: 9.99 },
+    { store: 'epic', id: 'epic-123', appId: null, name: 'Skyward Bound', image: null, url: 'https://store.epicgames.com/', priceInfo: { discount: 20, final: 7.99, initial: 9.99, formatted: '$7.99', currency: 'USD' }, cheapest: null, lowest: 5.99 },
   ]
   const sample = {
     freeGames: empty ? [] : [

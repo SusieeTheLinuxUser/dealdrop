@@ -216,10 +216,12 @@ fn parse_gog_wishlist_products(products: &Value, prices: &Value) -> Vec<WishItem
                 let pr = &i["_embedded"]["prices"][0];
                 let cents = |k: &str| pr[k].as_str()?.split_whitespace().next()?.parse::<f64>().ok().map(|c| c / 100.0);
                 let (base, fin) = (cents("basePrice")?, cents("finalPrice")?);
+                let currency = pr["finalPrice"].as_str().and_then(|p| p.split_whitespace().nth(1)).map(str::to_string);
                 Some(Price {
                     discount: if base > 0.0 { ((1.0 - fin / base) * 100.0).round() as u32 } else { 0 },
                     fin, initial: base,
                     formatted: Some(if fin == 0.0 { "Free".into() } else { format!("${fin:.2}") }),
+                    currency,
                 })
             });
         WishItem {
@@ -227,7 +229,7 @@ fn parse_gog_wishlist_products(products: &Value, prices: &Value) -> Vec<WishItem
             url: format!("https://www.gog.com/en/game/{}", p["slug"].as_str().unwrap_or_default()),
             image: p["images"]["logo2x"].as_str().map(|u| format!("https:{u}")),
             name: p["title"].as_str().unwrap_or("GOG game").into(),
-            id, app_id: None, price_info: price, cheapest: None,
+            id, app_id: None, price_info: price, cheapest: None, lowest: None,
         }
     }).collect()
 }
@@ -332,6 +334,7 @@ fn epic_price(o: &Value) -> Option<Price> {
         discount: if orig > 0.0 { ((1.0 - fin / orig) * 100.0).round() as u32 } else { 0 },
         fin, initial: orig,
         formatted: t["fmtPrice"]["discountPrice"].as_str().map(str::to_string),
+        currency: Some("USD".into()), // price(country:"US")
     })
 }
 
@@ -415,6 +418,7 @@ fn parse_epic_wishlist(v: &Value) -> R<Vec<WishItem>> {
             price_info: epic_price(o),
             app_id: None,
             cheapest: None,
+            lowest: None,
         })
     }).collect())
 }
@@ -456,6 +460,7 @@ mod unit {
         assert_eq!(p.fin, 5.0);
         assert_eq!(p.initial, 10.0);
         assert_eq!(p.formatted.as_deref(), Some("$5.00"));
+        assert_eq!(p.currency.as_deref(), Some("USD"));
         assert!(v[1].price_info.is_none());
         assert_eq!(v[1].name, "Unpriced");
         assert!(super::parse_gog_wishlist_products(&json!({}), &json!(null)).is_empty());
