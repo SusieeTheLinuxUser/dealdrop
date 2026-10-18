@@ -3,7 +3,10 @@
 // Development-only Tauri bridge stub. All data stays in this page's memory.
 (() => {
   const flags = new URLSearchParams(location.search)
-  const signedIn = flags.get('accounts') === '1'
+  const stress = flags.get('stress') === '1'
+  const stressTitle = 'UnbrokenStressTitle' + 'X'.repeat(100)
+  const stressAccount = 'PreviewAccount' + 'Y'.repeat(90)
+  const signedIn = flags.get('accounts') === '1' || stress
   const empty = flags.get('empty') === '1'
   const lastChecked = Date.now() - (flags.get('stale') === '1' ? 3 * 60 * 60 * 1000 : 5 * 60 * 1000)
   let settings = {
@@ -14,9 +17,9 @@
     onboarded: flags.get('onboarded') === '1',
   }
   let accounts = {
-    steam: signedIn ? { name: 'PlayerOne', avatar: null, profileUrl: 'https://steamcommunity.com/' } : null,
-    gog: signedIn ? { name: 'PlayerOne', avatar: null, profileUrl: 'https://www.gog.com/u/' } : null,
-    epic: signedIn ? { name: 'PlayerOne', avatar: null, profileUrl: 'https://www.epicgames.com/account/personal' } : null,
+    steam: signedIn ? { name: stress ? stressAccount : 'PlayerOne', avatar: null, profileUrl: 'https://steamcommunity.com/' } : null,
+    gog: signedIn ? { name: stress ? stressAccount : 'PlayerOne', avatar: null, profileUrl: 'https://www.gog.com/u/' } : null,
+    epic: signedIn ? { name: stress ? stressAccount : 'PlayerOne', avatar: null, profileUrl: 'https://www.epicgames.com/account/personal' } : null,
   }
   const deal = (id, title, shop, cut, price, regular, appId, url) => ({
     id, title, shop, url: url || `https://store.steampowered.com/app/${appId}`, image: null,
@@ -78,6 +81,16 @@
     wishlistErrors: signedIn && flags.get('errors') === '1' ? { gog: 'Could not refresh wishlist' } : {},
     sourceErrors: flags.get('errors') === '1' ? ['Epic sales: HTTP 500', 'GOG giveaways: unavailable'] : [],
     lastChecked,
+  }
+  if (stress) {
+    sample.freeGames.unshift({ id: 'stress-free', title: stressTitle, source: 'steam', url: 'https://store.steampowered.com/app/999001', image: null, appId: '999001', endDate: null, type: 'free' })
+    sample.freeWeekends.unshift({ id: 'stress-weekend', title: stressTitle, source: 'steam', url: 'https://store.steampowered.com/app/999002', image: null, appId: '999002', endDate: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(), type: 'weekend' })
+    Object.entries(sample.sales).forEach(([store, items]) => {
+      const shop = store === 'epic' ? 'Epic Games' : store === 'gog' ? 'GOG' : 'Steam'
+      items.push(deal(`stress-${store}`, stressTitle, shop, 80, 1234.56, 6172.80, '999003'))
+    })
+    sample.deals.unshift(deal('stress-deal', stressTitle, 'Steam', 80, 1234.56, 6172.80, '999004'))
+    sample.wishlist.push({ store: 'steam', id: 'stress-wishlist', appId: '999005', name: stressTitle, image: null, url: 'https://store.steampowered.com/app/999005', priceInfo: { discount: 80, final: 1234.56, initial: 6172.80, formatted: '$1234.56' }, cheapest: null })
   }
   const emitters = new Set()
   const launcherOptions = {
