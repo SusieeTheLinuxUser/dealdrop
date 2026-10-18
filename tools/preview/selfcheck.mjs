@@ -16,13 +16,15 @@ const label = { textContent: '' }
 const context = vm.createContext({ document: { getElementById: () => label } })
 vm.runInContext([
   sales,
-  between('const DEFAULT_SETTINGS = {', '\nconst state = {'),
+  between('const DEFAULT_SETTINGS = {', '\nconst UI_PREFS_KEY'),
+  between('const UI_PREFS_KEY', '\nfunction readUiPrefs'),
+  'const initialUiPrefs = mergeUiPrefs(null)',
   between('const state = {', '\nlet shortcutsDialog'),
   between('function filteredSorted (', '\nfunction syncMinDiscount'),
   between('function storeKeyFor (', '\nconst gameStoreName'),
   between('function escHtml (', '\n// ─── Boot'),
   between('function updateRefreshAge (', '\nfunction updateLastCheckedLabels'),
-  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge }',
+  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge, mergeUiPrefs }',
 ].join('\n'), context)
 
 const h = context.helpers
@@ -30,6 +32,17 @@ assert.equal(h.escHtml(`<tag a="&">'`), '&lt;tag a=&quot;&amp;&quot;&gt;\'')
 assert.equal(h.storeKeyFor('Steam'), 'steam')
 assert.equal(h.storeKeyFor('Epic Games'), 'epic')
 assert.equal(h.storeKeyFor('GOG Galaxy'), 'gog')
+
+const merged = h.mergeUiPrefs({
+  version: 1, page: 'wishlist',
+  lists: { deals: { sort: 'price', minDiscount: 75, query: 'not saved' }, storesales: { sort: 'name', minDiscount: 50 }, wishlist: { sort: 'name', onSaleOnly: true } },
+})
+assert.equal(merged.page, 'wishlist')
+assert.equal(merged.lists.deals.sort, 'price')
+assert.equal(merged.lists.deals.minDiscount, 75)
+assert.equal(merged.lists.wishlist.onSaleOnly, true)
+assert.equal('query' in merged.lists.deals, false)
+assert.equal(h.mergeUiPrefs({ version: 2, page: 'settings' }).page, 'free')
 
 const items = [
   { title: 'Beta B', price: 8, cut: 50 }, { title: 'Alpha', price: 5, cut: 90 },
@@ -54,4 +67,4 @@ h.state.lastChecked = Date.now()
 h.updateRefreshAge()
 assert.equal(label.textContent, 'Updated just now')
 
-console.log('Renderer self-check passed (escaping, filters, next sale, refresh age).')
+console.log('Renderer self-check passed (escaping, filters, UI preference merge, next sale, refresh age).')

@@ -52,6 +52,8 @@ html,body{background:transparent} /* window is transparent; #app paints the colo
 .main-content{overflow-y:auto;overflow-x:hidden;min-width:0;background:var(--bg0)}
 .page{display:none;padding:20px max(24px,calc((100% - 1120px)/2)) 32px}
 .page.active{display:block}
+.page-enter{animation:page-enter 120ms ease-out both}
+@keyframes page-enter{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 .page-header{display:flex;align-items:baseline;gap:12px;margin-bottom:20px}
 .page-header h1{font-size:18px;font-weight:600;color:var(--text0)}
 .last-checked{font-size:11px;color:var(--text2);font-family:var(--mono)}
@@ -275,6 +277,18 @@ html[data-round="on"] #app,html[data-round="on"] #fx{border-radius:14px}
 .list-controls{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px;min-width:0}
 .list-controls input{flex:1 1 160px;min-width:0;width:0;box-sizing:border-box;padding:8px 10px;background:var(--bg1);border:1px solid var(--border);border-radius:var(--r);color:var(--text0);font:inherit}
 .list-controls select{max-width:100%;min-width:0;padding:8px;background:var(--bg1);border:1px solid var(--border);border-radius:var(--r);color:var(--text1);font:inherit}
+.result-count{align-self:center;color:var(--text2);font-size:10px;font-family:var(--mono);white-space:nowrap}
+.result-count[hidden]{display:none}
+.skeleton{position:relative;overflow:hidden;background:linear-gradient(100deg,var(--bg1) 25%,var(--bg2) 50%,var(--bg1) 75%);background-size:200% 100%;animation:skeleton-shimmer 1.3s ease-in-out infinite;border:1px solid var(--border);border-radius:var(--r)}
+.skeleton-card{height:160px;padding:8px;border-radius:var(--rlg)}
+.skeleton-row{height:54px;display:flex;align-items:center;gap:10px;padding:10px}
+.skeleton span{display:block;background:var(--bg2);border-radius:4px}
+.skeleton-card span:first-child{height:82px;margin-bottom:3px}
+.skeleton-card span:nth-child(2){height:12px;width:72%}
+.skeleton-card span:nth-child(3){height:10px;width:42%}
+.skeleton-row span:first-child{height:12px;width:62%}
+.skeleton-row span:nth-child(2){height:10px;width:24%}
+@keyframes skeleton-shimmer{to{background-position:-200% 0}}
 .discount-filters{display:flex;flex:1 0 100%;flex-wrap:wrap;gap:6px;min-width:0}
 .discount-filters button{padding:5px 9px;border:1px solid var(--border);border-radius:var(--pill);background:var(--bg1);color:var(--text1);font:11px var(--sans);cursor:pointer;white-space:nowrap}
 .discount-filters button[aria-pressed="true"]{border-color:var(--acc);background:var(--acc-d);color:var(--text0)}
