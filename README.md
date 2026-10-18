@@ -1,5 +1,7 @@
 # DealDrop
 
+[![CI](https://github.com/SusieeTheLinuxUser/dealdrop/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/SusieeTheLinuxUser/dealdrop/actions/workflows/ci.yml)
+
 **Free, open source desktop app** that notifies you when Steam sales start, when free games drop on Epic/Steam/GOG, and when games on your Steam wishlist go on sale.
 
 Optional store sign-in enables wishlist alerts. No API keys or telemetry; DealDrop runs in your system tray.
