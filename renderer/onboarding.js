@@ -17,14 +17,20 @@
     returnFocus = document.activeElement; step = 0; lastAnnouncedStep = -1
     dialog = document.createElement('div'); dialog.className = 'onboarding-backdrop'
     dialog.innerHTML = '<section class="onboarding-dialog" role="dialog" aria-modal="true" aria-labelledby="onboarding-title"><div class="onboarding-head"><div class="onboarding-dots" aria-hidden="true"></div><span class="onboarding-count"></span></div><span class="onboarding-sr-only" aria-live="polite" aria-atomic="true"></span><div class="onboarding-content"></div><div class="onboarding-error" role="status"></div><div class="onboarding-actions"></div></section>'
-    document.body.appendChild(dialog); document.addEventListener('keydown', keydown); render()
+    document.body.appendChild(dialog); document.addEventListener('keydown', keydown); addEventListener('resize', fitDialog); render()
+  }
+  function fitDialog () {
+    const panel = dialog?.querySelector('.onboarding-dialog')
+    if (!panel) return
+    panel.style.height = 'auto'
+    panel.style.height = Math.min(panel.scrollHeight, innerHeight - 24) + 'px'
   }
   function finish () {
     if (!dialog) return
     api().state.settings.onboarded = true
     api().state.onboardingOpen = false
     window.api.saveSettings(api().state.settings)
-    document.removeEventListener('keydown', keydown); dialog.remove(); dialog = null
+    document.removeEventListener('keydown', keydown); removeEventListener('resize', fitDialog); dialog.remove(); dialog = null
     if (api().state.page === 'settings') api().renderSettings()
     returnFocus?.focus?.()
   }
@@ -123,6 +129,7 @@
     if (step < 4) { const skip = button('Skip', 'onboarding-skip', finish); skip.setAttribute('aria-label', 'Skip and keep my choices'); actions.appendChild(skip) }
     actions.appendChild(button(step === 4 ? 'Finish' : 'Next', 'onboarding-primary', () => { if (step === 4) finish(); else { step++; render() } }))
     const restore = focusKey && [...dialog.querySelectorAll('button:not(:disabled)[data-focus-key],select[data-focus-key],a[href][data-focus-key]')].find(el => el.dataset.focusKey === focusKey)
+    fitDialog()
     body.scrollTop = 0
     if (restore) restore.focus()
     else if (stepChanged || focusKey) dialog.querySelector('.onboarding-dialog button:not(:disabled),.onboarding-dialog select,.onboarding-dialog a[href]')?.focus()
