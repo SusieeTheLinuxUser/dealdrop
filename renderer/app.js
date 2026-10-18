@@ -43,6 +43,8 @@ const state = {
   refreshing: false,
   listFilters: { deals: { query: '', sort: 'discount' }, storesales: { query: '', sort: 'discount' } },
 }
+let shortcutsDialog = null
+let refreshAgeInterval = null
 
 function filteredSorted (items, key) {
   const { query, sort } = state.listFilters[key]
@@ -108,6 +110,87 @@ const REPO       = 'https://github.com/SusieeTheLinuxUser/dealdrop'
 const openBrowser = url   => window.api.openUrl(url)
 const openSteam   = appId => window.api.openInApp('steam', `https://store.steampowered.com/app/${appId}`)
 const launcherOf  = store => state.launchers[store]?.chosen ?? null
+
+function closeShortcutsDialog () {
+  if (!shortcutsDialog) return
+  const { overlay, returnFocus } = shortcutsDialog
+  shortcutsDialog = null
+  overlay.remove()
+  returnFocus?.focus?.()
+}
+
+function openShortcutsDialog () {
+  if (shortcutsDialog) return
+  const returnFocus = document.activeElement
+  const overlay = document.createElement('div'); overlay.className = 'shortcut-backdrop'
+  const dialog = document.createElement('section')
+  dialog.className = 'shortcut-dialog'; dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true')
+  dialog.setAttribute('aria-labelledby', 'shortcut-dialog-title')
+  const title = document.createElement('h2'); title.id = 'shortcut-dialog-title'; title.textContent = 'Keyboard shortcuts'
+  const list = document.createElement('dl'); list.className = 'shortcut-list'
+  ;[
+    ['R', 'Refresh all'], ['/','Focus search on this page'],
+    ['1–5', 'Open Wishlist, Free now, Store sales, Hot deals, or Calendar'],
+    [',', 'Open Settings'], ['?', 'Show this help'],
+  ].forEach(([key, description]) => {
+    const term = document.createElement('dt'), code = document.createElement('kbd'), detail = document.createElement('dd')
+    code.textContent = key; term.appendChild(code); detail.textContent = description; list.append(term, detail)
+  })
+  const close = document.createElement('button'); close.type = 'button'; close.className = 'shortcut-close'; close.textContent = 'Close'
+  close.addEventListener('click', closeShortcutsDialog)
+  dialog.append(title, list, close); overlay.appendChild(dialog); document.body.appendChild(overlay)
+  shortcutsDialog = { overlay, returnFocus }
+  close.focus()
+}
+
+function handleShortcutKeydown (e) {
+  if (shortcutsDialog) {
+    if (e.key === 'Escape') { e.preventDefault(); closeShortcutsDialog(); return }
+    if (e.key === 'Tab') { e.preventDefault(); shortcutsDialog.overlay.querySelector('button').focus() }
+    return
+  }
+  if (e.ctrlKey || e.metaKey || e.altKey) return
+  if (e.target.isContentEditable || e.target.closest?.('input, textarea, select, [contenteditable="true"]')) return
+  if (document.querySelector('.onboarding-backdrop, .tour-backdrop')) return
+  const key = e.key.length === 1 ? e.key.toLowerCase() : e.key
+  if (key === '?') { e.preventDefault(); openShortcutsDialog(); return }
+  if (key === 'r') { e.preventDefault(); loadData(true); return }
+  if (key === '/') {
+    const search = document.getElementById(state.page === 'deals' ? 'deals-search' : state.page === 'storesales' ? 'sales-search' : '')
+    if (search) { e.preventDefault(); search.focus() }
+    return
+  }
+  if (key === ',') { e.preventDefault(); navigate('settings'); return }
+  const pages = ['wishlist', 'free', 'storesales', 'deals', 'sales']
+  if (/^[1-5]$/.test(key)) { e.preventDefault(); navigate(pages[Number(key) - 1]) }
+}
+
+function updateRefreshAge () {
+  const label = document.getElementById('refresh-age')
+  if (!label) return
+  const timestamp = Number(state.lastChecked)
+  if (!Number.isFinite(timestamp) || timestamp <= 0) { label.textContent = 'Never'; return }
+  const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60_000))
+  label.textContent = `Updated ${minutes} min ago`
+}
+
+function updateLastCheckedLabels () {
+  updateRefreshAge()
+  const label = document.getElementById('lc-' + state.page)
+  if (label && state.lastChecked) label.textContent = fmtChecked(state.lastChecked)
+}
+
+function stopRefreshAgeTimer () {
+  if (refreshAgeInterval !== null) clearInterval(refreshAgeInterval)
+  refreshAgeInterval = null
+}
+
+function startRefreshAgeTimer () {
+  updateLastCheckedLabels()
+  if (refreshAgeInterval !== null) return
+  refreshAgeInterval = setInterval(updateLastCheckedLabels, 30_000)
+  window.addEventListener('pagehide', stopRefreshAgeTimer, { once: true })
+}
 
 // ─── Shared action buttons ────────────────────────────────────────────────────
 
@@ -981,6 +1064,7 @@ function applyData (data) {
     state.selectedWishlistDeal = null
   }
   state.lastChecked  = data.lastChecked  ?? Date.now()
+  updateRefreshAge()
   renderErrors()
   updateBadges()
   // Re-render the visible page — but never the settings page, so a background
@@ -1053,6 +1137,7 @@ async function init () {
     const a = e.target.closest('a[data-href]')
     if (a) { e.preventDefault(); window.api.openUrl(a.dataset.href) }
   })
+  document.addEventListener('keydown', handleShortcutKeydown)
   document.addEventListener('click', e => {
     const target = e.target.closest?.('[data-open-sale-index]')
     const sale = target && SALES[Number(target.dataset.openSaleIndex)]
@@ -1096,13 +1181,9 @@ async function init () {
   // Render calendar (no API call needed) then kick off initial data fetch
   renderSalesCalendar()
   navigate('free')
+  startRefreshAgeTimer()
   loadData()
 
-  // Refresh "updated X ago" text every 30s
-  setInterval(() => {
-    const tsEl = document.getElementById('lc-' + state.page)
-    if (tsEl && state.lastChecked) tsEl.textContent = fmtChecked(state.lastChecked)
-  }, 30_000)
   if (!state.settings.onboarded) startOnboarding()
 }
 

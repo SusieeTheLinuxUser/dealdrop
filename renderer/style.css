@@ -54,6 +54,7 @@ html,body{background:transparent} /* window is transparent; #app paints the colo
 .nav-item .badge.visible{display:inline-block}
 
 .sidebar-footer{padding:12px 14px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:8px}
+.refresh-age{color:var(--text2);font-size:10px;font-family:var(--mono);text-align:center}
 .check-now-btn{width:100%;padding:7px;font-size:12px;font-family:var(--sans);background:var(--bg3);border:1px solid var(--bord2);border-radius:var(--r);color:var(--text0);cursor:pointer;transition:background .12s}
 .check-now-btn:hover{background:var(--bg4)}
 .check-now-btn:disabled{opacity:.72;cursor:wait}
@@ -165,6 +166,7 @@ html,body{background:transparent} /* window is transparent; #app paints the colo
 .settings-about a{color:var(--acc);text-decoration:underline;cursor:pointer}
 .settings-about h3{margin:14px 0 4px;color:var(--text0);font-size:13px}
 .settings-about-sources{margin:0 0 12px;padding-left:20px;color:var(--text1);font-size:12px}
+.settings-about-shortcuts{margin:0 0 10px;color:var(--text2);font-size:11px}
 .settings-reset{margin-top:10px;padding:5px 8px;border:1px solid var(--border);border-radius:var(--r);background:transparent;color:var(--text2);font:inherit;font-size:11px;cursor:pointer}
 .settings-reset:hover{border-color:var(--bord2);color:var(--text0)}
 .setting-row{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--bg1);border:1px solid var(--border);border-radius:var(--r)}
@@ -252,6 +254,13 @@ html[data-round="on"] #app,html[data-round="on"] #fx{border-radius:14px}
 /* ── theme picker ── */
 .theme-grid{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px}
 .launcher-pref-grid{margin:0}
+.shortcut-backdrop{position:fixed;inset:0;z-index:30;display:grid;place-items:center;padding:12px;background:#0009}
+.shortcut-dialog{width:min(360px,100%);max-height:calc(100vh - 24px);overflow-y:auto;overflow-x:hidden;padding:18px;background:var(--bg0);border:1px solid var(--border);border-radius:var(--rlg);box-shadow:0 12px 36px #0008;color:var(--text1)}
+.shortcut-dialog h2{margin:0 0 12px;color:var(--text0);font-size:17px}
+.shortcut-list{display:grid;grid-template-columns:minmax(46px,auto) minmax(0,1fr);align-items:center;column-gap:12px;row-gap:8px;margin:0 0 16px}
+.shortcut-list dt{margin:0}.shortcut-list dd{margin:0;overflow-wrap:anywhere}
+.shortcut-dialog kbd{display:inline-block;min-width:30px;padding:3px 6px;border:1px solid var(--bord2);border-radius:var(--rs);background:var(--bg1);color:var(--text0);font:12px var(--mono);text-align:center}
+.shortcut-close{display:block;margin-left:auto;padding:6px 12px;border:1px solid var(--bord2);border-radius:var(--r);background:var(--bg3);color:var(--text0);font:inherit;cursor:pointer}
 .theme-chip{display:flex;align-items:center;gap:8px;padding:7px 12px;font-size:12px;font-family:var(--sans);background:var(--bg1);border:1px solid var(--border);border-radius:var(--r);color:var(--text1);cursor:pointer}
 .theme-chip:hover{color:var(--text0);border-color:var(--bord2)}
 .theme-chip.active{border-color:var(--acc);color:var(--acc);background:var(--acc-d)}
