@@ -21,7 +21,7 @@ Start the local server as described in [README.md](README.md), then use `http://
 | Steam free-to-keep game/DLC with Steam tag | `?onboarded=1` — Free now; inspect the Squad Weapon Skins DLC row. |
 | Free game and weekend end dates/order | `?onboarded=1` — Free now; verify dated items sort by soonest end, show an Ends in chip, and undated items appear last. |
 | Failed source keeps earlier rows | Needs a real build (requires a prior successful poll followed by a real source failure). |
-| Error banner and Copy error | `?onboarded=1&errors=1` — inspect banner and copy action. |
+| Error box placement and Copy error | `?onboarded=1&errors=1&accounts=1` — verify the red box sits below store accounts and above navigation, with Copy error fully visible. |
 | Launcher installed detection | Needs a real build (reads OS launcher registration/install state). |
 | Browser fallback | Needs a real build (opens the system browser). |
 | Steam / GOG deep links | Needs a real build (requires installed launcher and protocol handling). |

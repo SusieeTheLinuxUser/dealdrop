@@ -53,7 +53,7 @@ Platform code: launcher detection (`has_scheme` in `launchers.rs`) is per-OS via
 
 ## UI notes
 
-- **Errors:** every source that fails lands in `Snapshot.source_errors` (full text, built by `failure()` in `main.rs`) and the sidebar shows only a red "Something went wrong" box with a **Copy error** button (`renderErrors` / `copyError` in `app.js`). Never print raw error text in the sidebar; healthy state shows nothing.
+- **Errors:** every source that fails lands in `Snapshot.source_errors` (full text, built by `failure()` in `main.rs`) and the sidebar shows only a red "Something went wrong" box with a **Copy error** button (`renderErrors` / `copyError` in `app.js`), below accounts and above navigation. Never print raw error text in the sidebar; healthy state shows nothing.
 - **Window:** it has no OS frame, so edges/corners are our own `.rz` handles calling `startResizeDragging` (permission `core:window:allow-start-resize-dragging`); corners are bigger than edges so they win. Min size is 520×380; below the content's size the main area scrolls **vertically only**. Never add horizontal scrolling: shrink the sidebar (`clamp()` width) instead.
 - **Accounts:** sidebar rows show the store avatar (Steam, GOG) or the store logo (`logo()` / `LOGO_PATH` in `app.js`, simple-icons, CC0); clicking the name/avatar opens `Acct.profile_url` through `open_in_app` (Steam client if installed, else browser). Epic has no public profile page, so it links to the account page.
 - The titlebar logo is `renderer/logo.png` (a copy of `src-tauri/icons/64x64.png`, same art as the tray icon); keep them in sync if the icon changes.
