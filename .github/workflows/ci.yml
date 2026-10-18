@@ -1,4 +1,4 @@
-# Unit tests + renderer self-check on every push to dev/main and every PR.
+# Unit tests + renderer self-check (Linux), and cargo test on Windows and macOS, on every push to dev/main and every PR.
 # The #[ignore] live API tests are not run here (they need network and real stores).
 name: ci
 on:
@@ -26,3 +26,19 @@ jobs:
       - run: cargo test --locked
         working-directory: src-tauri
       - run: node tools/preview/selfcheck.mjs
+
+  # Windows/macOS code sits behind cfg and can't be compiled on Linux; check it compiles there.
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: src-tauri
+      - run: cargo test --locked
+        working-directory: src-tauri

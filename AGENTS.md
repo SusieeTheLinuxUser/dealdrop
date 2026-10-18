@@ -12,7 +12,7 @@ It polls store APIs, shows free games / store sales / hot deals / wishlists, and
 | `src-tauri/src/stores.rs` | Sign-in window + Steam/GOG/Epic auth, GOG & Epic wishlists, Epic sales |
 | `src-tauri/src/autostart.rs` | "Start when I log in": per-OS entry (XDG autostart file / `Run` registry value / LaunchAgent) that runs the app with `--hidden` (tray only); the OS entry is the only record of the setting |
 | `src-tauri/src/launchers.rs` | Open-in-launcher table, per-OS install detection, deep links |
-| `.github/workflows/ci.yml` | Every push to `dev`/`main` and every PR → `cargo test` + `node tools/preview/selfcheck.mjs` |
+| `.github/workflows/ci.yml` | Every push to `dev`/`main` and every PR → `cargo test` + `node tools/preview/selfcheck.mjs` on Linux, `cargo test` on Windows and macOS |
 | `.github/workflows/release.yml` | Manual dispatch → builds Windows .msi + macOS .dmg and attaches them to an existing release |
 | `renderer/api.js` | `window.api` → Tauri `invoke` bridge (the only place the UI touches the backend) |
 | `renderer/app.js` | All UI rendering. `renderer/index.html`, `renderer/style.css` |
