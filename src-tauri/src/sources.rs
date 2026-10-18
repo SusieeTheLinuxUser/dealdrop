@@ -236,14 +236,27 @@ fn sale_from_banners(banners: Vec<Value>) -> Option<LiveSale> {
     })
 }
 
+fn steam_sale_from(fdc: &Value) -> (bool, Option<LiveSale>) {
+    let heavy = fdc["specials"]["items"].as_array().into_iter().flatten()
+        .filter(|i| i["discount_percent"].as_u64().unwrap_or(0) >= 50).count();
+    let live = sale_from_banners(spotlights(fdc));
+    (live.is_some() || heavy >= 8, live)
+}
+
+/// `(sale is on, themed sale)`. `None` when `body` is not a JSON object. A JSON object with
+/// the wrong shape is `(false, None)` and does not panic.
+#[cfg(test)]
+fn read_steam_sale(body: &str) -> Option<(bool, Option<LiveSale>)> {
+    let fdc: Value = serde_json::from_str(body).ok()?;
+    if !fdc.is_object() { return None; }
+    Some(steam_sale_from(&fdc))
+}
+
 /// A seasonal sale that is live right now, if the store is advertising one.
 /// Returns (generic "sale is on" flag, themed sale if recognised).
 pub async fn detect_steam_sale() -> R<(bool, Option<LiveSale>)> {
     let fdc = featured_categories().await?;
-    let heavy = fdc["specials"]["items"].as_array().into_iter().flatten()
-        .filter(|i| i["discount_percent"].as_u64().unwrap_or(0) >= 50).count();
-    let live = sale_from_banners(spotlights(&fdc));
-    Ok((live.is_some() || heavy >= 8, live))
+    Ok(steam_sale_from(&fdc))
 }
 
 pub async fn steam_free_featured() -> R<Vec<Free>> {
@@ -898,5 +911,62 @@ mod unit {
         assert_eq!(key("Weekly Deals", "https://store.steampowered.com/sale/weekly"), None);
         assert_eq!(key("Summer Fest", "https://store.steampowered.com/sale/summerfest"), Some("summer".into()));
         assert!(super::sale_from_banners(vec![]).is_none());
+    }
+
+    #[test]
+    fn steam_sale_page_reads_spotlight_or_nothing() {
+        // Trimmed featuredcategories shape: keys "0","1",…, id "cat_spotlight",
+        // items {name, header_image, body, url}. specials items carry discount_percent.
+        let sale = r#"{
+            "0": {"id":"cat_spotlight","name":"Spotlights","items":[
+                {"name":"Publisher Sale","header_image":"https://cdn.example/p.jpg","body":"","url":"https://store.steampowered.com/sale/wbpubsale2026"}
+            ]},
+            "1": {"id":"cat_spotlight","name":"Spotlights","items":[
+                {"name":"Autumn Sale","header_image":"https://cdn.example/a.jpg","body":"","url":"https://store.steampowered.com/sale/autumn2026"}
+            ]},
+            "specials": {"id":"cat_specials","name":"Specials","items":[{"id":1,"discount_percent":10}]}
+        }"#;
+        let (on, live) = super::read_steam_sale(sale).unwrap();
+        assert!(on);
+        let live = live.unwrap();
+        assert_eq!(live.key, "autumn");
+        assert_eq!(live.name, "Autumn Sale");
+        assert_eq!(live.url.as_deref(), Some("https://store.steampowered.com/sale/autumn2026"));
+
+        let quiet = r#"{
+            "0": {"id":"cat_spotlight","name":"Spotlights","items":[
+                {"name":"Free Weekend","header_image":"https://cdn.example/f.jpg","body":"","url":"https://store.steampowered.com/app/313120"},
+                {"name":"Publisher Sale","header_image":"https://cdn.example/p.jpg","body":"","url":"https://store.steampowered.com/sale/wbpubsale2026"}
+            ]},
+            "specials": {"id":"cat_specials","items":[
+                {"discount_percent":70},{"discount_percent":75},{"discount_percent":85}
+            ]}
+        }"#;
+        let (on, live) = super::read_steam_sale(quiet).unwrap();
+        assert!(!on);
+        assert!(live.is_none());
+
+        let heavy = r#"{"specials":{"items":[
+            {"discount_percent":50},{"discount_percent":50},{"discount_percent":50},{"discount_percent":50},
+            {"discount_percent":50},{"discount_percent":50},{"discount_percent":50},{"discount_percent":50}
+        ]}}"#;
+        let (on, live) = super::read_steam_sale(heavy).unwrap();
+        assert!(on);
+        assert!(live.is_none());
+        let seven = r#"{"specials":{"items":[
+            {"discount_percent":50},{"discount_percent":50},{"discount_percent":50},{"discount_percent":50},
+            {"discount_percent":50},{"discount_percent":50},{"discount_percent":50}
+        ]}}"#;
+        let (on, live) = super::read_steam_sale(seven).unwrap();
+        assert!(!on);
+        assert!(live.is_none());
+
+        let (on, live) = super::read_steam_sale(r#"{"specials":"nope"}"#).unwrap();
+        assert!(!on);
+        assert!(live.is_none());
+        assert!(super::read_steam_sale("{").is_none());
+        assert!(super::read_steam_sale("").is_none());
+        assert!(super::read_steam_sale("null").is_none());
+        assert!(super::read_steam_sale("[1]").is_none());
     }
 }
