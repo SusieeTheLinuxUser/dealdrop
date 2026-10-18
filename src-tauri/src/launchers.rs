@@ -134,6 +134,30 @@ mod tests {
         assert_eq!(browser.options.len(), 1);
     }
 
+    /// SteamID64 of whoever is signed in to Steam on this PC (the "MostRecent" account in
+    /// loginusers.vdf, else the first one), or the empty base ID when Steam isn't installed (CI).
+    fn local_steam_id() -> String {
+        let home = std::env::var("HOME").unwrap_or_default();
+        let files = [
+            format!("{home}/.steam/steam/config/loginusers.vdf"),
+            format!("{home}/.local/share/Steam/config/loginusers.vdf"),
+            format!("{home}/.var/app/com.valvesoftware.Steam/.local/share/Steam/config/loginusers.vdf"),
+            format!("{home}/Library/Application Support/Steam/config/loginusers.vdf"),
+            r"C:\Program Files (x86)\Steam\config\loginusers.vdf".to_string(),
+        ];
+        let text = files.iter().find_map(|f| std::fs::read_to_string(f).ok()).unwrap_or_default();
+        let (mut current, mut first) = (None, None);
+        for line in text.lines().map(|l| l.trim().trim_matches('"')) {
+            if line.len() == 17 && line.starts_with("7656119") && line.bytes().all(|b| b.is_ascii_digit()) {
+                current = Some(line.to_string());
+                first = first.or(current.clone());
+            } else if line.starts_with("MostRecent") && line.ends_with('1') && current.is_some() {
+                return current.unwrap();
+            }
+        }
+        first.unwrap_or_else(|| "76561197960265728".into())
+    }
+
     #[test]
     fn deep_links() {
         let gog = Url::parse("https://www.gog.com/en/game/the_witcher_3_wild_hunt").unwrap();
@@ -144,8 +168,9 @@ mod tests {
         assert_eq!(link("steam", "native", &steam, None).unwrap(), "steam://store/60");
         let sale = Url::parse("https://store.steampowered.com/specials").unwrap();
         assert_eq!(link("steam", "native", &sale, None).unwrap(), "steam://openurl/https://store.steampowered.com/specials");
-        let profile = Url::parse("https://steamcommunity.com/profiles/76561199193167076").unwrap();
-        assert_eq!(link("steam", "native", &profile, None).unwrap(), "steam://openurl/https://steamcommunity.com/profiles/76561199193167076");
+        let id = local_steam_id();
+        let profile = Url::parse(&format!("https://steamcommunity.com/profiles/{id}")).unwrap();
+        assert_eq!(link("steam", "native", &profile, None).unwrap(), format!("steam://openurl/https://steamcommunity.com/profiles/{id}"));
         // remote data can't aim a launcher at another site or smuggle odd characters into a slug
         let evil = Url::parse("https://evil.example/app/60/").unwrap();
         assert!(link("steam", "native", &evil, None).is_none());
