@@ -13,16 +13,17 @@ Start the local server as described in [README.md](README.md), then use `http://
 | First-run guide and Skip/Escape persistence | No flag — test guide dismissal; persistent config across restart needs a real build. |
 | Guide again from Settings | `?onboarded=1` — Settings → About → Show welcome guide again. |
 | Coach tour fit and highlights | No flag — open guide, choose Show me around; inspect at a 570×420 pane. |
-| Keyboard shortcuts and typing guard | `?onboarded=1` — press `?`, test shortcuts, then type in search. |
+| Keyboard shortcuts and typing guard | `?onboarded=1` — press `?`, try `/` on Wishlist/Store sales/Hot deals, then confirm shortcuts are ignored while typing. |
 | Bundled fonts offline | Needs a real build for offline confirmation; preview sources fonts locally, no external requests. |
 | Free games, sales, and hot deals populate | `?onboarded=1` — inspect Free now, Store sales, and Hot deals. |
-| Refresh all reloads | `?onboarded=1` — click Refresh all and observe the busy state. |
-| Updated label counts and resets | `?onboarded=1&stale=1` — check 3-hour label, refresh, then check reset. |
+| Refresh all reloads | `?onboarded=1` — click Refresh all; verify it disables and says “Refreshing…” then returns to “Refresh all”. |
+| Updated label counts and resets | `?onboarded=1&stale=1` — check 3-hour label; refresh and verify “Updated just now”. |
 | Steam free-to-keep game/DLC with Steam tag | `?onboarded=1` — Free now; inspect the Squad Weapon Skins DLC row. |
 | Free game and weekend end dates/order | `?onboarded=1` — Free now; verify dated items sort by soonest end, show an Ends in chip, and undated items appear last. |
 | Initial list loading before the first snapshot | Needs a real build (preview data resolves immediately); inspect Deals, Store sales, and signed-in Wishlist before the first poll completes. |
 | Failed source keeps earlier rows | Needs a real build (requires a prior successful poll followed by a real source failure). |
-| Error box placement and Copy error | `?onboarded=1&errors=1&accounts=1` — verify the red box sits below store accounts and above navigation, with Copy error fully visible. |
+| Error box placement and Copy error | `?onboarded=1&errors=1&accounts=1` — verify the red-tinted box sits below store accounts and above navigation, with Copy error fully visible. |
+| Settings labels and hints | `?onboarded=1` — Settings; verify theme, reset, interval, and refresh helper text is visible. |
 | Launcher installed detection | Needs a real build (reads OS launcher registration/install state). |
 | Browser fallback | Needs a real build (opens the system browser). |
 | Steam / GOG deep links | Needs a real build (requires installed launcher and protocol handling). |
