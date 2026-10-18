@@ -65,6 +65,9 @@ const fmt$ = n => {
   return num === 0 ? 'Free' : '$' + num.toFixed(2)
 }
 
+const salePriceDescription = (regular, price, discount, formatted) =>
+  `Was ${fmt$(regular)}, now ${formatted || fmt$(price)}, ${discount}% off`
+
 function timeLeft (dateStr) {
   if (!dateStr) return ''
   const diff = new Date(dateStr) - Date.now()
@@ -87,6 +90,7 @@ function fmtChecked (ts) {
 
 const srcIcon = src => ({ steam: '🎮', epic: '🕹️', gog: '⚔️' }[src] ?? '🎮')
 const STORES = { steam: 'Steam', gog: 'GOG', epic: 'Epic' }
+const gameStoreName = store => ({steam:'Steam', gog:'GOG', epic:'Epic Games'}[String(store ?? '').toLowerCase()] ?? String(store ?? 'Store'))
 const hasAccount = () => Object.values(state.accounts).some(Boolean)
 const onSaleItems = () => state.wishlist.filter(w => (w.priceInfo?.discount ?? 0) >= 20)
 
@@ -198,16 +202,21 @@ function startRefreshAgeTimer () {
 
 // Buttons: "<Store> app" only when that launcher is installed (the backend falls back
 // to the browser anyway), plus Browser.
-function makeCardActions (store, url, id) {
+function makeCardActions (store, url, id, title) {
   const wrap     = document.createElement('div')
   wrap.className = 'card-actions'
   const ch = launcherOf(store)
+  const storeName = gameStoreName(store)
   if (ch) {
-    const appBtn = tmpl(`<button class="card-btn steam-btn" title="Open in ${ch.label}">${ch.label}</button>`)
+    const appBtn = document.createElement('button')
+    appBtn.type = 'button'; appBtn.className = 'card-btn steam-btn'; appBtn.title = `Open in ${ch.label}`; appBtn.textContent = ch.label
+    appBtn.setAttribute('aria-label', `Open ${title} in ${ch.label} (${storeName})`)
     appBtn.addEventListener('click', e => { e.stopPropagation(); window.api.openInApp(store, url, id) })
     wrap.append(appBtn)
   }
-  const webBtn = tmpl(`<button class="card-btn" title="Open in browser">🌐 Browser</button>`)
+  const webBtn = document.createElement('button')
+  webBtn.type = 'button'; webBtn.className = 'card-btn'; webBtn.title = 'Open in browser'; webBtn.textContent = '🌐 Browser'
+  webBtn.setAttribute('aria-label', `Open ${title} on ${storeName} in browser`)
   webBtn.addEventListener('click', e => { e.stopPropagation(); openBrowser(url) })
   wrap.append(webBtn)
   return wrap
@@ -242,15 +251,9 @@ function renderWishlist () {
   const stores = Object.keys(STORES).filter(s => state.accounts[s])
   if (!stores.includes(state.wishlistTab)) state.wishlistTab = 'all'
   tabs.style.display = stores.length > 1 ? 'flex' : 'none'
-  tabs.innerHTML = ''
-  ;['all', ...stores].forEach(s => {
-    const n = s === 'all' ? state.wishlist.length : state.wishlist.filter(w => w.store === s).length
-    const b = document.createElement('button')
-    b.className = 'tab' + (state.wishlistTab === s ? ' active' : '')
-    b.textContent = `${s === 'all' ? 'All' : STORES[s]} (${n})`
-    b.addEventListener('click', () => { state.wishlistTab = s; renderWishlist() })
-    tabs.appendChild(b)
-  })
+  renderTabList(tabs, ['all', ...stores].map(s => ({
+    key: s, text: `${s === 'all' ? 'All' : STORES[s]} (${s === 'all' ? state.wishlist.length : state.wishlist.filter(w => w.store === s).length})`,
+  })), state.wishlistTab, 'Wishlist stores', s => { state.wishlistTab = s; renderWishlist() })
 
   const items = state.wishlistTab === 'all' ? state.wishlist : state.wishlist.filter(w => w.store === state.wishlistTab)
   if (!items.length) {
@@ -280,6 +283,34 @@ const storeTag = s => `<span class="store-tag ${escHtml(s)}">${escHtml(STORES[s]
 // Where "open" should go: the cheapest known offer if another store beats this one
 const bestUrl = w => w.cheapest?.url ?? w.url
 
+function renderTabList (container, choices, selected, label, onSelect) {
+  container.setAttribute('role', 'tablist')
+  container.setAttribute('aria-label', label)
+  container.replaceChildren()
+  const activate = key => {
+    onSelect(key)
+    ;[...container.querySelectorAll('[role="tab"]')].find(tab => tab.dataset.tabKey === key)?.focus()
+  }
+  choices.forEach(({key, text}) => {
+    const tab = document.createElement('button')
+    tab.type = 'button'; tab.className = 'tab' + (key === selected ? ' active' : ''); tab.setAttribute('role', 'tab')
+    tab.dataset.tabKey = key; tab.textContent = text
+    tab.setAttribute('aria-selected', String(key === selected)); tab.tabIndex = key === selected ? 0 : -1
+    tab.addEventListener('click', () => activate(key))
+    tab.addEventListener('keydown', e => {
+      const index = choices.findIndex(choice => choice.key === key)
+      let next = index
+      if (e.key === 'ArrowRight') next = (index + 1) % choices.length
+      else if (e.key === 'ArrowLeft') next = (index - 1 + choices.length) % choices.length
+      else if (e.key === 'Home') next = 0
+      else if (e.key === 'End') next = choices.length - 1
+      else return
+      e.preventDefault(); activate(choices[next].key)
+    })
+    container.appendChild(tab)
+  })
+}
+
 function makeWishlistSaleRow (w) {
   const p   = w.priceInfo
   const row = document.createElement('div')
@@ -292,10 +323,12 @@ function makeWishlistSaleRow (w) {
       <div class="deal-name">${escHtml(w.name)}</div>
       <div class="deal-store">${storeTag(w.store)}${w.cheapest ? `<span class="cheapest-tag">↘ ${escHtml(w.cheapest.store)} ${fmt$(w.cheapest.price)}</span>` : ''}</div>
     </div>
-    <span class="deal-orig">${fmt$(p.initial)}</span>
-    <span class="deal-cut">-${p.discount}%</span>
-    <span class="deal-price">${escHtml(p.formatted ?? fmt$(p.final))}</span>`
+    <span class="sr-only">${escHtml(salePriceDescription(p.initial, p.final, p.discount, p.formatted))}</span>
+    <span class="deal-orig" aria-hidden="true">${fmt$(p.initial)}</span>
+    <span class="deal-cut" aria-hidden="true">-${p.discount}%</span>
+    <span class="deal-price" aria-hidden="true">${escHtml(p.formatted ?? fmt$(p.final))}</span>`
   const btn = tmpl(`<button class="deal-open" title="${w.cheapest ? 'Open cheapest offer' : 'Open store page'}">↗</button>`)
+  btn.setAttribute('aria-label', `Open ${w.name} at ${w.cheapest?.store || gameStoreName(w.store)}`)
   btn.addEventListener('click', e => { e.stopPropagation(); openBrowser(bestUrl(w)) })
   main.addEventListener('click', () => openBrowser(bestUrl(w)))
   row.append(main, btn)
@@ -321,7 +354,7 @@ function makeWishlistRow (w) {
   const info  = document.createElement('div')
   const priceStr = p?.formatted
     ? (onSale
-        ? `<span style="color:var(--amber)">-${p.discount}% · ${escHtml(p.formatted)}</span>`
+        ? `<span class="sr-only">${escHtml(salePriceDescription(p.initial, p.final, p.discount, p.formatted))}</span><span aria-hidden="true" style="color:var(--amber)">-${p.discount}% · ${escHtml(p.formatted)}</span>`
         : `<span style="color:var(--text2)">${escHtml(p.formatted)}</span>`)
     : ''
   const cheap = w.cheapest ? ` <span class="cheapest-tag">${ARROW_DOWN} cheaper at ${escHtml(w.cheapest.store)}: ${fmt$(w.cheapest.price)}</span>` : ''
@@ -337,12 +370,16 @@ function makeIconBtns (w) {
   const wrap     = document.createElement('div')
   wrap.className = 'wishlist-actions'
   const ch = launcherOf(w.store)
+  const storeName = gameStoreName(w.store)
   if (ch) {
-    const appBtn = tmpl(`<button class="icon-btn" title="Open in ${ch.label}">${LOGO_PATH[w.store] ? logo(w.store) : ch.label[0]}</button>`)
+    const appBtn = tmpl(`<button class="icon-btn" title="Open in launcher">${LOGO_PATH[w.store] ? logo(w.store) : escHtml(ch.label[0])}</button>`)
+    appBtn.title = `Open in ${ch.label}`
+    appBtn.setAttribute('aria-label', `Open ${w.name} in ${ch.label} (${storeName})`)
     appBtn.addEventListener('click', e => { e.stopPropagation(); window.api.openInApp(w.store, w.url, w.id) })
     wrap.append(appBtn)
   }
   const webBtn = tmpl(`<button class="icon-btn" title="${w.cheapest ? `Open cheapest offer (${escHtml(w.cheapest.store)})` : 'Open in browser'}">${w.cheapest ? ARROW_DOWN : '↗'}</button>`)
+  webBtn.setAttribute('aria-label', `Open ${w.name} at ${w.cheapest?.store || storeName} in browser`)
   webBtn.addEventListener('click', e => { e.stopPropagation(); openBrowser(bestUrl(w)) })
   wrap.append(webBtn)
   return wrap
@@ -441,11 +478,11 @@ function renderFreeGames () {
 function updateBadges () {
   const onSale = onSaleItems().length
   const wb = document.getElementById('badge-wishlist')
-  if (wb) { wb.textContent = onSale; wb.classList.toggle('visible', onSale > 0) }
+  if (wb) { wb.querySelector('.badge-count').textContent = onSale; wb.classList.toggle('visible', onSale > 0) }
 
   const total = state.freeGames.length + state.freeWeekends.length
   const fb = document.getElementById('badge-free')
-  if (fb) { fb.textContent = total; fb.classList.toggle('visible', total > 0) }
+  if (fb) { fb.querySelector('.badge-count').textContent = total; fb.classList.toggle('visible', total > 0) }
 }
 
 function makeFreeCard (g, tagClass, tagText) {
@@ -466,7 +503,7 @@ function makeFreeCard (g, tagClass, tagText) {
         ${g.endDate ? `<span class="time-left">${timeLeft(g.endDate)}</span>` : ''}
       </div>
     </div>`
-  card.appendChild(makeCardActions(g.source, g.url, g.appId))
+  card.appendChild(makeCardActions(g.source, g.url, g.appId, g.title))
   return card
 }
 
@@ -510,10 +547,12 @@ function makeDealRow (d) {
       <div class="deal-name">${escHtml(d.title)}</div>
       <div class="deal-store">${escHtml(d.shop)}</div>
     </div>
-    <span class="deal-orig">${fmt$(d.regular)}</span>
-    <span class="deal-cut">-${d.cut}%</span>
-    <span class="deal-price">${fmt$(d.price)}</span>`
+    <span class="sr-only">${escHtml(salePriceDescription(d.regular, d.price, d.cut))}</span>
+    <span class="deal-orig" aria-hidden="true">${fmt$(d.regular)}</span>
+    <span class="deal-cut" aria-hidden="true">-${d.cut}%</span>
+    <span class="deal-price" aria-hidden="true">${fmt$(d.price)}</span>`
   const btn = tmpl(`<button class="deal-open" title="Open store page">↗</button>`)
+  btn.setAttribute('aria-label', `Open ${d.title} on ${d.shop}`)
   btn.addEventListener('click', e => { e.stopPropagation(); openBrowser(d.url) })
   main.addEventListener('click', () => openBrowser(d.url))
   row.append(main, btn)
@@ -528,14 +567,8 @@ function renderStoreSales () {
   const emptyEl = document.getElementById('empty-storesales')
   document.getElementById('lc-storesales').textContent = fmtChecked(state.lastChecked)
 
-  tabs.innerHTML = ''
-  Object.keys(STORES).forEach(s => {
-    const b = document.createElement('button')
-    b.className = 'tab' + (state.salesTab === s ? ' active' : '')
-    b.textContent = `${STORES[s]} (${state.sales[s]?.length ?? 0})`
-    b.addEventListener('click', () => { state.salesTab = s; renderStoreSales() })
-    tabs.appendChild(b)
-  })
+  renderTabList(tabs, Object.keys(STORES).map(s => ({key:s, text:`${STORES[s]} (${state.sales[s]?.length ?? 0})`})),
+    state.salesTab, 'Stores', s => { state.salesTab = s; renderStoreSales() })
 
   grid.innerHTML = ''
   const list = state.sales[state.salesTab] ?? []
@@ -562,12 +595,13 @@ function makeSaleCard (d) {
     <div class="game-info">
       <div class="game-title" title="${escHtml(d.title)}">${escHtml(d.title)}</div>
       <div class="price-row">
-        <span class="tag-sale">-${d.cut}%</span>
-        <span class="price-was">${fmt$(d.regular)}</span>
-        <span class="price-now">${fmt$(d.price)}</span>
+        <span class="sr-only">${escHtml(salePriceDescription(d.regular, d.price, d.cut))}</span>
+        <span class="tag-sale" aria-hidden="true">-${d.cut}%</span>
+        <span class="price-was" aria-hidden="true">${fmt$(d.regular)}</span>
+        <span class="price-now" aria-hidden="true">${fmt$(d.price)}</span>
       </div>
     </div>`
-  card.appendChild(makeCardActions(src, d.url, d.appId ?? d.id))
+  card.appendChild(makeCardActions(src, d.url, d.appId ?? d.id, d.title))
   return card
 }
 
@@ -937,7 +971,12 @@ function resetSettings () {
 function navigate (page) {
   if (state.page === 'settings' && page !== 'settings') clearResetSettingsConfirmation()
   state.page = page
-  document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page))
+  document.querySelectorAll('.nav-item').forEach(el => {
+    const active = el.dataset.page === page
+    el.classList.toggle('active', active)
+    if (active) el.setAttribute('aria-current', 'page')
+    else el.removeAttribute('aria-current')
+  })
   document.querySelectorAll('.page').forEach(el => el.classList.toggle('active', el.id === 'page-' + page))
   switch (page) {
     case 'wishlist':  renderWishlist();      break
