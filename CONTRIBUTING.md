@@ -42,6 +42,8 @@ cargo test                                           # unit tests
 cargo test -- --ignored --nocapture --test-threads=1 # live API smoke tests (needs network)
 ```
 
+CI (`.github/workflows/ci.yml`) runs `cargo test` and `node tools/preview/selfcheck.mjs` (from the repo root) on every push to `dev`/`main` and every PR; run both before opening one.
+
 `wishlist_cheapest_live` needs a `STEAM_ID` environment variable (`STEAM_ID=... cargo test wishlist_cheapest_live -- --ignored --nocapture`). When an upstream API changes, fix it and extend the matching `#[ignore]` live test in `sources.rs`. For manual Windows/macOS testing see [TESTING.md](TESTING.md).
 
 ## UI rules

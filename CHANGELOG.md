@@ -3,6 +3,7 @@
 All notable changes to DealDrop are documented in this file.
 
 ## [Unreleased]
+- CI runs the unit tests and renderer self-check on every push and pull request.
 - GOG and Epic CheapShark deals open in their installed launcher after an exact-title lookup, with the CheapShark link as fallback.
 
 ## [v0.8.0] - 2026-10-18
