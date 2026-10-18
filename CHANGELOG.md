@@ -3,6 +3,7 @@
 All notable changes to DealDrop are documented in this file.
 
 ## [Unreleased]
+- Fixed: refreshing an Epic sign-in no longer renames the account to "Epic user" or drops the refresh token when Epic leaves them out of the response (which forced a new sign-in later).
 - A notification the day before a Steam major sale starts ("Steam Winter Sale starts tomorrow"); toggle in Settings → Notifications.
 - Search everything with Ctrl+K (⌘K on macOS): one box finds games across Free now, Store sales, Hot deals and Wishlist; Enter jumps to the game on its page.
 - Fixed: Steam account names containing "]" (clan tags like "[TAG] Name") are no longer cut short; Epic free games whose listing has a placeholder slug link to the game instead of the generic free-games page.

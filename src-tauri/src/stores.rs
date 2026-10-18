@@ -110,6 +110,10 @@ pub async fn steam_login(app: &AppHandle) -> R<String> {
     if !verdict.contains("is_valid:true") {
         return Err("Steam did not confirm the sign-in".into());
     }
+    steam_claimed_id(&cb)
+}
+
+fn steam_claimed_id(cb: &url::Url) -> R<String> {
     let claimed = cb.query_pairs().find(|(k, _)| k == "openid.claimed_id").map(|(_, v)| v.to_string()).unwrap_or_default();
     if !claimed.starts_with("https://steamcommunity.com/openid/id/") { return Err("Steam callback had an unexpected identity".into()); }
     claimed.rsplit('/').next().filter(|id| id.len() >= 17 && id.chars().all(|c| c.is_ascii_digit()))
@@ -130,16 +134,33 @@ async fn gog_token(extra: &[(&str, &str)]) -> R<Tokens> {
     let secrets = form_secrets(&form);
     let v: Value = client().post("https://auth.gog.com/token").form(&form)
         .send().await.map_err(|e| redact(net_err(e), &secrets))?.json().await.map_err(|e| redact(net_err(e), &secrets))?;
+    parse_gog_token(&v, &secrets, now_ms())
+}
+
+fn parse_gog_token(v: &Value, secrets: &[&str], now: u64) -> R<Tokens> {
     if let Some(e) = v["error_description"].as_str().or(v["error"].as_str()) {
-        return Err(redact(format!("GOG: {e}"), &secrets));
+        return Err(redact(format!("GOG: {e}"), secrets));
     }
     Ok(Tokens {
         access_token: v["access_token"].as_str().ok_or("GOG: no access_token")?.into(),
         refresh_token: v["refresh_token"].as_str().unwrap_or_default().into(),
-        expires_at: now_ms() + v["expires_in"].as_u64().unwrap_or(3600) * 1000,
+        expires_at: expires_at(v, now),
         name: String::new(),
         avatar: None,
     })
+}
+
+/// `expires_in` is seconds and server-controlled: saturate instead of overflowing.
+fn expires_at(v: &Value, now: u64) -> u64 {
+    now.saturating_add(v["expires_in"].as_u64().unwrap_or(3600).saturating_mul(1000))
+}
+
+/// A refresh response may omit the refresh token, name or avatar: keep the old ones.
+fn keep_missing(mut n: Tokens, old: &Tokens) -> Tokens {
+    if n.refresh_token.is_empty() { n.refresh_token = old.refresh_token.clone(); }
+    if n.name.is_empty() { n.name = old.name.clone(); }
+    if n.avatar.is_none() { n.avatar = old.avatar.clone(); }
+    n
 }
 
 pub async fn gog_login(app: &AppHandle) -> R<Tokens> {
@@ -157,11 +178,7 @@ pub async fn gog_login(app: &AppHandle) -> R<Tokens> {
 }
 
 pub async fn gog_refresh(t: &Tokens) -> R<Tokens> {
-    let mut n = gog_token(&[("grant_type", "refresh_token"), ("refresh_token", &t.refresh_token)]).await?;
-    if n.refresh_token.is_empty() { n.refresh_token = t.refresh_token.clone(); }
-    n.name = t.name.clone();
-    n.avatar = t.avatar.clone();
-    Ok(n)
+    Ok(keep_missing(gog_token(&[("grant_type", "refresh_token"), ("refresh_token", &t.refresh_token)]).await?, t))
 }
 
 /// (username, country, currency, avatar url) — falls back to US/USD.
@@ -271,14 +288,18 @@ async fn epic_token(extra: &[(&str, &str)]) -> R<Tokens> {
         .header("Authorization", format!("basic {EPIC_BASIC}"))
         .form(&form)
         .send().await.map_err(|e| redact(net_err(e), &secrets))?.json().await.map_err(|e| redact(net_err(e), &secrets))?;
-    if let Some(e) = v["errorMessage"].as_str() {
-        return Err(redact(format!("Epic: {e}"), &secrets));
+    parse_epic_token(&v, &secrets, now_ms())
+}
+
+fn parse_epic_token(v: &Value, secrets: &[&str], now: u64) -> R<Tokens> {
+    if let Some(e) = v["errorMessage"].as_str().or(v["errorCode"].as_str()) {
+        return Err(redact(format!("Epic: {e}"), secrets));
     }
     Ok(Tokens {
         access_token: v["access_token"].as_str().ok_or("Epic: no access_token")?.into(),
         refresh_token: v["refresh_token"].as_str().unwrap_or_default().into(),
-        expires_at: now_ms() + v["expires_in"].as_u64().unwrap_or(3600) * 1000,
-        name: v["displayName"].as_str().unwrap_or("Epic user").into(),
+        expires_at: expires_at(v, now),
+        name: v["displayName"].as_str().unwrap_or_default().into(), // empty → keep_missing / "Epic user"
         avatar: None, // Epic exposes no public avatar
     })
 }
@@ -287,13 +308,13 @@ pub async fn epic_login(app: &AppHandle) -> R<Tokens> {
     let start = "https://www.epicgames.com/id/login?redirectUrl=https%3A//www.epicgames.com/id/api/redirect%3FclientId%3D34a02cf8f4414e29b15921876da36f9a%26responseType%3Dcode";
     let cb = sign_in_window(app, "epic-login", "Sign in to Epic Games", start, Some(EPIC_JS), |u| u.starts_with("https://dealdrop.invalid/")).await?;
     let code = cb.query_pairs().find(|(k, _)| k == "code").map(|(_, v)| v.to_string()).ok_or("Epic callback had no code")?;
-    epic_token(&[("grant_type", "authorization_code"), ("code", &code)]).await
+    let mut t = epic_token(&[("grant_type", "authorization_code"), ("code", &code)]).await?;
+    if t.name.is_empty() { t.name = "Epic user".into(); }
+    Ok(t)
 }
 
 pub async fn epic_refresh(t: &Tokens) -> R<Tokens> {
-    let mut n = epic_token(&[("grant_type", "refresh_token"), ("refresh_token", &t.refresh_token)]).await?;
-    if n.name.is_empty() { n.name = t.name.clone(); }
-    Ok(n)
+    Ok(keep_missing(epic_token(&[("grant_type", "refresh_token"), ("refresh_token", &t.refresh_token)]).await?, t))
 }
 
 const EPIC_OFFER_FIELDS: &str = r#"title id namespace urlSlug productSlug
@@ -598,5 +619,111 @@ mod unit {
         assert_eq!(d[1].url, "https://store.epicgames.com/en-US/browse");
         assert!(d[1].image.is_none());
         assert!(super::parse_epic_sales(&json!({"data": null})).is_empty());
+    }
+
+    const ACCESS: &str = "acc-3f9a1c7e5b2d4a6f";
+    const REFRESH: &str = "ref-8e2b6d4f1a3c5e7b";
+    const CODE: &str = "code-5c1e9a7b3d2f4e6a";
+
+    #[test]
+    fn gog_token_success_and_refresh_responses() {
+        let v = json!({"access_token": ACCESS, "refresh_token": REFRESH, "expires_in": 3600, "user_id": "4815"});
+        let t = super::parse_gog_token(&v, &[], 1_000).unwrap();
+        assert_eq!((t.access_token.as_str(), t.refresh_token.as_str()), (ACCESS, REFRESH));
+        assert_eq!(t.expires_at, 1_000 + 3_600_000);
+        assert!(t.name.is_empty() && t.avatar.is_none()); // filled from userData.json / the old tokens
+
+        // Refresh without a new refresh token: keep the old one, name and avatar.
+        let old = super::Tokens { refresh_token: REFRESH.into(), name: "gogger".into(), avatar: Some("https://images.gog.com/a_avm.jpg".into()), ..Default::default() };
+        let n = super::parse_gog_token(&json!({"access_token": "acc-new-0000000000", "expires_in": 60}), &[], 5_000).unwrap();
+        let n = super::keep_missing(n, &old);
+        assert_eq!(n.access_token, "acc-new-0000000000");
+        assert_eq!(n.refresh_token, REFRESH);
+        assert_eq!(n.name, "gogger");
+        assert_eq!(n.avatar, old.avatar);
+        assert_eq!(n.expires_at, 65_000);
+    }
+
+    #[test]
+    fn gog_token_errors_never_carry_the_secrets() {
+        let secrets = [REFRESH, CODE];
+        let e = super::parse_gog_token(&json!({"error": "invalid_grant", "error_description": format!("refresh_token {REFRESH} is revoked")}), &secrets, 0).unwrap_err();
+        assert!(e.starts_with("GOG: refresh_token ") && e.contains("[redacted]"), "{e}");
+        assert!(!e.contains(REFRESH) && !e.contains(CODE));
+        let e = super::parse_gog_token(&json!({"error": format!("bad code {CODE}")}), &secrets, 0).unwrap_err();
+        assert_eq!(e, "GOG: bad code [redacted]");
+        // An error wins over a token in the same body; a body without one is an error too.
+        assert!(super::parse_gog_token(&json!({"error": "x", "access_token": ACCESS}), &secrets, 0).is_err());
+        assert_eq!(super::parse_gog_token(&json!({"refresh_token": REFRESH}), &secrets, 0).unwrap_err(), "GOG: no access_token");
+        assert!(super::parse_gog_token(&json!({"access_token": 42}), &secrets, 0).is_err());
+        assert!(super::parse_gog_token(&serde_json::Value::Null, &secrets, 0).is_err());
+    }
+
+    #[test]
+    fn epic_token_success_refresh_and_errors() {
+        let v = json!({"access_token": ACCESS, "refresh_token": REFRESH, "expires_in": 7200, "account_id": "abc", "displayName": "EpicPerson"});
+        let t = super::parse_epic_token(&v, &[], 0).unwrap();
+        assert_eq!((t.access_token.as_str(), t.refresh_token.as_str(), t.name.as_str()), (ACCESS, REFRESH, "EpicPerson"));
+        assert_eq!(t.expires_at, 7_200_000);
+        assert!(t.avatar.is_none());
+
+        // A refresh body without displayName / refresh_token keeps the signed-in name and token.
+        let old = super::Tokens { refresh_token: REFRESH.into(), name: "EpicPerson".into(), ..Default::default() };
+        let n = super::keep_missing(super::parse_epic_token(&json!({"access_token": "acc-new-0000000000"}), &[], 0).unwrap(), &old);
+        assert_eq!((n.name.as_str(), n.refresh_token.as_str()), ("EpicPerson", REFRESH));
+        // A renamed account takes the new name.
+        let n = super::keep_missing(super::parse_epic_token(&json!({"access_token": "a", "displayName": "Renamed"}), &[], 0).unwrap(), &old);
+        assert_eq!(n.name, "Renamed");
+
+        let secrets = [REFRESH, super::EPIC_BASIC];
+        let e = super::parse_epic_token(&json!({
+            "errorCode": "errors.com.epicgames.account.auth_token.invalid_refresh_token",
+            "errorMessage": format!("Sorry the refresh token '{REFRESH}' is invalid"),
+        }), &secrets, 0).unwrap_err();
+        assert_eq!(e, "Epic: Sorry the refresh token '[redacted]' is invalid");
+        let e = super::parse_epic_token(&json!({"errorCode": "errors.com.epicgames.common.oauth.invalid_client", "access_token": ACCESS}), &secrets, 0).unwrap_err();
+        assert_eq!(e, "Epic: errors.com.epicgames.common.oauth.invalid_client");
+        let e = super::parse_epic_token(&json!({"errorMessage": format!("bad client {}", super::EPIC_BASIC)}), &secrets, 0).unwrap_err();
+        assert!(!e.contains(super::EPIC_BASIC), "{e}");
+        assert_eq!(super::parse_epic_token(&json!({}), &secrets, 0).unwrap_err(), "Epic: no access_token");
+    }
+
+    #[test]
+    fn token_expiry_math() {
+        let at = |v| super::expires_at(&v, 10_000);
+        assert_eq!(at(json!({})), 10_000 + 3_600_000); // missing → 1 h
+        assert_eq!(at(json!({"expires_in": "3600"})), 10_000 + 3_600_000); // not a number → 1 h
+        assert_eq!(at(json!({"expires_in": -5})), 10_000 + 3_600_000);
+        assert_eq!(at(json!({"expires_in": 0})), 10_000);
+        assert_eq!(at(json!({"expires_in": u64::MAX})), u64::MAX); // saturates, no overflow panic
+        assert_eq!(super::expires_at(&json!({"expires_in": 1}), u64::MAX - 10), u64::MAX);
+
+        let t = |expires_at| super::Tokens { expires_at, ..Default::default() };
+        assert!(t(0).stale());
+        assert!(t(super::now_ms() + 30_000).stale()); // refreshed a minute early
+        assert!(!t(super::now_ms() + 3_600_000).stale());
+    }
+
+    #[test]
+    fn form_secrets_and_redact() {
+        let form = [("client_id", "46899977096215655"), ("client_secret", "sssssssssss"), ("grant_type", "refresh_token"),
+            ("refresh_token", REFRESH), ("redirect_uri", "https://embed.gog.com/on_login_success?origin=client"), ("code", CODE)];
+        assert_eq!(super::form_secrets(&form), vec!["sssssssssss", REFRESH, CODE]);
+        // Longest first, so a secret containing another is redacted whole; short values are left alone.
+        assert_eq!(super::redact(format!("{REFRESH}xyz {CODE} abc"), &["abc", REFRESH, &format!("{REFRESH}xyz")]), format!("[redacted] {CODE} abc"));
+    }
+
+    #[test]
+    fn steam_claimed_id_must_be_a_steamcommunity_id() {
+        let cb = |claimed: &str| {
+            let mut u = url::Url::parse("http://localhost/steamcallback").unwrap();
+            u.query_pairs_mut().append_pair("openid.mode", "id_res").append_pair("openid.claimed_id", claimed);
+            super::steam_claimed_id(&u)
+        };
+        assert_eq!(cb("https://steamcommunity.com/openid/id/76561197960287930").unwrap(), "76561197960287930");
+        assert!(cb("https://evil.example/openid/id/76561197960287930").is_err());
+        assert!(cb("https://steamcommunity.com/openid/id/1234").is_err());
+        assert!(cb("https://steamcommunity.com/openid/id/7656119796028793x").is_err());
+        assert!(super::steam_claimed_id(&url::Url::parse("http://localhost/steamcallback").unwrap()).is_err());
     }
 }
