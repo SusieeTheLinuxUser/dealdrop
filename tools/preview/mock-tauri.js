@@ -140,7 +140,7 @@
     // Only data-update is simulated; other events (the tray's navigate) never fire here.
     event: { listen: async (event, callback) => { if (event !== 'data-update') return () => {}; emitters.add(callback); return () => emitters.delete(callback) } },
     window: { getCurrentWindow: () => ({ startResizeDragging: direction => console.info('[preview] resize', direction) }) },
-    app: { getVersion: async () => '0.7.9' },
+    app: { getVersion: async () => (await fetch('/src-tauri/tauri.conf.json').then(r => r.json()).catch(() => ({}))).version ?? '0.0.0' },
   }
   window.dealDropPreview = { flags, emit: payload => emitters.forEach(callback => callback({ payload })) }
 })()
