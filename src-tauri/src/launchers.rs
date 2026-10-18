@@ -15,8 +15,9 @@ const fn opt(key: &'static str, label: &'static str, scheme: &'static str) -> Op
 
 const STEAM: [Opt; 1] = [opt("native", "Steam app", "steam")];
 const EPIC: [Opt; 1] = [opt("native", "Epic app", "com.epicgames.launcher")];
-// Heroic only knows games in the user's library (it offers to install them); Lutris resolves the
-// store slug on lutris.net. Both are best-effort for games the user doesn't own yet.
+// Heroic launches `heroic://launch/gog/<id>` when that id is installed; otherwise, if a window is
+// open, it asks whether to install it (an id missing from the library still reaches that dialog,
+// with a blank title), and it does not open a store page. Lutris resolves slugs on lutris.net.
 const GOG: [Opt; 3] = [opt("native", "GOG Galaxy", "goggalaxy"), opt("heroic", "Heroic", "heroic"), opt("lutris", "Lutris", "lutris")];
 
 /// Order = what "Auto" prefers.
