@@ -1,15 +1,15 @@
 'use strict'
 
+// Dates: Steamworks "Upcoming Steam Events". `end` = announced last day; est = not announced yet.
+// Steam Scream (26 Oct–2 Nov 2026) is a horror fest, not a seasonal sale, so it is not listed.
 const SALES = [
-  { name: 'Lunar New Year Sale', start: '2026-02-06', end: '2026-02-13', icon: '🧧' },
-  { name: 'Spring Sale',         start: '2026-03-19', end: '2026-03-26', icon: '🌸' },
-  { name: 'Summer Sale',         start: '2026-06-26', end: '2026-07-10', icon: '☀️', est: true },
-  { name: 'Halloween Sale',      start: '2026-10-29', end: '2026-11-02', icon: '🎃', est: true },
-  { name: 'Autumn Sale',         start: '2026-11-25', end: '2026-12-02', icon: '🍂', est: true },
-  { name: 'Winter Sale',         start: '2026-12-19', end: '2027-01-02', icon: '❄️', est: true },
-  { name: 'Lunar New Year Sale', start: '2027-02-04', end: '2027-02-11', icon: '🧧', est: true },
-  { name: 'Spring Sale',         start: '2027-03-18', end: '2027-03-25', icon: '🌸', est: true },
-  { name: 'Summer Sale',         start: '2027-06-24', end: '2027-07-08', icon: '☀️', est: true },
+  { name: 'Spring Sale', start: '2026-03-19', end: '2026-03-26', icon: '🌸' },
+  { name: 'Summer Sale', start: '2026-06-25', end: '2026-07-09', icon: '☀️' },
+  { name: 'Autumn Sale', start: '2026-10-01', end: '2026-10-08', icon: '🍂' },
+  { name: 'Winter Sale', start: '2026-12-17', end: '2027-01-04', icon: '❄️' },
+  { name: 'Spring Sale', start: '2027-03-18', end: '2027-03-25', icon: '🌸' },
+  { name: 'Summer Sale', start: '2027-06-24', end: '2027-07-08', icon: '☀️' },
+  { name: 'Autumn Sale', start: '2027-10-07', end: '2027-10-14', icon: '🍂', est: true },
 ]
 
 const state = {
