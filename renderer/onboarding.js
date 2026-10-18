@@ -1,5 +1,5 @@
 (() => {
-  let step = 0, dialog = null, returnFocus = null
+  let step = 0, dialog = null, returnFocus = null, lastAnnouncedStep = -1
   const api = () => window.dealDropOnboarding
   const labels = ['Welcome', 'Look', 'Notifications', 'Stores & launchers', 'Done']
   const button = (text, cls, fn) => { const b = document.createElement('button'); b.type = 'button'; b.className = cls; b.textContent = text; b.addEventListener('click', fn); return b }
@@ -7,7 +7,7 @@
     if (dialog) return
     returnFocus = document.activeElement; step = 0
     dialog = document.createElement('div'); dialog.className = 'onboarding-backdrop'
-    dialog.innerHTML = '<section class="onboarding-dialog" role="dialog" aria-modal="true" aria-labelledby="onboarding-title" aria-live="polite"><div class="onboarding-head"><div class="onboarding-dots"></div><span class="onboarding-count"></span></div><div class="onboarding-content"></div><div class="onboarding-error" role="status"></div><div class="onboarding-actions"></div></section>'
+    dialog.innerHTML = '<section class="onboarding-dialog" role="dialog" aria-modal="true" aria-labelledby="onboarding-title"><div class="onboarding-head"><div class="onboarding-dots" aria-hidden="true"></div><span class="onboarding-count"></span></div><span class="onboarding-sr-only" aria-live="polite" aria-atomic="true"></span><div class="onboarding-content"></div><div class="onboarding-error" role="status"></div><div class="onboarding-actions"></div></section>'
     document.body.appendChild(dialog); document.addEventListener('keydown', keydown); render()
   }
   function finish () {
@@ -27,8 +27,14 @@
   }
   function render () {
     const {state, baseThemes, lookToggles, notificationToggles, applyTheme, setAccounts} = api()
+    const focusKey = dialog.contains(document.activeElement) ? document.activeElement.dataset.focusKey : null
+    const stepChanged = lastAnnouncedStep !== step
     const settings = state.settings, body = dialog.querySelector('.onboarding-content')
     dialog.querySelector('.onboarding-count').textContent = 'Step ' + (step + 1) + ' of 5'
+    if (lastAnnouncedStep !== step) {
+      dialog.querySelector('.onboarding-sr-only').textContent = 'Step ' + (step + 1) + ' of 5: ' + labels[step]
+      lastAnnouncedStep = step
+    }
     const dots = dialog.querySelector('.onboarding-dots'); dots.replaceChildren()
     labels.forEach((_, i) => { const dot = document.createElement('i'); dot.className = 'onboarding-dot' + (i === step ? ' active' : ''); dots.appendChild(dot) })
     body.replaceChildren()
@@ -37,7 +43,7 @@
     const toggle = row => {
       const wrap = document.createElement('div'); wrap.className = 'onboarding-toggle-row'
       const copy = document.createElement('div'), label = document.createElement('strong'), sub = document.createElement('small')
-      label.textContent = row.label; sub.textContent = row.sub; copy.append(label, sub)
+      label.textContent = row.label; sub.className = 'onboarding-sub'; sub.textContent = row.sub; copy.append(label, sub)
       if (row.gamerpower) { sub.replaceChildren(document.createTextNode('Epic, Steam, GOG & ')); const a = document.createElement('a'); a.href = '#'; a.dataset.href = 'https://www.gamerpower.com'; a.textContent = 'GamerPower'; sub.append(a, document.createTextNode(' giveaways')) }
       const b = button('', 'onboarding-toggle' + (settings[row.key] ? ' on' : ''), () => { settings[row.key] = !settings[row.key]; b.classList.toggle('on', settings[row.key]); b.setAttribute('aria-pressed', String(settings[row.key])); if (row.key === 'rounded' || row.key === 'effects') api().applyTheme() })
       b.setAttribute('aria-label', row.label); b.setAttribute('aria-pressed', String(Boolean(settings[row.key])))
@@ -46,8 +52,15 @@
     if (step === 0) p('Find free games, store sales, hot deals and wishlist price drops, with tray notifications. No accounts are required.')
     if (step === 1) {
       p('Pick a look. You can change it anytime in Settings.')
-      const themes = document.createElement('div'); themes.className = 'onboarding-choices'
-      Object.entries(baseThemes).forEach(([key, theme]) => { const selected = settings.theme === key || (!baseThemes[settings.theme] && settings.baseTheme === key); const b = button(theme.name, 'onboarding-choice' + (selected ? ' active' : ''), () => { settings.theme = key; settings.baseTheme = key; applyTheme(); render() }); b.setAttribute('aria-pressed', String(selected)); themes.appendChild(b) })
+      const themes = document.createElement('div'); themes.className = 'onboarding-themes'
+      Object.entries(baseThemes).forEach(([key, theme]) => {
+        const selected = settings.theme === key || (!baseThemes[settings.theme] && settings.baseTheme === key)
+        const b = button('', 'onboarding-choice' + (selected ? ' active' : ''), () => { settings.theme = key; settings.baseTheme = key; applyTheme(); render() })
+        b.dataset.focusKey = 'theme-' + key; b.setAttribute('aria-pressed', String(selected))
+        const swatch = document.createElement('span'); swatch.className = 'onboarding-swatch'; swatch.setAttribute('aria-hidden', 'true')
+        theme.sw.forEach((_, i) => { const color = document.createElement('i'); color.className = 'onboarding-swatch-color ' + key + '-' + i; swatch.appendChild(color) })
+        b.append(swatch, document.createTextNode(theme.name)); themes.appendChild(b)
+      })
       body.appendChild(themes); lookToggles.forEach(row => body.appendChild(toggle(row)))
     }
     if (step === 2) {
@@ -55,7 +68,7 @@
       notificationToggles.forEach(row => body.appendChild(toggle(row)))
       const label = document.createElement('strong'); label.className = 'onboarding-label'; label.textContent = 'Check every'; body.appendChild(label)
       const choices = document.createElement('div'); choices.className = 'onboarding-choices'
-      ;[15,60,240,720].forEach(n => { const name = n < 60 ? n + ' min' : n / 60 + ' hr'; const b = button(name, 'onboarding-choice' + (settings.checkInterval === n ? ' active' : ''), () => { settings.checkInterval = n; render() }); b.setAttribute('aria-pressed', String(settings.checkInterval === n)); choices.appendChild(b) })
+      ;[15,60,240,720].forEach(n => { const name = n < 60 ? n + ' min' : n / 60 + ' hr'; const b = button(name, 'onboarding-choice' + (settings.checkInterval === n ? ' active' : ''), () => { settings.checkInterval = n; render() }); b.dataset.focusKey = 'interval-' + n; b.setAttribute('aria-pressed', String(settings.checkInterval === n)); choices.appendChild(b) })
       body.appendChild(choices)
     }
     if (step === 3) {
@@ -63,17 +76,18 @@
       ;[['steam','Steam'],['gog','GOG'],['epic','Epic Games']].forEach(([key,name]) => {
         const row = document.createElement('div'); row.className = 'onboarding-account'
         const account = state.accounts[key], status = document.createElement('span')
+        status.dataset.focusKey = 'account-' + key; status.tabIndex = -1
         status.textContent = account ? name + ': signed in as ' + (account.name || name + ' user') : name + ': not signed in'
         if (account?.avatar) { const image = document.createElement('img'); image.src = account.avatar; image.alt = ''; row.appendChild(image) }
         row.appendChild(status)
-        if (!account) row.appendChild(button('Sign in', 'onboarding-secondary', async e => {
+        if (!account) { const signIn = button('Sign in', 'onboarding-secondary', async e => {
           const b = e.currentTarget; b.disabled = true; b.textContent = 'Opening…'
           try { setAccounts(await window.api.login(key)); await api().loadData(); render() }
           catch { dialog.querySelector('.onboarding-error').textContent = 'Sign-in did not finish. You can try later in Settings.'; b.disabled = false; b.textContent = 'Try again' }
-        }))
+        }); signIn.dataset.focusKey = 'account-' + key; row.appendChild(signIn) }
         body.appendChild(row)
         if (key !== 'steam' && (state.launchers[key]?.options?.length ?? 0) > 1) {
-          const pref = key === 'gog' ? 'launcherGog' : 'launcherEpic', label = document.createElement('label')
+          const pref = key === 'gog' ? 'launcherGog' : 'launcherEpic', label = document.createElement('label'); label.className = 'onboarding-pref'
           label.textContent = 'Open ' + name + ' games in '
           const select = document.createElement('select'); select.setAttribute('aria-label', 'Open ' + name + ' games in')
           ;[{key:'auto',label:'Auto'}, ...state.launchers[key].options, {key:'browser',label:'Browser'}].forEach(o => { const option = document.createElement('option'); option.value = o.key; option.textContent = o.label; select.appendChild(option) })
@@ -90,9 +104,11 @@
     }
     const actions = dialog.querySelector('.onboarding-actions'); actions.replaceChildren()
     if (step) actions.appendChild(button('Back', 'onboarding-secondary', () => { step--; render() }))
-    if (step < 4) actions.appendChild(button('Skip', 'onboarding-skip', finish))
+    if (step < 4) { const skip = button('Skip', 'onboarding-skip', finish); skip.setAttribute('aria-label', 'Skip and keep my choices'); actions.appendChild(skip) }
     actions.appendChild(button(step === 4 ? 'Finish' : 'Next', 'onboarding-primary', () => { if (step === 4) finish(); else { step++; render() } }))
-    actions.querySelector('button:last-child').focus()
+    const restore = focusKey && [...dialog.querySelectorAll('[data-focus-key]')].find(el => el.dataset.focusKey === focusKey)
+    if (restore) restore.focus()
+    else if (stepChanged) actions.querySelector('button:last-child').focus()
   }
   window.startOnboarding = start
 })()

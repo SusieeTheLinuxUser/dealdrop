@@ -3,6 +3,7 @@
 .onboarding-head,.onboarding-actions,.onboarding-account,.onboarding-toggle-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .onboarding-head{margin-bottom:18px;color:var(--text2);font-size:12px}.onboarding-dots,.onboarding-choices,.onboarding-themes{display:flex;flex-wrap:wrap;gap:8px}
 .onboarding-dot{width:8px;height:8px;border-radius:50%;background:var(--bg3)}.onboarding-dot.active{background:var(--acc)}
+.onboarding-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .onboarding-content h2{margin:0 0 8px;color:var(--text0);font-size:20px}.onboarding-copy{margin:0 0 16px;line-height:1.5}
 .onboarding-toggle-row{padding:10px 0;border-top:1px solid var(--border)}.onboarding-toggle-row>div{min-width:0}
 .onboarding-label,.onboarding-toggle-row strong{display:block;color:var(--text0);font-size:13px}
@@ -12,6 +13,14 @@
 .onboarding-toggle.on{background:var(--acc)}.onboarding-toggle.on:after{transform:translateX(18px)}
 .onboarding-choice,.onboarding-secondary,.onboarding-primary,.onboarding-skip{min-height:36px;padding:7px 12px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg1);color:var(--text1);font:inherit;cursor:pointer}
 .onboarding-choice.active,.onboarding-primary{border-color:var(--acc);background:var(--acc-d);color:var(--text0)}.onboarding-primary{background:var(--acc);color:var(--bg0)}
+.onboarding-swatch{display:inline-flex;flex:0 0 auto;align-items:center}
+.onboarding-swatch-color{width:12px;height:12px;border-radius:50%;margin-right:-4px;border:1px solid #ffffff55}
+.midnight-0{background:#0e1117}.midnight-1{background:#66c0f4}
+.lavender-0{background:#13101f}.lavender-1{background:#c4a1ff}.lavender-2{background:#ff9ed2}
+.spooktober-0{background:#0a0a0a}.spooktober-1{background:#ff7a1a}
+.forest-0{background:#0b1310}.forest-1{background:#5fd38d}
+.graphite-0{background:#0f1011}.graphite-1{background:#e6e8eb}
+.daylight-0{background:#f2f4f8}.daylight-1{background:#1f73d1}
 .onboarding-actions{justify-content:flex-end;margin-top:20px;flex-wrap:wrap}.onboarding-actions .onboarding-skip{margin-right:auto}
 .onboarding-account{justify-content:flex-start;padding:9px 0;border-top:1px solid var(--border);flex-wrap:wrap}.onboarding-account>span{flex:1;min-width:150px}
 .onboarding-account img{width:26px;height:26px;border-radius:50%;object-fit:cover}.onboarding-pref{display:block;margin:4px 0 10px;color:var(--text2);font-size:12px}
