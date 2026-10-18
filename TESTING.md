@@ -13,10 +13,18 @@ Short manual test checklist for Windows and macOS. Check each item as you verify
 - [ ] **Tray interaction**: Clicking tray icon restores/toggles the window; right-click menu offers Open, Refresh all, Quit.
 - [ ] **Resize handles**: Hovering edges and corners shows resize cursors; dragging resizes window (min size 570x420).
 - [ ] **Rounded corners**: In Settings -> Appearance, toggling **Rounded window** rounds the window corners.
+- [ ] **First-run guide**: On a fresh install (no config file) the setup guide opens; Skip or Escape closes it and it does not come back on restart.
+- [ ] **Guide again**: Settings -> About -> "Show welcome guide again" reopens it; choices made there show in Settings afterwards.
+- [ ] **Tour**: "Show me around" on the last step highlights each item and fits in a 570x420 window.
+- [ ] **Shortcuts**: `?` lists them; `r`, `/`, `1`-`5` and `,` work, and do nothing while typing in a search box.
+- [ ] **Fonts offline**: With the network off, text still uses DM Sans / DM Mono (no fallback serif look).
 
 ## 3. Data Loading & Error Handling
 - [ ] **Data feeds**: Verify Free games ("Free now"), Store sales, and Hot deals populate with items.
 - [ ] **Refresh all**: Clicking "Refresh all" in the sidebar footer triggers a reload without crashing.
+- [ ] **Updated label**: Next to Refresh all, "Updated N min ago" counts up and resets after a refresh.
+- [ ] **Free to keep**: Steam games/DLC at 100% off appear under Free now with a Steam tag.
+- [ ] **Failed source keeps rows**: If one source errors (error box shows), its earlier items stay listed instead of vanishing.
 - [ ] **Error banner**: Note: healthy state shows nothing. If a source fails, verify the red **Something went wrong** box appears above "Refresh all" with a **Copy error** button (clicking it copies error text to clipboard).
 
 ## 4. Store Launchers
@@ -28,6 +36,7 @@ Short manual test checklist for Windows and macOS. Check each item as you verify
 
 ## 5. Desktop Notifications
 > Note: There is no manual test notification button in the app.
+- [ ] **No burst on first run**: A fresh install sends no free-game notifications on its first check.
 - [ ] **Notification triggers**: Ensure notification toggles are enabled in Settings -> Notifications.
 - [ ] **Receive notification**: Lower the check interval to 15 minutes in Settings (or wait/refresh during a new free game, >75% deal, or sale) and verify an OS desktop notification appears.
 
