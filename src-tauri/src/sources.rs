@@ -297,6 +297,18 @@ pub async fn steam_free_weekends() -> R<Vec<Free>> {
     }).collect())
 }
 
+/// One `appdetails` body. `Some(true)` when `data.type` is `"dlc"`, `Some(false)`
+/// for any other type, `None` when there is no type (`success: false`, bad JSON).
+fn appdetails_is_dlc(body: &str) -> Option<bool> {
+    let v: Value = serde_json::from_str(body).ok()?;
+    let entry = v.as_object()?.values().next()?;
+    if entry.get("success").and_then(|s| s.as_bool()) != Some(true) {
+        return None;
+    }
+    let kind = entry.get("data")?.get("type")?.as_str()?;
+    Some(kind == "dlc")
+}
+
 /// Paid apps at 100% off (`specials=1&maxprice=free`). Rows are HTML inside JSON.
 /// Id prefix `steam-ftk-` so a failure restore does not collide with `steam-{appid}`.
 pub async fn steam_free_to_keep() -> R<Vec<Free>> {
@@ -325,7 +337,7 @@ pub async fn steam_free_to_keep() -> R<Vec<Free>> {
         if &d[1] != "100" || &p[1] != "0" || orig.captures(chunk).is_none() { continue; }
         out.push(Free {
             id: format!("steam-ftk-{id}"),
-            title: unescape(&t[1]),
+            title: unescape(t[1].trim()),
             source: "steam".into(),
             url: format!("https://store.steampowered.com/app/{id}"),
             image: capsule.captures(chunk).map(|c| c[1].to_string()),
@@ -333,6 +345,23 @@ pub async fn steam_free_to_keep() -> R<Vec<Free>> {
             kind: "free".into(),
             ..Default::default()
         });
+    }
+    // Search HTML has no app type. Label DLC; a failed lookup leaves the name as it was.
+    let mut lookups = 0;
+    for item in &mut out {
+        if lookups >= 12 {
+            break;
+        }
+        let Some(app_id) = item.app_id.clone() else { continue };
+        lookups += 1;
+        let url = format!(
+            "https://store.steampowered.com/api/appdetails?appids={app_id}&filters=basic&cc=us&l=en"
+        );
+        let Ok(res) = send(client().get(&url).timeout(Duration::from_secs(8))).await else { continue };
+        let Ok(body) = res.text().await else { continue };
+        if appdetails_is_dlc(&body) == Some(true) {
+            item.title.push_str(" (DLC)");
+        }
     }
     Ok(out)
 }
@@ -370,7 +399,7 @@ pub async fn steam_sales() -> R<Vec<Deal>> {
             .unwrap_or(price / (1.0 - cut as f64 / 100.0));
         out.push(Deal {
             id: format!("steam-{id}"),
-            title: unescape(&t[1]),
+            title: unescape(t[1].trim()),
             shop: "Steam".into(),
             url: format!("https://store.steampowered.com/app/{id}"),
             image: capsule.captures(chunk).map(|c| c[1].to_string()),
@@ -662,6 +691,13 @@ mod live {
 
 #[cfg(test)]
 mod unit {
+    #[test]
+    fn appdetails_is_dlc_parses_type() {
+        assert_eq!(super::appdetails_is_dlc(r#"{"10":{"success":true,"data":{"type":"game"}}}"#), Some(false));
+        assert_eq!(super::appdetails_is_dlc(r#"{"5007040":{"success":true,"data":{"type":"dlc"}}}"#), Some(true));
+        assert_eq!(super::appdetails_is_dlc(r#"{"5007040":{"success":false}}"#), None);
+    }
+
     #[test]
     fn gamerpower_titles_are_cleaned() {
         assert_eq!(super::gp_title("Agent A: A puzzle in disguise (Epic Games) Giveaway"), "Agent A: A puzzle in disguise");
