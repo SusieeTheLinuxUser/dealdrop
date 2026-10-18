@@ -25,7 +25,7 @@ Short manual test checklist for Windows and macOS. Check each item as you verify
 - [ ] **Updated label**: Next to Refresh all, "Updated N min ago" counts up and resets after a refresh.
 - [ ] **Free to keep**: Steam games/DLC at 100% off appear under Free now with a Steam tag.
 - [ ] **Failed source keeps rows**: If one source errors (error box shows), its earlier items stay listed instead of vanishing.
-- [ ] **Error banner**: Note: healthy state shows nothing. If a source fails, verify the red **Something went wrong** box appears above "Refresh all" with a **Copy error** button (clicking it copies error text to clipboard).
+- [ ] **Error banner**: Note: healthy state shows nothing. If a source fails, verify the red **Something went wrong** box appears below the store accounts (above the navigation) with a **Copy error** button (clicking it copies error text to clipboard).
 
 ## 4. Store Launchers
 > Windows detects launchers via registry (`HKCR\<scheme>`); macOS checks app bundles in `/Applications` and `~/Applications`.

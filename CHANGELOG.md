@@ -5,7 +5,9 @@ All notable changes to DealDrop are documented in this file.
 ## [Unreleased] (v0.8.0 draft)
 - New: first-run setup guide (theme, notifications, stores) with an optional tour
 - New: Steam games that are 100% off to keep now show up with the free games
-- New: keyboard shortcuts (press ?), search and sort on deal lists, "Updated N min ago" label
+- New: keyboard shortcuts (press ?), search, sort and minimum-discount filters on deal lists, "Updated N min ago" label
+- New: wishlist search, sort and "on sale" filter; free games show when they end
+- Improved: the error box sits right under your accounts, so Copy error is always in view
 - Improved: a store that fails keeps its last good results instead of emptying the list
 - Improved: no burst of notifications on first run
 - Improved: keyboard and screen-reader support, stronger text contrast in every theme
