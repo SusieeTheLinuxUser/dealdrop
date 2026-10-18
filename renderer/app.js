@@ -262,7 +262,7 @@ function updateRefreshAge () {
   const timestamp = Number(state.lastChecked)
   if (!Number.isFinite(timestamp) || timestamp <= 0) { label.textContent = 'Never'; return }
   const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60_000))
-  label.textContent = `Updated ${minutes} min ago`
+  label.textContent = minutes === 0 ? 'Updated just now' : `Updated ${minutes} min ago`
 }
 
 function updateLastCheckedLabels () {
