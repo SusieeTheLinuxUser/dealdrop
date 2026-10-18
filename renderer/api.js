@@ -19,4 +19,5 @@ window.api = {
   logout:         store => invoke('logout', { store }),
   fetchWishlistGameDeals: p => invoke('wishlist_game_deals', { appId: p.appId, name: p.name }),
   onDataUpdate:   cb    => listen('data-update', e => cb(e.payload)),
+  onNavigate:     cb    => listen('navigate', e => cb(e.payload)),
 }

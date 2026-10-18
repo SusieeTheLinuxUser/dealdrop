@@ -1584,6 +1584,8 @@ async function init () {
 
   // Listen for background push updates from main process
   window.api.onDataUpdate(data => applyData(data))
+  // Tray menu shortcuts ("Free now", "Wishlist")
+  window.api.onNavigate(page => { if (page === 'free' || page === 'wishlist') navigate(page) })
 
   // Render calendar (no API call needed) then kick off initial data fetch
   renderSalesCalendar()

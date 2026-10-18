@@ -151,6 +151,39 @@ fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") { let _ = w.show(); let _ = w.set_focus(); }
 }
 
+// ─── Tray ─────────────────────────────────────────────────────────────────────
+
+/// Tray menu shortcuts whose labels carry the latest counts.
+struct TrayItems { free: MenuItem<tauri::Wry>, wishlist: MenuItem<tauri::Wry> }
+
+/// Same numbers as the sidebar badges (`updateBadges` in app.js): free games + free weekends,
+/// and wishlist games at least 20% off.
+fn tray_counts(s: &Snapshot) -> (usize, usize) {
+    (s.free_games.len() + s.free_weekends.len(), s.wishlist.iter().filter(|w| discount(w) >= 20).count())
+}
+
+/// "DealDrop: 3 free games · 1 wishlist game on sale"; zero parts are left out.
+fn tray_tooltip(free: usize, sale: usize) -> String {
+    let mut parts = vec![];
+    if free > 0 { parts.push(format!("{free} free game{}", if free == 1 { "" } else { "s" })); }
+    if sale > 0 { parts.push(format!("{sale} wishlist game{} on sale", if sale == 1 { "" } else { "s" })); }
+    if parts.is_empty() { "DealDrop".into() } else { format!("DealDrop: {}", parts.join(" · ")) }
+}
+
+/// "Free now (3)", or just "Free now" at zero.
+fn with_count(label: &str, n: usize) -> String {
+    if n > 0 { format!("{label} ({n})") } else { label.into() }
+}
+
+fn update_tray(app: &AppHandle, snap: &Snapshot) {
+    let (free, sale) = tray_counts(snap);
+    if let Some(t) = app.tray_by_id("main") { let _ = t.set_tooltip(Some(tray_tooltip(free, sale))); }
+    if let Some(items) = app.try_state::<TrayItems>() {
+        let _ = items.free.set_text(with_count("Free now", free));
+        let _ = items.wishlist.set_text(with_count("Wishlist", sale));
+    }
+}
+
 /// Collapse "Foo" / "foo!" duplicates reported by both a store API and GamerPower.
 fn dedupe_free(list: Vec<Free>) -> Vec<Free> {
     let mut seen = HashSet::new();
@@ -172,6 +205,7 @@ async fn poll(app: &AppHandle) -> Snapshot {
     let snap = run_poll(app, &st).await;
     *st.snapshot.lock().unwrap() = Some(snap.clone());
     let _ = app.emit("data-update", &snap);
+    update_tray(app, &snap);
     snap
 }
 
@@ -663,19 +697,28 @@ fn main() {
                     || (cfg!(debug_assertions) && u.scheme() == "http" && matches!(u.host_str(), Some("127.0.0.1" | "localhost"))))
                 .build()?;
 
+            let items = TrayItems {
+                free: MenuItem::with_id(app, "free", "Free now", true, None::<&str>)?,
+                wishlist: MenuItem::with_id(app, "wishlist", "Wishlist", true, None::<&str>)?,
+            };
             let menu = Menu::with_items(app, &[
                 &MenuItem::with_id(app, "open", "Open DealDrop", true, None::<&str>)?,
+                &items.free,
+                &items.wishlist,
                 &MenuItem::with_id(app, "check", "Refresh all", true, None::<&str>)?,
                 &PredefinedMenuItem::separator(app)?,
                 &MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?,
             ])?;
-            TrayIconBuilder::new()
+            app.manage(items);
+            TrayIconBuilder::with_id("main")
                 .icon(app.default_window_icon().cloned().ok_or("no icon")?)
                 .tooltip("DealDrop")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, ev| match ev.id.as_ref() {
                     "open" => show_main(app),
+                    // Page names the UI accepts from `navigate` (see `onNavigate` in app.js)
+                    page @ ("free" | "wishlist") => { show_main(app); let _ = app.emit("navigate", page); }
                     "check" => { let a = app.clone(); tauri::async_runtime::spawn(async move { poll(&a).await; }); }
                     "quit" => app.exit(0),
                     _ => {}
@@ -723,8 +766,26 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{dedupe_free, failure, free_notice, fresh_free, fresh_wishlist, remember_wishlist, restore_by_prefix, safe_https, should_prime, store_label, wishlist_notice, Acct, Free, Price, Prime, WishItem};
+    use super::{dedupe_free, failure, free_notice, fresh_free, fresh_wishlist, remember_wishlist, restore_by_prefix, safe_https, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, Acct, Free, Price, Prime, WishItem};
     use std::collections::HashSet;
+
+    #[test]
+    fn tray_text_counts_like_the_badges() {
+        assert_eq!(tray_tooltip(0, 0), "DealDrop");
+        assert_eq!(tray_tooltip(3, 5), "DealDrop: 3 free games · 5 wishlist games on sale");
+        assert_eq!(tray_tooltip(1, 0), "DealDrop: 1 free game");
+        assert_eq!(tray_tooltip(0, 1), "DealDrop: 1 wishlist game on sale");
+        assert_eq!(with_count("Free now", 3), "Free now (3)");
+        assert_eq!(with_count("Wishlist", 0), "Wishlist");
+        let wish = |discount| WishItem { price_info: Some(Price { discount, ..Default::default() }), ..Default::default() };
+        let snap = super::Snapshot {
+            free_games: vec![Free::default(), Free::default()],
+            free_weekends: vec![Free::default()],
+            wishlist: vec![wish(20), wish(19), WishItem::default(), wish(75)],
+            ..Default::default()
+        };
+        assert_eq!(tray_counts(&snap), (3, 2));
+    }
 
     #[test]
     fn account_json_is_camel_case() {
