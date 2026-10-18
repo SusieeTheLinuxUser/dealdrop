@@ -682,7 +682,7 @@ const NOTIFICATION_TOGGLES = [
   { key: 'notifyWishlistSale', label: 'Wishlist game on sale', sub: 'Steam, GOG & Epic wishlists, drops of ≥20%' },
   { key: 'notifyBigDeal', label: 'Deal over 75% off', sub: 'Hot deals list (CheapShark)' },
 ]
-window.dealDropOnboarding = { state, baseThemes: BASE_THEMES, lookToggles: LOOK_TOGGLES, notificationToggles: NOTIFICATION_TOGGLES, applyTheme, setAccounts, loadData }
+window.dealDropOnboarding = { state, baseThemes: BASE_THEMES, lookToggles: LOOK_TOGGLES, notificationToggles: NOTIFICATION_TOGGLES, applyTheme, setAccounts, loadData, renderSettings }
 
 // A sale starting switches to its theme once. If the user picks something else, lastSaleTheme
 // stays set, so a restart doesn't switch back. When the sale ends its theme is dropped.

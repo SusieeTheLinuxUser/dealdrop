@@ -22,6 +22,7 @@
     api().state.settings.onboarded = true
     window.api.saveSettings(api().state.settings)
     document.removeEventListener('keydown', keydown); dialog.remove(); dialog = null
+    if (api().state.page === 'settings') api().renderSettings()
     returnFocus?.focus?.()
   }
   function keydown (e) {
