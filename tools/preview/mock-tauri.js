@@ -1,4 +1,4 @@
-'use strict'
+'use strict';
 
 // Development-only Tauri bridge stub. All data stays in this page's memory.
 (() => {
