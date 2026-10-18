@@ -311,6 +311,7 @@ function makeCardActions (store, url, id, title) {
 function renderWishlist () {
   const $ = id => document.getElementById(id)
   const loginPrompt = $('wishlist-login-prompt'), onSaleWrap = $('wishlist-on-sale')
+  const loginActions = $('wishlist-signin-actions'), accountHint = $('wishlist-account-hint')
   const allWrap = $('wishlist-all-section'), emptyEl = $('empty-wishlist')
   const panel = $('wishlist-deal-panel'), tabs = $('wishlist-tabs'), errs = $('wishlist-errors')
   const controls = $('wishlist-controls'), search = $('wishlist-search'), sort = $('wishlist-sort')
@@ -323,10 +324,20 @@ function renderWishlist () {
 
   if (!hasAccount()) {
     loginPrompt.style.display = 'flex'
+    loginActions.replaceChildren(...Object.keys(STORES).map(store => {
+      const button = document.createElement('button')
+      button.type = 'button'; button.className = 'action-btn wishlist-signin-btn'; button.textContent = 'Sign in to ' + STORES[store]
+      button.addEventListener('click', () => signInStore(store, button))
+      return button
+    }))
+    accountHint.style.display = 'none'
     hide(onSaleWrap, allWrap, emptyEl, panel, tabs, errs, controls)
     return
   }
   hide(loginPrompt)
+  const missingStores = Object.keys(STORES).filter(store => !state.accounts[store])
+  accountHint.textContent = missingStores.length ? 'Sign in to ' + missingStores.map(store => STORES[store]).join(' and ') + ' to include their wishlists.' : ''
+  accountHint.style.display = missingStores.length ? 'block' : 'none'
 
   // Per-store failures (e.g. Epic rejecting the token) shown instead of silently empty
   const failed = Object.entries(state.wishlistErrors).filter(([s]) => state.accounts[s])
@@ -1149,19 +1160,21 @@ function renderAccounts () {
       navigate(state.page)
     })
     const inBtn = row.querySelector('.acct-btn')
-    inBtn?.addEventListener('click', async () => {
-      inBtn.disabled = true; inBtn.textContent = 'Opening…'
-      try {
-        setAccounts(await window.api.login(s))
-        await loadData()
-      } catch (e) {
-        if (String(e) !== 'Cancelled') alert(`${STORES[s]} sign-in failed: ${e}`)
-      } finally {
-        renderAccounts()
-      }
-    })
+    inBtn?.addEventListener('click', () => signInStore(s, inBtn))
     con.appendChild(row)
   })
+}
+
+async function signInStore (store, button) {
+  button.disabled = true; button.textContent = 'Opening…'
+  try {
+    setAccounts(await window.api.login(store))
+    await loadData()
+  } catch (e) {
+    if (String(e) !== 'Cancelled') alert(`${STORES[store]} sign-in failed: ${e}`)
+  } finally {
+    if (button.isConnected) { button.disabled = false; button.textContent = button.classList.contains('wishlist-signin-btn') ? 'Sign in to ' + STORES[store] : 'Sign in' }
+  }
 }
 
 function setAccounts (acc) {

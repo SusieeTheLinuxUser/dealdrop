@@ -183,6 +183,9 @@ html,body{background:transparent} /* window is transparent; #app paints the colo
 /* ── login prompt ── */
 .login-prompt{display:flex;flex-direction:column;align-items:center;gap:14px;padding:48px 24px;text-align:center;color:var(--text1);font-size:13px;line-height:1.6}
 .login-prompt p{max-width:280px}
+.wishlist-signin-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}
+.wishlist-signin-btn{width:auto;margin-top:0}
+.wishlist-account-hint{margin:0 0 12px;color:var(--text2);font-size:11px;overflow-wrap:anywhere}
 
 /* ── empty state ── */
 .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:48px 24px;color:var(--text2);text-align:center;font-size:13px}
