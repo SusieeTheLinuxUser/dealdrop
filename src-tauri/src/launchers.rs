@@ -123,7 +123,7 @@ mod tests {
 
     #[test]
     fn resolve_preferences_use_option_order_without_checking_the_os() {
-        let installed = |scheme| matches!(scheme, "goggalaxy" | "heroic" | "lutris");
+        let installed = |scheme: &str| matches!(scheme, "goggalaxy" | "heroic" | "lutris");
 
         let auto = resolve_with("gog", "auto", installed);
         assert_eq!(auto.options.iter().map(|o| o.key).collect::<Vec<_>>(), ["native", "heroic", "lutris"]);
