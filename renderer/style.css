@@ -34,19 +34,6 @@ html,body{background:transparent} /* window is transparent; #app paints the colo
 /* ── sidebar ── */
 .sidebar{background:var(--bg1);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-x:hidden;overflow-y:auto;min-width:0}
 
-.steam-account{padding:12px 14px;border-bottom:1px solid var(--border)}
-.steam-prompt{font-size:11px;color:var(--text2);margin-bottom:8px}
-.steam-login-btn{width:100%;display:flex;align-items:center;justify-content:center;gap:7px;padding:8px;font-size:12px;font-weight:500;background:var(--bg3);border:1px solid var(--bord2);border-radius:var(--r);color:var(--text0);cursor:pointer;transition:background .12s}
-.steam-login-btn:hover{background:var(--bg4)}
-.steam-loggedin{}
-.steam-user-row{display:flex;align-items:center;gap:10px}
-.steam-avatar{width:32px;height:32px;border-radius:50%;object-fit:cover;background:var(--bg3);flex-shrink:0}
-.steam-avatar-placeholder{width:32px;height:32px;border-radius:50%;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--text1);flex-shrink:0}
-.steam-user-info{flex:1;min-width:0}
-.steam-username{font-size:12px;font-weight:500;color:var(--text0);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
-.steam-logout-btn{background:none;border:none;font-size:11px;color:var(--text2);cursor:pointer;padding:0;margin-top:2px}
-.steam-logout-btn:hover{color:var(--red)}
-
 .nav-items{flex:1 0 auto;padding:8px 0}
 .nav-item{width:100%;display:flex;align-items:center;gap:10px;padding:9px 16px;font-size:13px;color:var(--text1);background:transparent;border:none;border-left:2px solid transparent;cursor:pointer;text-align:left;transition:all .12s}
 .nav-item:hover{color:var(--text0);background:rgba(255,255,255,0.03)}
@@ -188,16 +175,10 @@ html,body{background:transparent} /* window is transparent; #app paints the colo
 .interval-group{display:flex;gap:8px;flex-wrap:wrap}
 .interval-btn{padding:7px 16px;border-radius:var(--r);cursor:pointer;font-size:12px;font-family:var(--mono);background:var(--bg3);color:var(--text1);border:1px solid var(--border);transition:all .12s}
 .interval-btn.active{background:var(--acc);color:#0a1a10;font-weight:600;border-color:var(--acc)}
-.api-key-group{display:flex;gap:8px}
-.api-key-group input{flex:1;padding:9px 12px;font-size:13px;font-family:var(--mono);background:var(--bg1);border:1px solid var(--bord2);border-radius:var(--r);color:var(--text0)}
-.api-key-group input:focus{border-color:var(--acc)}
-.api-key-group button,.action-btn{padding:9px 18px;font-size:13px;background:var(--bg3);border:1px solid var(--bord2);border-radius:var(--r);color:var(--text0);cursor:pointer;font-family:var(--sans);transition:background .12s}
-.api-key-group button:hover,.action-btn:hover{background:var(--bg4)}
+.action-btn{padding:9px 18px;font-size:13px;background:var(--bg3);border:1px solid var(--bord2);border-radius:var(--r);color:var(--text0);cursor:pointer;font-family:var(--sans);transition:background .12s}
+.action-btn:hover{background:var(--bg4)}
 .action-btn:disabled{opacity:.72;cursor:wait}
 .action-btn{width:100%;margin-top:4px}
-.hint{font-size:12px;color:var(--text2);margin-top:8px}
-.hint a{color:var(--acc);text-decoration:none;cursor:pointer}
-.hint a:hover{text-decoration:underline}
 
 /* ── login prompt ── */
 .login-prompt{display:flex;flex-direction:column;align-items:center;gap:14px;padding:48px 24px;text-align:center;color:var(--text1);font-size:13px;line-height:1.6}
@@ -254,8 +235,6 @@ html[data-round="on"] #app,html[data-round="on"] #fx{border-radius:14px}
 
 /* ── links, store buttons, cards ── */
 .info-notice{flex-direction:column;align-items:flex-start;gap:6px;line-height:1.5}
-.info-notice a,.hint a{color:var(--acc);cursor:pointer;text-decoration:underline}
-.info-notice ol{margin:2px 0 0 18px}
 .game-thumb .fallback{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:30px;background:var(--bg2)}
 .cheapest-tag{color:var(--green);font-family:var(--mono);font-size:11px}
 .timeline-item.clickable{cursor:pointer}.timeline-item.clickable:hover{border-color:var(--acc)}
