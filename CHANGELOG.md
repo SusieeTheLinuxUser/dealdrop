@@ -7,6 +7,7 @@ All notable changes to DealDrop are documented in this file.
 - CI runs the unit tests and renderer self-check on every push and pull request.
 - GOG and Epic CheapShark deals open in their installed launcher after an exact-title lookup, with the CheapShark link as fallback.
 - Hot deals can be filtered by store (Steam, GOG, Fanatical…), with a count per store; the choice is remembered.
+- Free now: mark giveaways as claimed; claimed games are dimmed, sorted last and left out of the sidebar count.
 
 ## [v0.8.0] - 2026-10-18
 - New: first-run setup guide (theme, notifications, stores) with an optional tour

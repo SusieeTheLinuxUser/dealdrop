@@ -57,7 +57,33 @@ function persistUiPrefs () {
 }
 
 function clearUiPrefs () {
-  try { localStorage.removeItem(UI_PREFS_KEY) } catch {}
+  try { localStorage.removeItem(UI_PREFS_KEY); localStorage.removeItem(CLAIMED_KEY) } catch {}
+}
+
+// Ids of free-to-keep games the user marked as claimed (UI-only, like the prefs above)
+const CLAIMED_KEY = 'dealdrop-claimed'
+function parseClaimed (raw) {
+  try {
+    const ids = JSON.parse(raw)
+    return Array.isArray(ids) ? ids.filter(id => typeof id === 'string') : []
+  } catch { return [] }
+}
+function pruneClaimed (ids, games) {
+  const live = new Set(games.map(g => g.id))
+  return ids.filter(id => live.has(id))
+}
+function toggleClaimed (ids, id) {
+  return ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]
+}
+function claimedLast (games, ids) {
+  return [...games].sort((a, b) => ids.includes(a.id) - ids.includes(b.id))
+}
+
+function readClaimed () {
+  try { return parseClaimed(localStorage.getItem(CLAIMED_KEY)) } catch { return [] }
+}
+function saveClaimed () {
+  try { localStorage.setItem(CLAIMED_KEY, JSON.stringify(state.claimed)) } catch {}
 }
 
 const state = {
@@ -66,6 +92,7 @@ const state = {
   onboardingThemePicked: false,
   freeGames:    [],
   freeWeekends: [],
+  claimed:      readClaimed(),
   deals:        [],
   dealsSource:  '',
   dealsError:   null,
@@ -711,7 +738,7 @@ function renderFreeGames () {
     return
   }
   emptyEl.style.display = 'none'
-  endsFirst(state.freeGames).forEach(g => gridFree.appendChild(makeFreeCard(g, 'tag-free', 'FREE')))
+  claimedLast(endsFirst(state.freeGames), state.claimed).forEach(g => gridFree.appendChild(makeFreeCard(g, 'tag-free', 'FREE', true)))
 
   if (state.freeWeekends.length) {
     lblWknd.style.display = 'block'
@@ -728,14 +755,16 @@ function updateBadges () {
   const wb = document.getElementById('badge-wishlist')
   if (wb) { wb.querySelector('.badge-count').textContent = onSale; wb.classList.toggle('visible', onSale > 0) }
 
-  const total = state.freeGames.length + state.freeWeekends.length
+  // Free games still worth a look: unclaimed giveaways plus free weekends (those can't be claimed)
+  const total = state.freeGames.filter(g => !state.claimed.includes(g.id)).length + state.freeWeekends.length
   const fb = document.getElementById('badge-free')
   if (fb) { fb.querySelector('.badge-count').textContent = total; fb.classList.toggle('visible', total > 0) }
 }
 
-function makeFreeCard (g, tagClass, tagText) {
+function makeFreeCard (g, tagClass, tagText, claimable = false) {
   const card = document.createElement('div')
-  card.className = 'game-card'
+  const claimed = claimable && state.claimed.includes(g.id)
+  card.className = claimed ? 'game-card claimed' : 'game-card'
   const srcClass = ['steam','epic','gog'].includes(g.source) ? g.source : 'other'
   card.innerHTML = `
     <div class="game-card-content" aria-hidden="true">
@@ -754,8 +783,26 @@ function makeFreeCard (g, tagClass, tagText) {
     </div></div>`
   card.appendChild(makeCardOpenButton(g.source, g.url, g.title))
   card.appendChild(makeCardActions(g.source, g.url, g.appId, g.title))
+  if (claimable) card.appendChild(makeClaimButton(g, claimed))
   card.querySelector('.game-title').setAttribute('title', g.title)
   return card
+}
+
+function makeClaimButton (g, claimed) {
+  const button = document.createElement('button')
+  button.type = 'button'; button.className = 'card-btn claim-btn'; button.dataset.id = g.id
+  button.textContent = claimed ? 'Claimed ✓' : 'Mark claimed'
+  button.setAttribute('aria-pressed', String(claimed))
+  button.setAttribute('aria-label', `Mark claimed: ${g.title}`)
+  button.addEventListener('click', e => {
+    e.stopPropagation()
+    state.claimed = toggleClaimed(state.claimed, g.id)
+    saveClaimed()
+    renderFreeGames()
+    // the card moved; keep keyboard focus on its toggle
+    ;[...document.querySelectorAll('#grid-free .claim-btn')].find(b => b.dataset.id === g.id)?.focus()
+  })
+  return button
 }
 
 // ─── Deals page ───────────────────────────────────────────────────────────────
@@ -1256,6 +1303,7 @@ function resetSettings () {
     deals: { query: '', sort: 'discount', minDiscount: 0, shop: '' }, storesales: { query: '', sort: 'discount', minDiscount: 0 },
     wishlist: { query: '', sort: 'discount', onSaleOnly: false },
   }
+  state.claimed = []
   clearUiPrefs()
 }
 
@@ -1417,6 +1465,11 @@ function applyData (data) {
   window.api.getAccounts().then(a => { if (JSON.stringify(a) !== JSON.stringify(state.accounts)) setAccounts(a) })
   state.freeGames    = data.freeGames    ?? []
   state.freeWeekends = data.freeWeekends ?? []
+  // forget claimed games that left the list; an empty list may be a failed load, so keep them then
+  if (state.freeGames.length) {
+    const kept = pruneClaimed(state.claimed, state.freeGames)
+    if (kept.length !== state.claimed.length) { state.claimed = kept; saveClaimed() }
+  }
   state.deals        = data.deals        ?? []
   state.dealsSource  = data.dealsSource  ?? ''
   state.dealsError   = data.dealsError   ?? null

@@ -89,6 +89,9 @@ html,body{background:transparent} /* window is transparent; #app paints the colo
 .card-btn{flex:1;padding:5px 0;font-size:11px;font-family:var(--sans);border-radius:var(--rs);border:1px solid var(--border);background:var(--bg2);color:var(--text1);cursor:pointer;transition:all .12s;display:flex;align-items:center;justify-content:center;gap:4px}
 .card-btn:hover{background:var(--bg3);color:var(--text0);border-color:var(--bord2)}
 .card-btn.steam-btn:hover{background:var(--acc-d);color:var(--acc);border-color:rgba(102,192,244,0.3)}
+.claim-btn{position:relative;z-index:2;width:100%;margin-top:5px}
+.claim-btn[aria-pressed="true"]{background:var(--grn-d);color:var(--green);border-color:var(--green)}
+.game-card.claimed .game-card-content{opacity:.5}
 
 /* ── wishlist list ── */
 .wishlist-list{display:flex;flex-direction:column;gap:5px}
