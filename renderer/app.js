@@ -868,11 +868,15 @@ function renderSettingsAccounts () {
     if (account) {
       const signOut = document.createElement('button'); signOut.type = 'button'; signOut.className = 'acct-out'; signOut.textContent = 'Sign out'
       signOut.addEventListener('click', async () => {
-        setAccounts(await window.api.logout(store))
-        state.wishlist = state.wishlist.filter(item => item.store !== store)
-        updateBadges()
-        renderErrors()
-        navigate(state.page)
+        if (signOut.disabled) return
+        signOut.disabled = true
+        try {
+          setAccounts(await window.api.logout(store))
+          state.wishlist = state.wishlist.filter(item => item.store !== store)
+          updateBadges()
+          renderErrors()
+          navigate(state.page)
+        } finally { signOut.disabled = false }
       })
       row.appendChild(signOut)
     }
