@@ -142,7 +142,7 @@ html,body{background:transparent} /* window is transparent; #app paints the colo
 .nsb-lbl{font-size:11px;color:var(--text2);font-family:var(--mono)}
 .sale-timeline{display:flex;flex-direction:column;gap:5px}
 .timeline-item{display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--bg1);border:1px solid var(--border);border-radius:var(--r)}
-.timeline-item.past{opacity:.5}
+.timeline-item.past{background:var(--bg0)}
 .timeline-item.next{border-color:rgba(102,192,244,.3);background:var(--acc-d)}
 .tl-dot{width:8px;height:8px;border-radius:50%;background:var(--text2);flex-shrink:0}
 .timeline-item.past .tl-dot{background:var(--green)}
