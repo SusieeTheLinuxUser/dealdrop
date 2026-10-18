@@ -47,7 +47,7 @@
     if (step === 1) {
       p('Pick a look. You can change it anytime in Settings.')
       const themes = document.createElement('div'); themes.className = 'onboarding-choices'
-      Object.entries(baseThemes).forEach(([key, theme]) => { const b = button(theme.name, 'onboarding-choice' + (settings.theme === key ? ' active' : ''), () => { settings.theme = key; settings.baseTheme = key; applyTheme(); render() }); b.setAttribute('aria-pressed', String(settings.theme === key)); themes.appendChild(b) })
+      Object.entries(baseThemes).forEach(([key, theme]) => { const selected = settings.theme === key || (!baseThemes[settings.theme] && settings.baseTheme === key); const b = button(theme.name, 'onboarding-choice' + (selected ? ' active' : ''), () => { settings.theme = key; settings.baseTheme = key; applyTheme(); render() }); b.setAttribute('aria-pressed', String(selected)); themes.appendChild(b) })
       body.appendChild(themes); lookToggles.forEach(row => body.appendChild(toggle(row)))
     }
     if (step === 2) {
