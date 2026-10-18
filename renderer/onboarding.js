@@ -152,6 +152,7 @@
       return
     }
     tourOverlay.classList.remove('tour-note-only'); spotlight.hidden = false; card.classList.remove('tour-card-centered')
+    target.scrollIntoView({block:'nearest', inline:'nearest'})
     const rect = target.getBoundingClientRect()
     const left = Math.min(Math.max(4, rect.left - 6), innerWidth - 8)
     const top = Math.min(Math.max(4, rect.top - 6), innerHeight - 8)
