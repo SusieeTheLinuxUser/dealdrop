@@ -852,8 +852,8 @@ function renderSettings () {
   renderSettingsAccounts()
   renderAbout()
   const reset = document.getElementById('btn-reset-settings')
-  reset.textContent = resetSettingsArmed ? 'Really reset?' : 'Reset appearance & notifications to defaults'
-  reset.setAttribute('aria-label', resetSettingsArmed ? 'Confirm reset appearance and notifications to defaults' : 'Reset appearance and notifications to defaults')
+  reset.textContent = resetSettingsArmed ? 'Really reset?' : 'Reset appearance, notifications & check interval to defaults'
+  reset.setAttribute('aria-label', resetSettingsArmed ? 'Confirm reset appearance, notifications and check interval to defaults' : 'Reset appearance, notifications and check interval to defaults')
 }
 
 function renderSettingsAccounts () {
@@ -914,8 +914,8 @@ function clearResetSettingsConfirmation () {
   resetSettingsArmed = false
   const button = document.getElementById('btn-reset-settings')
   if (button) {
-    button.textContent = 'Reset appearance & notifications to defaults'
-    button.setAttribute('aria-label', 'Reset appearance and notifications to defaults')
+    button.textContent = 'Reset appearance, notifications & check interval to defaults'
+    button.setAttribute('aria-label', 'Reset appearance, notifications and check interval to defaults')
   }
 }
 function resetSettings () {
@@ -1111,13 +1111,13 @@ async function init () {
     if (!resetSettingsArmed) {
       resetSettingsArmed = true
       btn.textContent = 'Really reset?'
-      btn.setAttribute('aria-label', 'Confirm reset appearance and notifications to defaults')
+      btn.setAttribute('aria-label', 'Confirm reset appearance, notifications and check interval to defaults')
       clearTimeout(resetSettingsTimer)
       resetSettingsTimer = setTimeout(() => {
         resetSettingsArmed = false
         resetSettingsTimer = null
-        btn.textContent = 'Reset appearance & notifications to defaults'
-        btn.setAttribute('aria-label', 'Reset appearance and notifications to defaults')
+        btn.textContent = 'Reset appearance, notifications & check interval to defaults'
+        btn.setAttribute('aria-label', 'Reset appearance, notifications and check interval to defaults')
       }, 4000)
       return
     }
