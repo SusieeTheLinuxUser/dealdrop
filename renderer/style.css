@@ -251,6 +251,7 @@ html[data-round="on"] #app,html[data-round="on"] #fx{border-radius:14px}
 
 /* ── theme picker ── */
 .theme-grid{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px}
+.launcher-pref-grid{margin:0}
 .theme-chip{display:flex;align-items:center;gap:8px;padding:7px 12px;font-size:12px;font-family:var(--sans);background:var(--bg1);border:1px solid var(--border);border-radius:var(--r);color:var(--text1);cursor:pointer}
 .theme-chip:hover{color:var(--text0);border-color:var(--bord2)}
 .theme-chip.active{border-color:var(--acc);color:var(--acc);background:var(--acc-d)}

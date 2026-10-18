@@ -714,9 +714,14 @@ function renderLauncherPrefs () {
     const shortName = name === 'Epic Games' ? 'Epic' : name
     const row = document.createElement('div')
     row.className = 'setting-row'
-    row.innerHTML = `<div><div class="setting-label">Open ${shortName} games in</div>
-      <div class="setting-sub">${state.launchers[store]?.options.length ? 'Detected: ' + state.launchers[store].options.map(o => o.label).join(', ') : 'No launcher detected — opens in the browser'}</div></div><div class="theme-grid" style="margin:0"></div>`
-    const grid = row.querySelector('.theme-grid')
+    const copy = document.createElement('div')
+    const label = document.createElement('div'); label.className = 'setting-label'; label.textContent = `Open ${shortName} games in`
+    const sub = document.createElement('div'); sub.className = 'setting-sub'
+    const detected = state.launchers[store]?.options ?? []
+    sub.textContent = detected.length ? 'Detected: ' + detected.map(o => o.label).join(', ') : 'No launcher detected — opens in the browser'
+    copy.append(label, sub)
+    const grid = document.createElement('div'); grid.className = 'theme-grid launcher-pref-grid'
+    row.append(copy, grid)
     const choices = [{ key: 'auto', label: 'Auto' }, ...(state.launchers[store]?.options ?? []), { key: 'browser', label: 'Browser' }]
     choices.forEach(c => {
       const b = document.createElement('button')
