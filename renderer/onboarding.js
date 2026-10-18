@@ -20,7 +20,7 @@
   function keydown (e) {
     if (e.key === 'Escape') { e.preventDefault(); finish(); return }
     if (e.key !== 'Tab' || !dialog) return
-    const items = [...dialog.querySelectorAll('button:not(:disabled),select')]
+    const items = [...dialog.querySelectorAll('button:not(:disabled),select,a[href]')]
     if (!items.length) { e.preventDefault(); return }
     if (e.shiftKey && document.activeElement === items[0]) { e.preventDefault(); items.at(-1).focus() }
     else if (!e.shiftKey && document.activeElement === items.at(-1)) { e.preventDefault(); items[0].focus() }
@@ -39,7 +39,7 @@
       const copy = document.createElement('div'), label = document.createElement('strong'), sub = document.createElement('small')
       label.textContent = row.label; sub.textContent = row.sub; copy.append(label, sub)
       if (row.gamerpower) { sub.replaceChildren(document.createTextNode('Epic, Steam, GOG & ')); const a = document.createElement('a'); a.href = '#'; a.dataset.href = 'https://www.gamerpower.com'; a.textContent = 'GamerPower'; sub.append(a, document.createTextNode(' giveaways')) }
-      const b = button('', 'onboarding-toggle' + (settings[row.key] ? ' on' : ''), () => { settings[row.key] = !settings[row.key]; b.classList.toggle('on', settings[row.key]); b.setAttribute('aria-pressed', String(settings[row.key])) })
+      const b = button('', 'onboarding-toggle' + (settings[row.key] ? ' on' : ''), () => { settings[row.key] = !settings[row.key]; b.classList.toggle('on', settings[row.key]); b.setAttribute('aria-pressed', String(settings[row.key])); if (row.key === 'rounded' || row.key === 'effects') api().applyTheme() })
       b.setAttribute('aria-label', row.label); b.setAttribute('aria-pressed', String(Boolean(settings[row.key])))
       wrap.append(copy, b); return wrap
     }
