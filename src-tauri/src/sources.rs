@@ -25,6 +25,8 @@ pub struct Free {
     pub image: Option<String>,
     pub app_id: Option<String>,
     pub end_date: Option<String>,
+    /// When an upcoming giveaway turns free (Epic "Coming next" only).
+    pub starts: Option<String>,
     #[serde(rename = "type")]
     pub kind: String,
 }
@@ -502,9 +504,10 @@ pub async fn steam_profile(steam_id: &str) -> (String, Option<String>) {
 
 // ─── Free games: Epic + GamerPower ────────────────────────────────────────────
 
-pub async fn epic_free() -> R<Vec<Free>> {
+/// (free now, coming next) from one request.
+pub async fn epic_free() -> R<(Vec<Free>, Vec<Free>)> {
     let body = get_text_browser("https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions?locale=en-US&country=US&allowCountries=US").await?;
-    parse_epic_free(&body)
+    Ok((parse_epic_free(&body)?, parse_epic_upcoming(&body)?))
 }
 
 fn parse_epic_free(body: &str) -> R<Vec<Free>> {
@@ -519,12 +522,38 @@ fn parse_epic_free(body: &str) -> R<Vec<Free>> {
                 source: "epic".into(),
                 url: epic_url(g),
                 end_date: s(&offer["endDate"]),
-                image: g["keyImages"].as_array().and_then(|k| k.iter().find(|i| i["type"] == "Thumbnail")).and_then(|i| s(&i["url"])),
+                image: epic_thumb(g),
                 kind: "free".into(),
                 ..Default::default()
             })
         })
         .collect())
+}
+
+/// Upcoming offers at 0% (free next); one that is only discounted is skipped.
+fn parse_epic_upcoming(body: &str) -> R<Vec<Free>> {
+    let v: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+    Ok(v["data"]["Catalog"]["searchStore"]["elements"].as_array().into_iter().flatten()
+        .filter_map(|g| {
+            let offer = g["promotions"]["upcomingPromotionalOffers"].as_array()?.iter()
+                .flat_map(|o| o["promotionalOffers"].as_array().into_iter().flatten())
+                .find(|o| o["discountSetting"]["discountPercentage"] == 0)?;
+            Some(Free {
+                id: format!("epic-next-{}", s(&g["id"])?),
+                title: s(&g["title"])?,
+                source: "epic".into(),
+                url: epic_url(g),
+                starts: s(&offer["startDate"]),
+                image: epic_thumb(g),
+                kind: "upcoming".into(),
+                ..Default::default()
+            })
+        })
+        .collect())
+}
+
+fn epic_thumb(g: &Value) -> Option<String> {
+    g["keyImages"].as_array().and_then(|k| k.iter().find(|i| i["type"] == "Thumbnail")).and_then(|i| s(&i["url"]))
 }
 
 pub fn epic_url(g: &Value) -> String {
@@ -569,6 +598,7 @@ fn parse_gamerpower(body: &str) -> R<Vec<Free>> {
                 end_date: end,
                 image: s(&g["thumbnail"]),
                 kind: "free".into(),
+                starts: None,
             })
         })
         .collect())
@@ -776,7 +806,11 @@ mod live {
         assert!(epic.is_some(), "Epic exact title not found");
     }
     #[tokio::test] #[ignore] async fn epic_sales_live() { show("epic sales", crate::stores::epic_sales().await) }
-    #[tokio::test] #[ignore] async fn epic_free_live() { show("epic free", epic_free().await) }
+    #[tokio::test] #[ignore] async fn epic_free_live() {
+        let (now, next) = epic_free().await.expect("epic free");
+        println!("epic coming next: {} items, first = {:?}", next.len(), next.first());
+        show("epic free", Ok(now));
+    }
     #[tokio::test] #[ignore] async fn gamerpower_live() { show("gamerpower", gamerpower().await) }
     #[tokio::test] #[ignore] async fn cheapshark_live() {
         let deals = cheapshark_deals().await.expect("CheapShark deals");
@@ -928,6 +962,32 @@ mod unit {
         assert!(v[0].app_id.is_none());
         assert!(super::parse_epic_free("nope").is_err());
         assert!(super::parse_epic_free("{}").unwrap().is_empty());
+    }
+
+    #[test]
+    fn epic_upcoming_keeps_only_free_offers() {
+        let body = r#"{
+            "data": {"Catalog": {"searchStore": {"elements": [
+                {"title":"Control","id":"offer1","productSlug":"control/home",
+                 "promotions":{"promotionalOffers":[{"promotionalOffers":[{"startDate":"2026-10-15T15:00:00.000Z","endDate":"2026-10-22T15:00:00.000Z","discountSetting":{"discountType":"PERCENTAGE","discountPercentage":0}}]}],"upcomingPromotionalOffers":[]}},
+                {"title":"Hades","id":"offer2","catalogNs":{"mappings":[{"pageSlug":"hades","pageType":"productHome"}]},
+                 "keyImages":[{"type":"OfferImageWide","url":"https://cdn.example/wide.jpg"},{"type":"Thumbnail","url":"https://cdn.example/hades.jpg"}],
+                 "promotions":{"promotionalOffers":[],"upcomingPromotionalOffers":[{"promotionalOffers":[{"startDate":"2026-10-22T15:00:00.000Z","endDate":"2026-10-29T15:00:00.000Z","discountSetting":{"discountType":"PERCENTAGE","discountPercentage":0}}]}]}},
+                {"title":"Half Price","id":"offer3","productSlug":"half-price",
+                 "promotions":{"promotionalOffers":[],"upcomingPromotionalOffers":[{"promotionalOffers":[{"startDate":"2026-10-22T15:00:00.000Z","endDate":"2026-10-29T15:00:00.000Z","discountSetting":{"discountType":"PERCENTAGE","discountPercentage":50}}]}]}}
+            ]}}}
+        }"#;
+        let now = super::parse_epic_free(body).unwrap();
+        assert_eq!(now.iter().map(|g| g.id.as_str()).collect::<Vec<_>>(), ["epic-offer1"]);
+        let next = super::parse_epic_upcoming(body).unwrap();
+        assert_eq!(next.len(), 1);
+        assert_eq!(next[0].id, "epic-next-offer2");
+        assert_eq!(next[0].title, "Hades");
+        assert_eq!(next[0].kind, "upcoming");
+        assert_eq!(next[0].starts.as_deref(), Some("2026-10-22T15:00:00.000Z"));
+        assert_eq!(next[0].url, "https://store.epicgames.com/p/hades");
+        assert_eq!(next[0].image.as_deref(), Some("https://cdn.example/hades.jpg"));
+        assert!(super::parse_epic_upcoming("nope").is_err());
     }
 
     #[test]

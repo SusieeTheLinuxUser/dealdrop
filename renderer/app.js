@@ -114,6 +114,7 @@ const state = {
   onboardingThemePicked: false,
   freeGames:    [],
   freeWeekends: [],
+  freeUpcoming: [],
   claimed:      readClaimed(),
   seen:         readSeen(),
   deals:        [],
@@ -316,6 +317,14 @@ function endDateLabel (dateStr) {
   if (remaining === 'ended') return 'Ended'
   if (remaining === 'ending soon') return 'Ends soon'
   return `Ends in ${remaining.replace(/ left$/, '')}`
+}
+
+// "Free from Oct 22"; a start that has passed (stale data) reads "Free now"
+function startDateLabel (dateStr) {
+  const start = new Date(dateStr || '')
+  if (Number.isNaN(start.getTime())) return 'Free soon'
+  if (start <= Date.now()) return 'Free now'
+  return `Free from ${start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
 }
 
 function fmtChecked (ts) {
@@ -751,12 +760,19 @@ function renderFreeGames () {
   const lblWknd   = document.getElementById('label-weekends')
   const emptyEl   = document.getElementById('empty-free')
   const tsEl      = document.getElementById('lc-free')
+  const gridNext  = document.getElementById('grid-upcoming')
 
   emptyEl.classList.toggle('loading-state', !state.dataLoaded)
   updateBadges()
   gridFree.innerHTML = ''
   gridWknd.innerHTML = ''
+  gridNext.innerHTML = ''
   if (tsEl) tsEl.textContent = fmtChecked(state.lastChecked)
+
+  // Not free yet: no claim button, no badge count, the start date in place of the FREE tag
+  const upcoming = state.freeUpcoming.filter(g => !hiddenTitle(g.title))
+  document.getElementById('label-upcoming').style.display = upcoming.length ? 'block' : 'none'
+  upcoming.forEach(g => gridNext.appendChild(makeFreeCard(g, 'tag-weekend', escHtml(startDateLabel(g.starts)))))
 
   const freeGames = state.freeGames.filter(g => !hiddenTitle(g.title))
   const freeWeekends = state.freeWeekends.filter(g => !hiddenTitle(g.title))
@@ -1618,6 +1634,7 @@ function applyData (data) {
   window.api.getAccounts().then(a => { if (JSON.stringify(a) !== JSON.stringify(state.accounts)) setAccounts(a) })
   state.freeGames    = data.freeGames    ?? []
   state.freeWeekends = data.freeWeekends ?? []
+  state.freeUpcoming = data.freeUpcoming ?? []
   // forget claimed games that left the list; an empty list may be a failed load, so keep them then
   if (state.freeGames.length) {
     const kept = pruneClaimed(state.claimed, state.freeGames)

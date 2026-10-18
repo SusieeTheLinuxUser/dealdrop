@@ -86,6 +86,8 @@ struct Db {
 struct Snapshot {
     free_games: Vec<Free>,
     free_weekends: Vec<Free>,
+    /// Epic's next giveaways: shown on the Free page, never notified or counted.
+    free_upcoming: Vec<Free>,
     sales: Sales,
     live_sale: Option<LiveSale>,
     deals: Vec<Deal>,
@@ -285,6 +287,8 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
         epic_free(), steam_free_featured(), steam_free_to_keep(), steam_free_weekends(), gamerpower(),
         steam_sales(), gog_sales(), stores::epic_sales(), hot_deals(),
     );
+    // One Epic response feeds both lists; a failure keeps the last good upcoming list too.
+    let (ef, free_upcoming) = match ef { Ok((now, next)) => (Ok(now), next), Err(e) => (Err(e), prev.free_upcoming.clone()) };
     let (ef, sf, sk, sw, gp) = (
         log("Epic free games", ef, &prev.free_games, "epic-"), log("Steam free games", sf, &prev.free_games, "steam-"),
         log("Steam free to keep", sk, &prev.free_games, "steam-ftk-"),
@@ -372,7 +376,7 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
     if settings.notify_big_deal { notify_big_deals(app, st, &deals); }
 
     Snapshot {
-        free_games, free_weekends, sales, live_sale, deals, deals_source, deals_error,
+        free_games, free_weekends, free_upcoming, sales, live_sale, deals, deals_source, deals_error,
         wishlist, wishlist_private, wishlist_errors, source_errors: source_errors.into_inner().unwrap(), last_checked: now_ms(),
     }
 }

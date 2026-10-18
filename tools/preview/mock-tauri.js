@@ -43,6 +43,10 @@
     freeWeekends: empty ? [] : [
       { id: 'steam-fw-570', title: 'Dota 2 Weekend Trial', source: 'steam', url: 'https://store.steampowered.com/app/570', image: null, appId: '570', endDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(), type: 'weekend' },
     ],
+    freeUpcoming: empty ? [] : [
+      { id: 'epic-next-sample-1', title: 'Lanterns of the Deep', source: 'epic', url: 'https://store.epicgames.com/free-games', image: null, appId: null, endDate: null, starts: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString(), type: 'upcoming' },
+      { id: 'epic-next-sample-2', title: 'Clockwork Orchard', source: 'epic', url: 'https://store.epicgames.com/free-games', image: null, appId: null, endDate: null, starts: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString(), type: 'upcoming' },
+    ],
     sales: empty ? { steam: [], gog: [], epic: [] } : {
       steam: [
         deal('steam-sale-440', 'Team Fortress 2', 'Steam', 20, 7.99, 9.99, '440'),

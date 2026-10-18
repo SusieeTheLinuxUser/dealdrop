@@ -13,6 +13,7 @@ All notable changes to DealDrop are documented in this file.
 - Free now: mark giveaways as claimed; claimed games are dimmed, sorted last and left out of the sidebar count.
 - Tray icon: the tooltip shows how many free games and wishlist sales there are, and the menu has "Free now" and "Wishlist" shortcuts (with counts) that open those pages.
 - Settings → Notifications: "Start DealDrop when I log in" (off by default) starts it hidden in the tray.
+- Free now: a "Coming next on Epic" section lists the next free Epic games with the date they turn free (no notification, not counted in the badge).
 
 ## [v0.8.0] - 2026-10-18
 - New: first-run setup guide (theme, notifications, stores) with an optional tour
