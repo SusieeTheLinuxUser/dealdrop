@@ -39,6 +39,7 @@ const state = {
   accounts:     { steam: null, gog: null, epic: null },
   sourceErrors: [],
   fetchError:   null,
+  dataLoaded:   false,
   lastChecked:  null,
   selectedWishlistDeal: null,
   wishlistPrivate: false,
@@ -346,9 +347,13 @@ function renderWishlist () {
   search.value = filters.query
   sort.value = filters.sort
   saleOnly.setAttribute('aria-pressed', String(filters.onSaleOnly))
-  $('wishlist-clear-search')?.remove()
   if (!items.length) {
     hide(onSaleWrap, allWrap, panel)
+    if (!state.dataLoaded) {
+      $('wishlist-empty-msg').textContent = 'Loading…'
+      emptyEl.style.display = 'flex'
+      return
+    }
     const steamOnly = state.wishlistTab === 'steam' || (state.wishlistTab === 'all' && state.accounts.steam && !state.accounts.gog && !state.accounts.epic)
     $('wishlist-empty-msg').textContent = steamOnly && state.wishlistPrivate
       ? 'Your Steam wishlist is set to Private. Make it Public in Steam → Privacy Settings.'
@@ -565,6 +570,11 @@ function renderFreeGames () {
   if (tsEl) tsEl.textContent = fmtChecked(state.lastChecked)
 
   if (!state.freeGames.length && !state.freeWeekends.length) {
+    if (!state.dataLoaded) {
+      document.getElementById('free-empty-copy').textContent = 'Loading…'
+      emptyEl.style.display = 'flex'
+      return
+    }
     const mins = Number(state.settings.checkInterval) || 60
     document.getElementById('free-empty-copy').textContent = `No free games right now. We check every ${mins < 60 ? mins + ' minutes' : mins / 60 + ' hour' + (mins === 60 ? '' : 's')}.`
     emptyEl.style.display = 'flex'
@@ -636,7 +646,9 @@ function renderDeals () {
   const items = filteredSorted(state.deals, 'deals')
   syncMinDiscount('deals', 'deals-discount-filters')
   emptyEl.style.display = items.length ? 'none' : 'flex'
-  if (!items.length && (state.listFilters.deals.query.trim() || state.listFilters.deals.minDiscount)) {
+  if (!items.length && !state.dataLoaded) {
+    emptyEl.replaceChildren(Object.assign(document.createElement('p'), { textContent: 'Loading…' }))
+  } else if (!items.length && (state.listFilters.deals.query.trim() || state.listFilters.deals.minDiscount)) {
     showFilterEmpty(emptyEl, 'deals', 'deals-search', 'deals-discount-filters', renderDeals, 'No deals match.')
   } else if (!items.length) {
     emptyEl.replaceChildren(Object.assign(document.createElement('p'), { textContent: 'No deals could be loaded right now.' }))
@@ -683,7 +695,9 @@ function renderStoreSales () {
   const items = filteredSorted(list, 'storesales')
   syncMinDiscount('storesales', 'sales-discount-filters')
   emptyEl.style.display = items.length ? 'none' : 'flex'
-  if (!items.length && (state.listFilters.storesales.query.trim() || state.listFilters.storesales.minDiscount)) {
+  if (!items.length && !state.dataLoaded) {
+    emptyEl.replaceChildren(Object.assign(document.createElement('p'), { textContent: 'Loading…' }))
+  } else if (!items.length && (state.listFilters.storesales.query.trim() || state.listFilters.storesales.minDiscount)) {
     showFilterEmpty(emptyEl, 'storesales', 'sales-search', 'sales-discount-filters', renderStoreSales, 'No store sales match.')
   } else if (!items.length) {
     emptyEl.replaceChildren(Object.assign(document.createElement('p'), { textContent: 'No discounts loaded for this store right now.' }))
@@ -1207,6 +1221,7 @@ async function copyError () {
 
 function applyData (data) {
   data = data || {}
+  state.dataLoaded = true
   // pick up profile changes made during the poll (e.g. a GOG avatar fetched for an older sign-in)
   window.api.getAccounts().then(a => { if (JSON.stringify(a) !== JSON.stringify(state.accounts)) setAccounts(a) })
   state.freeGames    = data.freeGames    ?? []
