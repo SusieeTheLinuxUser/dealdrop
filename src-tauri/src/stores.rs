@@ -361,6 +361,26 @@ pub async fn epic_sales() -> R<Vec<Deal>> {
     Ok(deals)
 }
 
+/// Find an Epic product by exact title only when a user opens a CheapShark deal.
+pub async fn epic_product_for_title(title: &str) -> R<Option<String>> {
+    let q = format!(
+        "query q($country:String!,$locale:String,$keywords:String,$count:Int,$start:Int){{Catalog{{searchStore(country:$country,locale:$locale,keywords:$keywords,count:$count,start:$start){{elements{{title productSlug urlSlug catalogNs{{mappings(pageType:\"productHome\"){{pageSlug}}}} offerMappings{{pageSlug}}}}}}}}}}"
+    );
+    let v = epic_gql("https://store.epicgames.com/graphql", EPIC_UA_BROWSER, None, &q, json!({
+        "country": "US", "locale": "en-US", "keywords": title, "count": 60, "start": 0,
+    })).await?;
+    Ok(parse_epic_product(&v["data"]["Catalog"]["searchStore"]["elements"], title))
+}
+
+fn parse_epic_product(products: &Value, title: &str) -> Option<String> {
+    products.as_array()?.iter().find_map(|p| {
+        if !p["title"].as_str()?.trim().eq_ignore_ascii_case(title.trim()) { return None; }
+        [&p["offerMappings"][0]["pageSlug"], &p["catalogNs"]["mappings"][0]["pageSlug"], &p["productSlug"], &p["urlSlug"]]
+            .into_iter().find_map(|v| v.as_str().filter(|s| !s.is_empty() && *s != "[]")
+                .map(|s| s.trim_end_matches("/home").to_string()))
+    })
+}
+
 pub async fn epic_wishlist(access: &str) -> R<Vec<WishItem>> {
     let q = format!("query w {{ Wishlist {{ wishlistItems {{ elements {{ id offerId namespace offer {{ {EPIC_OFFER_FIELDS} }} }} }} }} }}");
     // Unproven which host accepts the launcher bearer; try the launcher one first.
@@ -475,5 +495,17 @@ mod unit {
         assert_eq!(p.formatted.as_deref(), Some("$5.00"));
         assert!(super::parse_epic_wishlist(&json!({})).is_err());
         assert!(super::parse_epic_wishlist(&json!({"data": {"Wishlist": {"wishlistItems": {"elements": []}}}})).unwrap().is_empty());
+    }
+
+    #[test]
+    fn epic_deal_lookup_is_exact_and_returns_a_slug() {
+        let products = json!([
+            {"title":"  Alan Wake 2 ", "productSlug":"alan-wake-2/home"},
+            {"title":"Alan Wake", "productSlug":"alan-wake"}
+        ]);
+        assert_eq!(super::parse_epic_product(&products, "alan wake 2"), Some("alan-wake-2".into()));
+        assert_eq!(super::parse_epic_product(&products, "Alan"), None);
+        let unsafe_slug = json!([{"title":"A Game", "productSlug":"bad slug"}]);
+        assert_eq!(super::parse_epic_product(&unsafe_slug, "A Game"), Some("bad slug".into()));
     }
 }

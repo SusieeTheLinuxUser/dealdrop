@@ -2,6 +2,9 @@
 
 All notable changes to DealDrop are documented in this file.
 
+## [Unreleased]
+- GOG and Epic CheapShark deals open in their installed launcher after an exact-title lookup, with the CheapShark link as fallback.
+
 ## [v0.8.0] - 2026-10-18
 - New: first-run setup guide (theme, notifications, stores) with an optional tour
 - New: Steam games that are 100% off to keep now show up with the free games

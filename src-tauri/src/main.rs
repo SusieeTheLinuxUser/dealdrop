@@ -587,6 +587,33 @@ fn open_in_app(app: AppHandle, store: String, url: String, id: Option<String>) -
 }
 
 #[tauri::command]
+async fn open_deal_in_app(app: AppHandle, store: String, title: String, fallback_url: String) -> bool {
+    let pref = app.state::<AppState>().read(|d| match store.as_str() {
+        "gog" => d.settings.launcher_gog.clone(),
+        "epic" => d.settings.launcher_epic.clone(),
+        _ => "browser".into(),
+    });
+    let chosen = launchers::resolve(&store, &pref).chosen;
+    if let Some(chosen) = chosen {
+        let target = match store.as_str() {
+            "gog" => sources::gog_product_for_title(&title).await.ok().flatten().map(|id|
+                ("https://www.gog.com/".into(), Some(id))),
+            "epic" => stores::epic_product_for_title(&title).await.ok().flatten().map(|slug|
+                (format!("https://store.epicgames.com/en-US/p/{slug}"), None)),
+            _ => None,
+        };
+        if let Some((url, id)) = target {
+            if let Some(parsed) = safe_https(&url) {
+                if let Some(link) = launchers::link(&store, chosen.key, &parsed, id.as_deref()) {
+                    if open_raw(&app, &link) { return true; }
+                }
+            }
+        }
+    }
+    safe_https(&fallback_url).is_some_and(|u| open_raw(&app, u.as_str()))
+}
+
+#[tauri::command]
 fn window_minimize(app: AppHandle) { if let Some(w) = app.get_webview_window("main") { let _ = w.minimize(); } }
 
 #[tauri::command]
@@ -687,7 +714,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             get_settings, save_settings, fetch_data, check_now, get_accounts,
-            steam_login, gog_login, epic_login, logout, open_url, open_in_app, launchers,
+            steam_login, gog_login, epic_login, logout, open_url, open_in_app, open_deal_in_app, launchers,
             window_minimize, window_close, wishlist_game_deals,
         ])
         .run(tauri::generate_context!())

@@ -579,6 +579,29 @@ pub async fn gog_sales() -> R<Vec<Deal>> {
     parse_gog_sales(&body)
 }
 
+/// Find a GOG product by exact title when a user opens a CheapShark deal.
+pub async fn gog_product_for_title(title: &str) -> R<Option<String>> {
+    let mut url = url::Url::parse("https://catalog.gog.com/v1/catalog").unwrap();
+    url.query_pairs_mut()
+        .append_pair("limit", "48")
+        .append_pair("productType", "in:game,pack")
+        .append_pair("query", title)
+        .append_pair("page", "1")
+        .append_pair("countryCode", "US")
+        .append_pair("locale", "en-US")
+        .append_pair("currencyCode", "USD");
+    let v = get_json(url.as_str()).await?;
+    Ok(parse_gog_product(&v, title))
+}
+
+fn parse_gog_product(v: &Value, title: &str) -> Option<String> {
+    let wanted = title.trim();
+    v["products"].as_array()?.iter().find_map(|p| {
+        if !p["title"].as_str()?.trim().eq_ignore_ascii_case(wanted) { return None; }
+        p["id"].as_str().map(str::to_string).or_else(|| p["id"].as_u64().map(|id| id.to_string()))
+    })
+}
+
 fn parse_gog_sales(body: &str) -> R<Vec<Deal>> {
     let v: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
     Ok(v["products"].as_array().into_iter().flatten().filter_map(|p| {
@@ -716,6 +739,14 @@ mod live {
     }
     #[tokio::test] #[ignore] async fn steam_sales_live() { show("steam sales", steam_sales().await) }
     #[tokio::test] #[ignore] async fn gog_sales_live() { show("gog sales", gog_sales().await) }
+    #[tokio::test] #[ignore] async fn deal_title_lookup_live() {
+        let gog = gog_product_for_title("Cyberpunk 2077").await.expect("GOG title lookup");
+        let epic = crate::stores::epic_product_for_title("Alan Wake 2").await.expect("Epic title lookup");
+        println!("GOG Cyberpunk 2077: {gog:?}");
+        println!("Epic Alan Wake 2: {epic:?}");
+        assert!(gog.is_some(), "GOG exact title not found");
+        assert!(epic.is_some(), "Epic exact title not found");
+    }
     #[tokio::test] #[ignore] async fn epic_sales_live() { show("epic sales", crate::stores::epic_sales().await) }
     #[tokio::test] #[ignore] async fn epic_free_live() { show("epic free", epic_free().await) }
     #[tokio::test] #[ignore] async fn gamerpower_live() { show("gamerpower", gamerpower().await) }
@@ -829,6 +860,17 @@ mod unit {
         assert!(v[0].app_id.is_none());
         assert!(super::parse_gog_sales("nope").is_err());
         assert!(super::parse_gog_sales("{}").unwrap().is_empty());
+    }
+
+    #[test]
+    fn gog_lookup_requires_an_exact_trimmed_case_insensitive_title() {
+        use serde_json::json;
+        let v = json!({"products": [
+            {"id":"12", "title":"  The Witcher 3  ", "slug":"witcher-3"},
+            {"id":"13", "title":"The Witcher 3: Wild Hunt", "slug":"witcher-3-wild-hunt"}
+        ]});
+        assert_eq!(super::parse_gog_product(&v, " the witcher 3 "), Some("12".into()));
+        assert_eq!(super::parse_gog_product(&v, "Witcher 3"), None);
     }
 
     #[test]

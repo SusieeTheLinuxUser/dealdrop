@@ -792,8 +792,13 @@ function makeDealRow (d) {
   const main = document.createElement('button')
   main.type = 'button'; main.className = 'deal-row-main'
   main.setAttribute('aria-label', `Open ${d.title} on ${d.shop}. ${salePriceDescription(d.regular, d.price, d.cut)}`)
-  // Steam deals open in the Steam app when it's installed; everything else keeps CheapShark's redirect link.
-  const open = () => d.appId && storeKeyFor(d.shop) === 'steam' && launcherOf('steam') ? openSteam(d.appId) : openBrowser(d.url)
+  // Steam deals use their app id; GOG/Epic are looked up only when clicked and fall back to CheapShark.
+  const open = () => {
+    const store = storeKeyFor(d.shop)
+    if (d.appId && store === 'steam' && launcherOf('steam')) return openSteam(d.appId)
+    if (['gog', 'epic'].includes(store) && launcherOf(store)) return window.api.openDealInApp(store, d.title, d.url)
+    return openBrowser(d.url)
+  }
   main.addEventListener('click', open)
   const btn = tmpl(`<button class="deal-open" title="Open store page">↗</button>`)
   btn.setAttribute('aria-label', `Open ${d.title} on ${d.shop}`)

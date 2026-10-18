@@ -10,6 +10,7 @@ window.api = {
   checkNow:       ()    => invoke('check_now'),
   openUrl:        url   => invoke('open_url', { url }),
   openInApp:      (store, url, id) => invoke('open_in_app', { store, url, id: id ?? null }),
+  openDealInApp:  (store, title, fallbackUrl) => invoke('open_deal_in_app', { store, title, fallbackUrl }),
   launchers:      ()    => invoke('launchers'),
   minimize:       ()    => invoke('window_minimize'),
   close:          ()    => invoke('window_close'),

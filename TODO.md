@@ -2,7 +2,7 @@
 
 ## Next up
 
-- [ ] **Hot deals for GOG/Epic in the launcher:** Steam deals open in the Steam app. GOG and Epic deals still use CheapShark's redirect in the browser, because CheapShark gives no GOG id or Epic slug. That needs a title lookup.
+Nothing queued.
 
 ## Minimize animation on KDE Plasma (Wayland) flies to the pointer
 

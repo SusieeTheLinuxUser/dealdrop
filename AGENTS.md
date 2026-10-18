@@ -62,6 +62,8 @@ Platform code: launcher detection (`has_scheme` in `launchers.rs`) is per-OS via
 
 `src-tauri/src/launchers.rs` is the single table of launchers per store (`options()`), their URL schemes, and the deep links (`link()`, unit-tested). `has_scheme()` asks the OS which are installed (`xdg-mime` / Windows registry / macOS app bundles); "Auto" prefers `native`, then the browser, and the user can force one (or the browser) in Settings → Launchers (`launcherGog` / `launcherEpic`). GOG offers only GOG Galaxy; saved Heroic/Lutris preferences fall back to the first installed option.
 
+GOG/Epic CheapShark deal titles are looked up on click only; exact matches open through the configured launcher and misses keep the CheapShark browser redirect.
+
 - **GOG native Linux client (expected ~2027):** assumed to keep the `goggalaxy://` scheme. If it uses another, change the `native` row in `GOG` and the `("gog", "native")` arm in `link()` — nothing else needs touching.
 
 ## Rules

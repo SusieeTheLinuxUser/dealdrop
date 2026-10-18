@@ -122,6 +122,7 @@
       case 'wishlist_game_deals': return { appId: args.appId, gameName: args.name, steam: { onSale: true, discount: 50, final: 4.99, initial: 9.99, formatted: '$4.99' }, cheapest: { store: 'GOG', price: 3.99, url: 'https://www.gog.com/game/classic_quest', savingsPercent: 60, retailPrice: 9.99 }, checkedAt: Date.now() }
       case 'open_url':
       case 'open_in_app': console.info(`[preview] ${cmd}`, args); return true
+      case 'open_deal_in_app': console.info(`[preview] ${cmd}`, args); return true
       case 'window_minimize':
       case 'window_close': console.info(`[preview] ${cmd}`); return undefined
       default: throw new Error(`Preview bridge does not implement: ${cmd}`)
