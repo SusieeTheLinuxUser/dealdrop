@@ -93,6 +93,7 @@
         if (account?.avatar) { const image = document.createElement('img'); image.src = account.avatar; image.alt = ''; row.appendChild(image) }
         row.appendChild(status)
         if (!account) { const signIn = button('Sign in', 'onboarding-secondary', async e => {
+          dialog.querySelector('.onboarding-error').textContent = ''
           const b = e.currentTarget; b.disabled = true; b.textContent = 'Opening…'
           try { setAccounts(await window.api.login(key)); await api().loadData(); render() }
           catch { dialog.querySelector('.onboarding-error').textContent = 'Sign-in did not finish. You can try later in Settings.'; b.disabled = false; b.textContent = 'Try again' }
