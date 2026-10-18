@@ -1,11 +1,18 @@
 (() => {
   let step = 0, dialog = null, returnFocus = null, lastAnnouncedStep = -1
+  let tourOverlay = null, tourTrigger = null, tourIndex = -1
   const api = () => window.dealDropOnboarding
   const labels = ['Welcome', 'Look', 'Notifications', 'Stores & launchers', 'Done']
+  const tourStops = [
+    { selector: '.nav-items', title: 'Find a page', copy: 'Use these buttons to switch between wishlists, free games, store sales, hot deals and the calendar.' },
+    { selector: '#btn-check-now', title: 'Refresh all', copy: 'Check stores and wishlists now whenever you want an update.' },
+    { selector: '.nav-item[data-page="settings"]', title: 'Settings', copy: 'Change your appearance, notifications and launcher preferences here.' },
+    { selector: null, title: 'Stay in the tray', copy: 'Closing this window hides DealDrop in the tray. Choose Quit from the tray menu to exit.' },
+  ]
   const button = (text, cls, fn) => { const b = document.createElement('button'); b.type = 'button'; b.className = cls; b.textContent = text; b.addEventListener('click', fn); return b }
   function start () {
     if (dialog) return
-    returnFocus = document.activeElement; step = 0
+    returnFocus = document.activeElement; step = 0; lastAnnouncedStep = -1
     dialog = document.createElement('div'); dialog.className = 'onboarding-backdrop'
     dialog.innerHTML = '<section class="onboarding-dialog" role="dialog" aria-modal="true" aria-labelledby="onboarding-title"><div class="onboarding-head"><div class="onboarding-dots" aria-hidden="true"></div><span class="onboarding-count"></span></div><span class="onboarding-sr-only" aria-live="polite" aria-atomic="true"></span><div class="onboarding-content"></div><div class="onboarding-error" role="status"></div><div class="onboarding-actions"></div></section>'
     document.body.appendChild(dialog); document.addEventListener('keydown', keydown); render()
@@ -18,11 +25,13 @@
     returnFocus?.focus?.()
   }
   function keydown (e) {
-    if (e.key === 'Escape') { e.preventDefault(); finish(); return }
-    if (e.key !== 'Tab' || !dialog) return
-    const items = [...dialog.querySelectorAll('button:not(:disabled),select,a[href]')]
+    if (e.key === 'Escape') { e.preventDefault(); if (tourOverlay) endTour(); else finish(); return }
+    const layer = tourOverlay || dialog
+    if (e.key !== 'Tab' || !layer) return
+    const items = [...layer.querySelectorAll('button:not(:disabled),select,a[href]')]
     if (!items.length) { e.preventDefault(); return }
-    if (e.shiftKey && document.activeElement === items[0]) { e.preventDefault(); items.at(-1).focus() }
+    if (!layer.contains(document.activeElement)) { e.preventDefault(); (e.shiftKey ? items.at(-1) : items[0]).focus() }
+    else if (e.shiftKey && document.activeElement === items[0]) { e.preventDefault(); items.at(-1).focus() }
     else if (!e.shiftKey && document.activeElement === items.at(-1)) { e.preventDefault(); items[0].focus() }
   }
   function render () {
@@ -101,6 +110,7 @@
       const summary = document.createElement('p'); summary.className = 'onboarding-summary'
       summary.textContent = 'Theme: ' + (baseThemes[settings.baseTheme]?.name || 'Midnight') + ' · Checks: every ' + (settings.checkInterval < 60 ? settings.checkInterval + ' min' : settings.checkInterval / 60 + ' hr')
       body.appendChild(summary)
+      body.appendChild(button('Show me around', 'onboarding-secondary onboarding-tour-start', startTour))
     }
     const actions = dialog.querySelector('.onboarding-actions'); actions.replaceChildren()
     if (step) actions.appendChild(button('Back', 'onboarding-secondary', () => { step--; render() }))
@@ -109,6 +119,57 @@
     const restore = focusKey && [...dialog.querySelectorAll('[data-focus-key]')].find(el => el.dataset.focusKey === focusKey)
     if (restore) restore.focus()
     else if (stepChanged) actions.querySelector('button:last-child').focus()
+  }
+  function startTour () {
+    if (!dialog || tourOverlay) return
+    tourTrigger = document.activeElement
+    dialog.classList.add('touring')
+    dialog.querySelector('.onboarding-dialog').classList.add('tour-active')
+    dialog.querySelector('.onboarding-dialog').setAttribute('aria-hidden', 'true')
+    tourIndex = 0
+    tourOverlay = document.createElement('div')
+    tourOverlay.className = 'tour-backdrop'
+    tourOverlay.innerHTML = '<div class="tour-spotlight" aria-hidden="true"></div><section class="tour-card" role="dialog" aria-modal="true" aria-labelledby="tour-title"><div class="tour-count" aria-live="polite" aria-atomic="true"></div><h2 id="tour-title"></h2><p class="tour-copy"></p><div class="tour-actions"></div></section>'
+    document.body.appendChild(tourOverlay)
+    addEventListener('resize', updateTourSpotlight)
+    renderTour()
+  }
+  function endTour () {
+    if (!tourOverlay) return
+    removeEventListener('resize', updateTourSpotlight)
+    tourOverlay.remove(); tourOverlay = null; tourIndex = -1
+    dialog?.classList.remove('touring')
+    const panel = dialog?.querySelector('.onboarding-dialog')
+    panel?.classList.remove('tour-active'); panel?.removeAttribute('aria-hidden')
+    if (tourTrigger?.isConnected) tourTrigger.focus()
+  }
+  function updateTourSpotlight () {
+    if (!tourOverlay) return
+    const stop = tourStops[tourIndex], target = stop.selector && document.querySelector(stop.selector)
+    const spotlight = tourOverlay.querySelector('.tour-spotlight'), card = tourOverlay.querySelector('.tour-card')
+    if (!target) {
+      tourOverlay.classList.add('tour-note-only'); spotlight.hidden = true; card.classList.add('tour-card-centered'); card.classList.remove('tour-card-top')
+      return
+    }
+    tourOverlay.classList.remove('tour-note-only'); spotlight.hidden = false; card.classList.remove('tour-card-centered')
+    const rect = target.getBoundingClientRect()
+    spotlight.style.left = Math.max(4, rect.left - 6) + 'px'
+    spotlight.style.top = Math.max(4, rect.top - 6) + 'px'
+    spotlight.style.width = Math.min(innerWidth - 8, rect.width + 12) + 'px'
+    spotlight.style.height = Math.min(innerHeight - 8, rect.height + 12) + 'px'
+    card.classList.toggle('tour-card-top', rect.top + rect.height / 2 > innerHeight * 0.55)
+  }
+  function renderTour () {
+    const stop = tourStops[tourIndex]
+    tourOverlay.querySelector('.tour-count').textContent = 'Tour ' + (tourIndex + 1) + ' of ' + tourStops.length
+    tourOverlay.querySelector('#tour-title').textContent = stop.title
+    tourOverlay.querySelector('.tour-copy').textContent = stop.copy
+    const actions = tourOverlay.querySelector('.tour-actions'); actions.replaceChildren()
+    if (tourIndex > 0) actions.appendChild(button('Back', 'onboarding-secondary', () => { tourIndex--; renderTour() }))
+    actions.appendChild(button('Skip', 'onboarding-skip', endTour))
+    actions.appendChild(button(tourIndex === tourStops.length - 1 ? 'Done' : 'Next', 'onboarding-primary', () => { if (tourIndex === tourStops.length - 1) endTour(); else { tourIndex++; renderTour() } }))
+    updateTourSpotlight()
+    actions.querySelector('button:last-child').focus()
   }
   window.startOnboarding = start
 })()
