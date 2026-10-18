@@ -10,8 +10,10 @@ Optional store sign-in enables wishlist alerts. No API keys or telemetry; DealDr
 
 - **Steam sale alerts** — notified the moment a major seasonal sale goes live
 - **Free game alerts** — Epic, Steam and GOG giveaways, de-duplicated across sources
+- **Steam free-to-keep games** — includes qualifying DLC, clearly tagged as DLC
 - **Free weekend alerts** — Steam free-to-play weekends
 - **Store sales** — current discounts from **Steam, GOG and Epic Games**, browsable per store
+- **Search and sort** — find deals and store sales by title, discount, or price
 - **Wishlists from Steam, GOG and Epic** — sign in once, get notified when a wishlist game drops ≥20%
 - **Hot deals** — top discounts across 30+ stores (via CheapShark, no key needed)
 - **Wishlist links go to the cheapest store** — like deals.gg, a wishlist game that is cheaper elsewhere shows the best offer and opens it
@@ -20,6 +22,8 @@ Optional store sign-in enables wishlist alerts. No API keys or telemetry; DealDr
 - **Open in your launcher** — Steam and Epic, plus GOG Galaxy, Heroic or Lutris for GOG games; choose a preference in Settings
 - **Sales calendar** — Steam seasonal sales with countdown; click one to open it in Steam
 - **System tray** — minimizes to tray, polls in the background on your chosen interval
+- **Welcome guide and keyboard shortcuts** — quick setup on first run, with shortcuts for common actions
+- **Bundled fonts** — DM Sans and DM Mono load locally, with no third-party font requests
 - Native Rust backend (Tauri) — small AppImage, low memory
 
 ---
