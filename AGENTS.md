@@ -31,6 +31,7 @@ cargo tauri build --bundles appimage                 # → src-tauri/target/rele
 
 - `main` = what has been released (the fallback; every release is also a `vX.Y.Z` tag). Don't commit work-in-progress to it.
 - `dev` = day-to-day work. Commit and push here; to release, fast-forward `main` to `dev` (`git switch main && git merge --ff-only dev && git push`), then follow Releasing below and switch back to `dev`.
+- GitHub rulesets: `main`/`dev` can't be deleted or force-pushed and need linear history (PRs merge by rebase or squash; merge commits are off). `v*` tags can't be moved or deleted.
 
 ## Releasing — ALWAYS all three platforms
 
