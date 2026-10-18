@@ -235,8 +235,12 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
 
     // 2. Everything that needs no account, in parallel
     // On failure keep the last good items from that source (matched by id prefix) instead of blanking them.
+    // Only a failed free-game source blocks the silent first seed. A sales or sale-detect
+    // error is not part of that baseline, so it must not hold off free-game notifications.
+    let free_failed = Mutex::new(false);
     let log = |name: &str, r: R<Vec<Free>>, old: &[Free], prefix: &str| r.unwrap_or_else(|e| {
         eprintln!("[{name}] {e}"); source_errors.lock().unwrap().push(failure(name, &e));
+        *free_failed.lock().unwrap() = true;
         restore_by_prefix(old, prefix)
     });
     let (ef, sf, sk, sw, gp, ss, gs, es, hot) = tokio::join!(
@@ -260,7 +264,7 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
     let free_weekends = dedupe_free(sw);
 
     // The very first poll on a fresh install only records what is free today; no notification burst.
-    let had_errors = !source_errors.lock().unwrap().is_empty();
+    let had_errors = *free_failed.lock().unwrap();
     match st.read(|d| should_prime(d.primed, d.seen_free_ids.is_empty(), had_errors)) {
         Prime::Notify { mark } => {
             if settings.notify_free_game { notify_new_free(app, st, &free_games, false); }

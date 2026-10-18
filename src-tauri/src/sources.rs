@@ -346,10 +346,14 @@ pub async fn steam_free_to_keep() -> R<Vec<Free>> {
             ..Default::default()
         });
     }
-    // Search HTML has no app type. Label DLC; a failed lookup leaves the name as it was.
+    // Search HTML has no app type. Label DLC; a failed or skipped lookup leaves the name as it was.
+    // These calls are sequential inside the poll's join, and each may use the full 8s timeout,
+    // so the labeling pass stops after 12s total (an unlabeled row is the existing fallback).
+    let budget_at = tokio::time::Instant::now() + Duration::from_secs(12);
     let mut lookups = 0;
     for item in &mut out {
-        if lookups >= 12 {
+        let left = budget_at.saturating_duration_since(tokio::time::Instant::now());
+        if lookups >= 12 || left < Duration::from_millis(200) {
             break;
         }
         let Some(app_id) = item.app_id.clone() else { continue };
@@ -357,8 +361,9 @@ pub async fn steam_free_to_keep() -> R<Vec<Free>> {
         let url = format!(
             "https://store.steampowered.com/api/appdetails?appids={app_id}&filters=basic&cc=us&l=en"
         );
-        let Ok(res) = send(client().get(&url).timeout(Duration::from_secs(8))).await else { continue };
-        let Ok(body) = res.text().await else { continue };
+        let per = left.min(Duration::from_secs(8));
+        let Ok(res) = send(client().get(&url).timeout(per)).await else { continue };
+        let Ok(Ok(body)) = tokio::time::timeout(per, res.text()).await else { continue };
         if appdetails_is_dlc(&body) == Some(true) {
             item.title.push_str(" (DLC)");
         }
