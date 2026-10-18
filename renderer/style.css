@@ -91,6 +91,7 @@ html,body{background:transparent} /* window is transparent; #app paints the colo
 .card-btn:hover{background:var(--bg3);color:var(--text0);border-color:var(--bord2)}
 .card-btn.steam-btn:hover{background:var(--acc-d);color:var(--acc);border-color:rgba(102,192,244,0.3)}
 .claim-btn{position:relative;z-index:2;width:100%;margin-top:5px}
+.card-btn:focus-visible{outline-offset:-3px} /* cards clip overflow and these buttons touch their edges */
 .claim-btn[aria-pressed="true"]{background:var(--grn-d);color:var(--green);border-color:var(--green)}
 .game-card.claimed .game-card-content{opacity:.5}
 
@@ -327,6 +328,9 @@ html[data-theme="forest"]{--bg0:#0b1310;--bg1:#101b16;--bg2:#17261f;--bg3:#1f332
 html[data-theme="graphite"]{--bg0:#0f1011;--bg1:#17181a;--bg2:#202225;--bg3:#2a2c30;--bg4:#363a3f;--acc:#e6e8eb;--acc2:#c4c7cc;--acc-d:rgba(230,232,235,.10);--green:#7fdc9c;--amber:#f0b45a;--text0:#f1f2f3;--text1:#9a9ea6;--text2:#7d818b}
 html[data-theme="daylight"]{--bg0:#f2f4f8;--bg1:#ffffff;--bg2:#eef1f6;--bg3:#e1e6ee;--bg4:#cdd5e1;--acc:#1e6fcb;--acc2:#1860ad;--acc-d:rgba(30,111,203,.10);--green:#16945a;--grn-d:rgba(22,148,90,.12);--amber:#c9740a;--amb-d:rgba(201,116,10,.14);--red:#d33c3c;--text0:#172033;--text1:#4a5870;--text2:#677691;--border:rgba(20,30,50,.09);--bord2:rgba(20,30,50,.16)}
 html[data-theme="daylight"] .interval-btn.active,html[data-theme="daylight"] .deal-cut,html[data-theme="daylight"] .tag-sale{color:#fff}
+html[data-theme="daylight"] .tag-new,html[data-theme="daylight"] .claim-btn[aria-pressed="true"]{color:var(--text0)}
+html[data-theme="daylight"] .deal-lowest-tag{color:var(--acc2)}
+html[data-theme="daylight"] .settings-reset{color:var(--text1)}
 
 /* sale themes — only selectable while that sale is live */
 html[data-theme="lunar"]{--bg0:#1a0808;--bg1:#240c0c;--bg2:#321212;--bg3:#421a1a;--bg4:#562424;--acc:#f7c948;--acc2:#e0a912;--acc-d:rgba(247,201,72,.15);--green:#ff6b5a;--grn-d:rgba(255,107,90,.15);--amber:#f7c948;--text0:#fff1dc;--text1:#d1a58a;--text2:#a6725b}

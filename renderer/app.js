@@ -854,7 +854,7 @@ function makeFreeCard (g, tagClass, tagText, claimable = false) {
         ${g.endDate ? `<span class="time-left">${escHtml(endDateLabel(g.endDate))}</span>` : ''}
       </div>
     </div></div>`
-  card.appendChild(makeCardOpenButton(g.source, g.url, g.title))
+  card.appendChild(makeCardOpenButton(g.source, g.url, g.title, [g.endDate && endDateLabel(g.endDate), claimed && 'Claimed'].filter(Boolean).join('. ')))
   card.appendChild(makeCardActions(g.source, g.url, g.appId, g.title))
   if (claimable) card.appendChild(makeClaimButton(g, claimed))
   card.querySelector('.game-title').setAttribute('title', g.title)
@@ -950,7 +950,7 @@ function makeDealRow (d, isNew = false) {
   main.addEventListener('click', open)
   const hide = document.createElement('button')
   hide.type = 'button'; hide.className = 'deal-open hide-title'; hide.textContent = 'Hide'; hide.setAttribute('aria-label', `Hide ${d.title}`)
-  hide.addEventListener('click', e => { e.stopPropagation(); hideTitle(d.title) })
+  hide.addEventListener('click', e => { e.stopPropagation(); hideTitle(d.title, hide) })
   const btn = tmpl(`<button class="deal-open" title="Open store page">↗</button>`)
   btn.setAttribute('aria-label', `Open ${d.title} on ${d.shop}`)
   btn.addEventListener('click', e => { e.stopPropagation(); open() })
@@ -1204,6 +1204,7 @@ function renderThemeGrid () {
     const b = document.createElement('button')
     b.className = 'theme-chip' + (s.theme === key ? ' active' : '') + (isSale ? ' sale' : '')
     b.innerHTML = `${swatch(th.sw)}${th.name}${isSale ? ' · live' : ''}`
+    b.setAttribute('aria-pressed', String(s.theme === key))
     b.addEventListener('click', () => {
       s.theme = key
       if (!isSale) s.baseTheme = key
@@ -1304,12 +1305,14 @@ function renderLauncherPrefs () {
     sub.textContent = detected.length ? 'Detected: ' + detected.map(o => o.label).join(', ') : 'No launcher detected — opens in the browser'
     copy.append(label, sub)
     const grid = document.createElement('div'); grid.className = 'theme-grid launcher-pref-grid'
+    grid.setAttribute('role', 'group'); grid.setAttribute('aria-label', label.textContent)
     row.append(copy, grid)
     const choices = [{ key: 'auto', label: 'Auto' }, ...(state.launchers[store]?.options ?? []), { key: 'browser', label: 'Browser' }]
     choices.forEach(c => {
       const b = document.createElement('button')
       b.className = 'theme-chip' + (state.settings[key] === c.key ? ' active' : '')
       b.textContent = c.label
+      b.setAttribute('aria-pressed', String(state.settings[key] === c.key))
       b.addEventListener('click', async () => {
         state.settings[key] = c.key
         await window.api.saveSettings(state.settings)
@@ -1336,9 +1339,10 @@ function renderSettings () {
     const b = document.createElement('button')
     b.className   = 'interval-btn' + (s.checkInterval === mins ? ' active' : '')
     b.textContent = mins < 60 ? `${mins} min` : `${mins / 60} hr`
+    b.setAttribute('aria-pressed', String(s.checkInterval === mins))
     b.addEventListener('click', () => {
-      ig.querySelectorAll('.interval-btn').forEach(x => x.classList.remove('active'))
-      b.classList.add('active')
+      ig.querySelectorAll('.interval-btn').forEach(x => { x.classList.remove('active'); x.setAttribute('aria-pressed', 'false') })
+      b.classList.add('active'); b.setAttribute('aria-pressed', 'true')
       s.checkInterval = mins
       window.api.saveSettings(s)
     })
@@ -1353,9 +1357,12 @@ function renderSettings () {
   reset.setAttribute('aria-label', resetSettingsArmed ? 'Confirm reset settings to defaults' : 'Reset settings to defaults')
 }
 
-function hideTitle (title) {
+// `button` is the Hide button pressed: its row goes away, so focus moves to the next row's Hide (or the page's search)
+function hideTitle (title, button) {
   const shown = String(title ?? '').trim().replace(/\s+/g, ' ')
   if (!shown || hiddenTitle(shown)) return
+  const list = button?.closest('.deals-list, .game-grid')
+  const index = list ? [...list.querySelectorAll('.hide-title')].indexOf(button) : -1
   state.settings.hidden = [...state.settings.hidden, shown].slice(-500)
   window.api.saveSettings(state.settings)
   renderDeals()
@@ -1363,13 +1370,17 @@ function hideTitle (title) {
   renderFreeGames()
   updateBadges()
   if (state.page === 'settings') renderHiddenGames()
+  if (list) {
+    const next = list.querySelectorAll('.hide-title')
+    ;(next[Math.min(index, next.length - 1)] ?? list.closest('.page').querySelector('input[type="search"]'))?.focus()
+  }
 }
 
 function makeHideButton (title) {
   const button = document.createElement('button')
   button.type = 'button'; button.className = 'card-btn hide-title'; button.textContent = 'Hide'
   button.setAttribute('aria-label', `Hide ${title}`)
-  button.addEventListener('click', e => { e.stopPropagation(); hideTitle(title) })
+  button.addEventListener('click', e => { e.stopPropagation(); hideTitle(title, button) })
   return button
 }
 
@@ -1379,29 +1390,30 @@ function renderHiddenGames () {
   con.replaceChildren()
   const titles = state.settings.hidden
   const summary = document.createElement('p')
-  summary.className = 'setting-sub settings-section-hint'
+  summary.className = 'setting-sub settings-section-hint'; summary.tabIndex = -1
   summary.textContent = titles.length ? `${titles.length} hidden` : 'Games you hide from deals, sales, free games, and notifications will appear here.'
   con.appendChild(summary)
   if (!titles.length) return
+  // the pressed row goes away: focus the Unhide now in its place, or the summary once the list is empty
+  const unhide = (hidden, index) => {
+    state.settings.hidden = hidden
+    window.api.saveSettings(state.settings)
+    renderHiddenGames(); renderDeals(); renderStoreSales(); renderFreeGames(); updateBadges()
+    const buttons = con.querySelectorAll('.hidden-game-row button')
+    ;(buttons[Math.min(index, buttons.length - 1)] ?? con.querySelector('p'))?.focus()
+  }
   const list = document.createElement('div'); list.className = 'settings-group'
-  titles.forEach(title => {
+  titles.forEach((title, index) => {
     const row = document.createElement('div'); row.className = 'setting-row hidden-game-row'
     const name = document.createElement('span'); name.className = 'setting-label hidden-game-title'; name.textContent = title; name.title = title
     const button = document.createElement('button'); button.type = 'button'; button.className = 'settings-reset'; button.textContent = 'Unhide'
-    button.addEventListener('click', () => {
-      state.settings.hidden = state.settings.hidden.filter(item => item !== title)
-      window.api.saveSettings(state.settings)
-      renderHiddenGames(); renderDeals(); renderStoreSales(); renderFreeGames(); updateBadges()
-    })
+    button.setAttribute('aria-label', `Unhide ${title}`)
+    button.addEventListener('click', () => unhide(state.settings.hidden.filter(item => item !== title), index))
     row.append(name, button); list.appendChild(row)
   })
   con.appendChild(list)
   const all = document.createElement('button'); all.type = 'button'; all.className = 'settings-reset'; all.textContent = 'Unhide all'
-  all.addEventListener('click', () => {
-    state.settings.hidden = []
-    window.api.saveSettings(state.settings)
-    renderHiddenGames(); renderDeals(); renderStoreSales(); renderFreeGames(); updateBadges()
-  })
+  all.addEventListener('click', () => unhide([], -1))
   con.appendChild(all)
 }
 
@@ -1417,6 +1429,7 @@ function renderSettingsAccounts () {
     row.appendChild(status)
     if (account) {
       const signOut = document.createElement('button'); signOut.type = 'button'; signOut.className = 'acct-out'; signOut.textContent = 'Sign out'
+      signOut.setAttribute('aria-label', `Sign out of ${name}`)
       signOut.addEventListener('click', async () => {
         if (signOut.disabled) return
         signOut.disabled = true
@@ -1545,6 +1558,10 @@ function renderAccounts () {
     row.innerHTML = `<span class="acct-ico ${s}">${ico}</span>` + (a
       ? `<div class="acct-main"><button class="acct-name" title="Open your ${STORES[s]} profile">${escHtml(name || STORES[s] + ' user')}</button><div class="acct-sub"><span class="store-tag ${s}">${STORES[s]}</span><button class="acct-out">Sign out</button></div></div>`
       : `<span class="acct-label">${STORES[s]}</span><button class="acct-btn">Sign in</button>`)
+    // names that make sense out of context: there is one row per store
+    row.querySelector('.acct-name')?.setAttribute('aria-label', `${name || STORES[s] + ' user'}, your ${STORES[s]} profile`)
+    row.querySelector('.acct-out')?.setAttribute('aria-label', `Sign out of ${STORES[s]}`)
+    row.querySelector('.acct-btn')?.setAttribute('aria-label', `Sign in to ${STORES[s]}`)
     const openProfile = () => a?.profileUrl && window.api.openInApp(s, a.profileUrl)
     row.querySelector('.acct-name')?.addEventListener('click', openProfile)
     row.querySelector('.acct-ico')?.addEventListener('click', openProfile)

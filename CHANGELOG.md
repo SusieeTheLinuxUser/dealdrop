@@ -16,6 +16,7 @@ All notable changes to DealDrop are documented in this file.
 - Tray icon: the tooltip shows how many free games and wishlist sales there are, and the menu has "Free now" and "Wishlist" shortcuts (with counts) that open those pages.
 - Settings → Notifications: "Start DealDrop when I log in" (off by default) starts it hidden in the tray.
 - Free now: a "Coming next on Epic" section lists the next free Epic games with the date they turn free (no notification, not counted in the badge).
+- Accessibility: after Hide or Unhide, keyboard focus moves to the next row instead of being lost; clearer button names (Unhide, Sign out, launcher choices) and selected states on theme, interval and launcher choices; "New", "Lowest ever" and "Claimed" readable in the Daylight theme; free games say when they end and whether they are claimed to screen readers.
 
 ## [v0.8.0] - 2026-10-18
 - New: first-run setup guide (theme, notifications, stores) with an optional tour
