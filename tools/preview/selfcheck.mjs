@@ -19,13 +19,17 @@ vm.runInContext([
   between('const DEFAULT_SETTINGS = {', '\nconst state = {'),
   between('const state = {', '\nlet shortcutsDialog'),
   between('function filteredSorted (', '\nfunction syncMinDiscount'),
+  between('function storeKeyFor (', '\nconst gameStoreName'),
   between('function escHtml (', '\n// ─── Boot'),
   between('function updateRefreshAge (', '\nfunction updateLastCheckedLabels'),
-  'globalThis.helpers = { SALES, state, filteredSorted, escHtml, updateRefreshAge }',
+  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge }',
 ].join('\n'), context)
 
 const h = context.helpers
 assert.equal(h.escHtml(`<tag a="&">'`), '&lt;tag a=&quot;&amp;&quot;&gt;\'')
+assert.equal(h.storeKeyFor('Steam'), 'steam')
+assert.equal(h.storeKeyFor('Epic Games'), 'epic')
+assert.equal(h.storeKeyFor('GOG Galaxy'), 'gog')
 
 const items = [
   { title: 'Beta B', price: 8, cut: 50 }, { title: 'Alpha', price: 5, cut: 90 },

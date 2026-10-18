@@ -174,6 +174,10 @@ function fmtChecked (ts) {
 
 const srcIcon = src => ({ steam: '🎮', epic: '🕹️', gog: '⚔️' }[src] ?? '🎮')
 const STORES = { steam: 'Steam', gog: 'GOG', epic: 'Epic' }
+function storeKeyFor (store) {
+  const value = String(store ?? '').toLowerCase()
+  return ['steam', 'gog', 'epic'].find(key => value.includes(key)) ?? value
+}
 const gameStoreName = store => ({steam:'Steam', gog:'GOG', epic:'Epic Games'}[String(store ?? '').toLowerCase()] ?? String(store ?? 'Store'))
 const hasAccount = () => Object.values(state.accounts).some(Boolean)
 const onSaleItems = () => state.wishlist.filter(w => (w.priceInfo?.discount ?? 0) >= 20)
@@ -304,6 +308,16 @@ function makeCardActions (store, url, id, title) {
   webBtn.addEventListener('click', e => { e.stopPropagation(); openBrowser(url) })
   wrap.append(webBtn)
   return wrap
+}
+
+function makeCardOpenButton (store, url, title, description = '') {
+  const button = document.createElement('button')
+  button.type = 'button'; button.className = 'game-card-open'
+  const key = storeKeyFor(store)
+  const label = ['steam', 'gog', 'epic'].includes(key) ? `Open ${title} on ${gameStoreName(key)}` : `Open ${title} in your browser`
+  button.setAttribute('aria-label', description ? `${label}. ${description}` : label)
+  button.addEventListener('click', () => openBrowser(url))
+  return button
 }
 
 // ─── Wishlist page ────────────────────────────────────────────────────────────
@@ -438,7 +452,7 @@ function makeWishlistSaleRow (w) {
   row.className = 'deal-row'
   const main = document.createElement('button')
   main.type = 'button'
-  main.className = 'deal-row-main'
+  main.className = 'deal-row-main wishlist-sale-main'
   main.innerHTML = `
     <div>
       <div class="deal-name">${escHtml(w.name)}</div>
@@ -446,8 +460,8 @@ function makeWishlistSaleRow (w) {
     </div>
     <span class="sr-only">${escHtml(salePriceDescription(p.initial, p.final, p.discount, p.formatted))}</span>
     <span class="deal-orig" aria-hidden="true">${fmt$(p.initial)}</span>
-    <span class="deal-cut" aria-hidden="true">-${escHtml(p.discount)}%</span>
-    <span class="deal-price" aria-hidden="true">${escHtml(p.formatted ?? fmt$(p.final))}</span>`
+    <span class="deal-price" aria-hidden="true">${escHtml(p.formatted ?? fmt$(p.final))}</span>
+    <span class="deal-cut" aria-hidden="true">-${escHtml(p.discount)}%</span>`
   const btn = tmpl(`<button class="deal-open" title="${w.cheapest ? 'Open cheapest offer' : 'Open store page'}">↗</button>`)
   btn.setAttribute('aria-label', `Open ${w.name} at ${w.cheapest?.store || gameStoreName(w.store)}`)
   btn.addEventListener('click', e => { e.stopPropagation(); openBrowser(bestUrl(w)) })
@@ -621,11 +635,12 @@ function makeFreeCard (g, tagClass, tagText) {
   card.className = 'game-card'
   const srcClass = ['steam','epic','gog'].includes(g.source) ? g.source : 'other'
   card.innerHTML = `
+    <div class="game-card-content" aria-hidden="true">
     <div class="game-thumb">
       ${g.image
         ? `<img src="${escHtml(g.image)}" alt="" data-fb="${srcIcon(g.source)}">`
         : `<span class="fallback">${srcIcon(g.source)}</span>`}
-      <span class="src-badge ${srcClass}">${escHtml(g.source ?? 'other').toUpperCase()}</span>
+      <span class="src-badge ${srcClass}">${escHtml(gameStoreName(g.source).toUpperCase())}</span>
     </div>
     <div class="game-info">
       <div class="game-title" title="${escHtml(g.title)}">${escHtml(g.title)}</div>
@@ -633,7 +648,8 @@ function makeFreeCard (g, tagClass, tagText) {
         <span class="${tagClass}">${tagText}</span>
         ${g.endDate ? `<span class="time-left">${escHtml(endDateLabel(g.endDate))}</span>` : ''}
       </div>
-    </div>`
+    </div></div>`
+  card.appendChild(makeCardOpenButton(g.source, g.url, g.title))
   card.appendChild(makeCardActions(g.source, g.url, g.appId, g.title))
   return card
 }
@@ -673,23 +689,19 @@ function renderDeals () {
 function makeDealRow (d) {
   const row = document.createElement('div')
   row.className = 'deal-row'
+  const content = document.createElement('div')
+  const shopClass = ['steam', 'gog', 'epic'].includes(storeKeyFor(d.shop)) ? storeKeyFor(d.shop) : 'other'
+  content.className = 'deal-row-content'; content.setAttribute('aria-hidden', 'true')
+  content.innerHTML = `<div class="deal-title-line"><div class="deal-name">${escHtml(d.title)}</div><span class="deal-shop-badge ${shopClass}">${escHtml(d.shop)}</span></div>
+    <div class="deal-price-line"><span class="deal-orig">${fmt$(d.regular)}</span><span class="deal-price">${fmt$(d.price)}</span><span class="deal-cut">-${escHtml(d.cut)}%</span></div>`
   const main = document.createElement('button')
-  main.type = 'button'
-  main.className = 'deal-row-main'
-  main.innerHTML = `
-    <div>
-      <div class="deal-name">${escHtml(d.title)}</div>
-      <div class="deal-store">${escHtml(d.shop)}</div>
-    </div>
-    <span class="sr-only">${escHtml(salePriceDescription(d.regular, d.price, d.cut))}</span>
-    <span class="deal-orig" aria-hidden="true">${fmt$(d.regular)}</span>
-    <span class="deal-cut" aria-hidden="true">-${escHtml(d.cut)}%</span>
-    <span class="deal-price" aria-hidden="true">${fmt$(d.price)}</span>`
+  main.type = 'button'; main.className = 'deal-row-main'
+  main.setAttribute('aria-label', `Open ${d.title} on ${d.shop}. ${salePriceDescription(d.regular, d.price, d.cut)}`)
+  main.addEventListener('click', () => openBrowser(d.url))
   const btn = tmpl(`<button class="deal-open" title="Open store page">↗</button>`)
   btn.setAttribute('aria-label', `Open ${d.title} on ${d.shop}`)
   btn.addEventListener('click', e => { e.stopPropagation(); openBrowser(d.url) })
-  main.addEventListener('click', () => openBrowser(d.url))
-  row.append(main, btn)
+  row.append(content, main, btn)
   return row
 }
 
@@ -721,23 +733,26 @@ function renderStoreSales () {
 }
 
 function makeSaleCard (d) {
-  const src = d.shop.toLowerCase()
+  const src = storeKeyFor(d.shop)
+  const srcClass = ['steam','epic','gog'].includes(src) ? src : 'other'
   const card = document.createElement('div')
   card.className = 'game-card'
   card.innerHTML = `
+    <div class="game-card-content" aria-hidden="true">
     <div class="game-thumb">
       ${d.image ? `<img src="${escHtml(d.image)}" alt="" data-fb="${srcIcon(src)}">` : `<span class="fallback">${srcIcon(src)}</span>`}
-      <span class="src-badge ${escHtml(src)}">${escHtml(d.shop)}</span>
+      <span class="src-badge ${srcClass}">${escHtml(gameStoreName(src).toUpperCase())}</span>
     </div>
     <div class="game-info">
       <div class="game-title" title="${escHtml(d.title)}">${escHtml(d.title)}</div>
       <div class="price-row">
         <span class="sr-only">${escHtml(salePriceDescription(d.regular, d.price, d.cut))}</span>
-        <span class="tag-sale" aria-hidden="true">-${escHtml(d.cut)}%</span>
         <span class="price-was" aria-hidden="true">${fmt$(d.regular)}</span>
         <span class="price-now" aria-hidden="true">${fmt$(d.price)}</span>
+        <span class="tag-sale" aria-hidden="true">-${escHtml(d.cut)}%</span>
       </div>
-    </div>`
+    </div></div>`
+  card.appendChild(makeCardOpenButton(src, d.url, d.title, salePriceDescription(d.regular, d.price, d.cut)))
   card.appendChild(makeCardActions(src, d.url, d.appId ?? d.id, d.title))
   return card
 }

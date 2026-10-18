@@ -59,7 +59,11 @@ html,body{background:transparent} /* window is transparent; #app paints the colo
 
 /* ── game cards ── */
 .game-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-bottom:24px}
-.game-card{background:var(--bg1);border:1px solid var(--border);border-radius:var(--rlg);overflow:hidden;cursor:pointer;transition:border-color .15s,transform .1s}
+.game-card{position:relative;background:var(--bg1);border:1px solid var(--border);border-radius:var(--rlg);overflow:hidden;transition:border-color .15s,transform .1s}
+.game-card-content{position:relative;z-index:0;pointer-events:none}
+.game-card-open{position:absolute;inset:0;z-index:1;width:100%;height:100%;padding:0;border:0;border-radius:inherit;background:transparent;color:transparent;cursor:pointer}
+.game-card-open:focus-visible{outline-offset:-3px}
+.game-card:focus-within{border-color:var(--acc)}
 .game-card:hover{border-color:var(--bord2);transform:translateY(-1px)}
 .game-card:active{transform:translateY(0)}
 .game-thumb{width:100%;height:82px;background:var(--bg2);position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center}
@@ -75,7 +79,7 @@ html,body{background:transparent} /* window is transparent; #app paints the colo
 .tag-free{font-size:11px;font-weight:600;font-family:var(--mono);color:var(--green);background:var(--grn-d);padding:2px 8px;border-radius:var(--rs)}
 .tag-weekend{font-size:11px;font-weight:600;font-family:var(--mono);color:var(--amber);background:var(--amb-d);padding:2px 8px;border-radius:var(--rs)}
 .time-left{font-size:11px;color:var(--text2);font-family:var(--mono)}
-.card-actions{display:flex;gap:5px;margin-top:8px}
+.card-actions{position:relative;z-index:2;display:flex;gap:5px;margin-top:8px}
 .card-btn{flex:1;padding:5px 0;font-size:11px;font-family:var(--sans);border-radius:var(--rs);border:1px solid var(--border);background:var(--bg2);color:var(--text1);cursor:pointer;transition:all .12s;display:flex;align-items:center;justify-content:center;gap:4px}
 .card-btn:hover{background:var(--bg3);color:var(--text0);border-color:var(--bord2)}
 .card-btn.steam-btn:hover{background:var(--acc-d);color:var(--acc);border-color:rgba(102,192,244,0.3)}
@@ -109,16 +113,26 @@ html,body{background:transparent} /* window is transparent; #app paints the colo
 
 /* ── deals list ── */
 .deals-list{display:flex;flex-direction:column;gap:5px}
-.deal-row{display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--bg1);border:1px solid var(--border);border-radius:var(--r);transition:border-color .15s}
+.deal-row{position:relative;display:flex;align-items:center;gap:12px;min-width:0;padding:10px 14px;background:var(--bg1);border:1px solid var(--border);border-radius:var(--r);transition:border-color .15s}
 .deal-row:hover{border-color:var(--bord2)}
-.deal-row-main{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;align-items:center;gap:12px;flex:1;min-width:0;padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
-.deal-row-main>div{min-width:0}
-.deal-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:500;color:var(--text0)}
+.deal-row:focus-within{border-color:var(--acc)}
+.deal-row-content{flex:1;min-width:0;pointer-events:none}
+.deal-title-line{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0}
+.deal-row-main{position:absolute;inset:0;z-index:1;width:100%;height:100%;padding:0;border:0;border-radius:inherit;background:transparent;color:transparent;cursor:pointer}
+.deal-row-main:focus-visible{outline-offset:-3px}
+.wishlist-sale-main{position:relative;inset:auto;z-index:auto;display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;align-items:center;gap:12px;flex:1;width:auto;height:auto;padding:0;border:0;border-radius:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.wishlist-sale-main:focus-visible{outline-offset:2px}
+.deal-shop-badge{flex:0 0 auto;max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px;font-weight:600;font-family:var(--mono);padding:2px 6px;border-radius:var(--rs);text-transform:uppercase;background:var(--bg3);color:var(--text1)}
+.deal-shop-badge.steam{background:#1b2838;color:var(--acc)}
+.deal-shop-badge.epic{background:#2a2a2a;color:#fff}
+.deal-shop-badge.gog{background:#4a2c99;color:#d4b8ff}
+.deal-price-line{display:flex;align-items:center;gap:12px;margin-top:5px}
+.deal-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:500;color:var(--text0)}
 .deal-store{font-size:11px;color:var(--text2);font-family:var(--mono);margin-top:1px}
 .deal-orig{font-size:12px;color:var(--text2);text-decoration:line-through;font-family:var(--mono)}
 .deal-cut{font-size:11px;font-weight:600;font-family:var(--mono);color:#0a1a10;background:var(--amber);padding:2px 7px;border-radius:var(--rs)}
 .deal-price{font-size:14px;font-weight:600;font-family:var(--mono);color:var(--text0);min-width:50px;text-align:right}
-.deal-open{width:28px;height:28px;border:1px solid var(--border);border-radius:var(--rs);background:var(--bg2);color:var(--text1);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .12s;flex-shrink:0}
+.deal-open{position:relative;z-index:2;width:28px;height:28px;border:1px solid var(--border);border-radius:var(--rs);background:var(--bg2);color:var(--text1);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .12s;flex-shrink:0}
 .deal-open:hover{background:var(--acc-d);color:var(--acc);border-color:rgba(102,192,244,.3)}
 
 .info-notice{display:flex;align-items:center;gap:8px;padding:10px 14px;margin-bottom:14px;background:var(--bg2);border:1px solid var(--bord2);border-radius:var(--r);font-size:13px;color:var(--text1)}
