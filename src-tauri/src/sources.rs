@@ -215,9 +215,8 @@ fn spotlights(fdc: &Value) -> Vec<Value> {
         .collect()
 }
 
-/// A seasonal sale that is live right now, if the store is advertising one.
-/// Returns (generic "sale is on" flag, themed sale if recognised).
-pub async fn detect_steam_sale() -> R<(bool, Option<LiveSale>)> {
+/// The themed sale advertised by one of Steam's spotlight banners, if any.
+fn sale_from_banners(banners: Vec<Value>) -> Option<LiveSale> {
     static MAJOR: OnceLock<Regex> = OnceLock::new();
     static MAJOR_URL: OnceLock<Regex> = OnceLock::new();
     static KEY: OnceLock<Regex> = OnceLock::new();
@@ -225,21 +224,25 @@ pub async fn detect_steam_sale() -> R<(bool, Option<LiveSale>)> {
     let major_url = re(r"(?i)/sale/[^/]*(summer|winter|autumn|spring|lunar|halloween)", &MAJOR_URL);
     let key_re = re(r"(?i)(summer|winter|autumn|fall|spring|lunar|halloween)", &KEY);
 
+    let b = banners.into_iter().find(|b| {
+        major.is_match(b["name"].as_str().unwrap_or("")) || major_url.is_match(b["url"].as_str().unwrap_or(""))
+    })?;
+    let hay = format!("{} {}", b["name"].as_str().unwrap_or(""), b["url"].as_str().unwrap_or(""));
+    let key = key_re.find(&hay)?.as_str().to_lowercase();
+    Some(LiveSale {
+        key: if key == "fall" { "autumn".into() } else { key },
+        name: s(&b["name"]).unwrap_or_else(|| "Steam Sale".into()),
+        url: s(&b["url"]),
+    })
+}
+
+/// A seasonal sale that is live right now, if the store is advertising one.
+/// Returns (generic "sale is on" flag, themed sale if recognised).
+pub async fn detect_steam_sale() -> R<(bool, Option<LiveSale>)> {
     let fdc = featured_categories().await?;
     let heavy = fdc["specials"]["items"].as_array().into_iter().flatten()
         .filter(|i| i["discount_percent"].as_u64().unwrap_or(0) >= 50).count();
-    let banner = spotlights(&fdc).into_iter().find(|b| {
-        major.is_match(b["name"].as_str().unwrap_or("")) || major_url.is_match(b["url"].as_str().unwrap_or(""))
-    });
-    let live = banner.and_then(|b| {
-        let hay = format!("{} {}", b["name"].as_str().unwrap_or(""), b["url"].as_str().unwrap_or(""));
-        let key = key_re.find(&hay)?.as_str().to_lowercase();
-        Some(LiveSale {
-            key: if key == "fall" { "autumn".into() } else { key },
-            name: s(&b["name"]).unwrap_or_else(|| "Steam Sale".into()),
-            url: s(&b["url"]),
-        })
-    });
+    let live = sale_from_banners(spotlights(&fdc));
     Ok((live.is_some() || heavy >= 8, live))
 }
 
@@ -292,6 +295,46 @@ pub async fn steam_free_weekends() -> R<Vec<Free>> {
         kind: "weekend".into(),
         ..Default::default()
     }).collect())
+}
+
+/// Paid apps at 100% off (`specials=1&maxprice=free`). Rows are HTML inside JSON.
+/// Id prefix `steam-ftk-` so a failure restore does not collide with `steam-{appid}`.
+pub async fn steam_free_to_keep() -> R<Vec<Free>> {
+    static ROW: OnceLock<Regex> = OnceLock::new();
+    static TITLE: OnceLock<Regex> = OnceLock::new();
+    static DISC: OnceLock<Regex> = OnceLock::new();
+    static FINAL: OnceLock<Regex> = OnceLock::new();
+    static ORIG: OnceLock<Regex> = OnceLock::new();
+    static CAPSULE: OnceLock<Regex> = OnceLock::new();
+    let row = re(r#"data-ds-appid="(\d+)""#, &ROW);
+    let title = re(r#"<span class="title">([^<]*)</span>"#, &TITLE);
+    let disc = re(r#"data-discount="(\d+)""#, &DISC);
+    let fin = re(r#"data-price-final="(\d+)""#, &FINAL);
+    let orig = re(r#"discount_original_price">([^<]+)<"#, &ORIG);
+    let capsule = re(r#"<img src="([^"]+)""#, &CAPSULE);
+
+    let v = get_json("https://store.steampowered.com/search/results/?query&start=0&count=50&specials=1&maxprice=free&infinite=1&cc=us&l=en&json=1").await?;
+    let html = v["results_html"].as_str().ok_or("no results_html")?;
+    let starts: Vec<_> = row.captures_iter(html).map(|c| (c.get(0).unwrap().start(), c[1].to_string())).collect();
+    let mut out = vec![];
+    for (n, (at, id)) in starts.iter().enumerate() {
+        let end = starts.get(n + 1).map_or(html.len(), |x| x.0);
+        let chunk = &html[*at..end];
+        let (Some(t), Some(d), Some(p)) = (title.captures(chunk), disc.captures(chunk), fin.captures(chunk)) else { continue };
+        // 100% off a listed original price: drops permanent free-to-play, which has no such pair.
+        if d[1].as_str() != "100" || p[1].as_str() != "0" || orig.captures(chunk).is_none() { continue; }
+        out.push(Free {
+            id: format!("steam-ftk-{id}"),
+            title: unescape(&t[1]),
+            source: "steam".into(),
+            url: format!("https://store.steampowered.com/app/{id}"),
+            image: capsule.captures(chunk).map(|c| c[1].to_string()),
+            app_id: Some(id.clone()),
+            kind: "free".into(),
+            ..Default::default()
+        });
+    }
+    Ok(out)
 }
 
 /// Steam's own "specials" search — the same list the store's Specials page
@@ -392,7 +435,8 @@ pub async fn steam_profile(steam_id: &str) -> (String, Option<String>) {
             return (n[1].trim().to_string(), avatar_re.captures(&x).map(|a| a[1].trim().to_string()));
         }
     }
-    (format!("Steam user {}", &steam_id[steam_id.len().saturating_sub(4)..]), None)
+    let tail = steam_id.char_indices().nth_back(3).map(|(i, _)| &steam_id[i..]).unwrap_or(steam_id);
+    (format!("Steam user {tail}"), None)
 }
 
 // ─── Free games: Epic + GamerPower ────────────────────────────────────────────
@@ -439,7 +483,7 @@ fn gp_title(raw: &str) -> String {
 pub async fn gamerpower() -> R<Vec<Free>> {
     let v = get_json("https://www.gamerpower.com/api/giveaways?platform=pc&type=game").await?;
     Ok(v.as_array().into_iter().flatten()
-        .filter(|g| g["status"].as_str().map_or(true, |st| st.eq_ignore_ascii_case("active")))
+        .filter(|g| g["status"].as_str().is_none_or(|st| st.eq_ignore_ascii_case("active")))
         .filter_map(|g| {
             let plat = g["platforms"].as_str().unwrap_or("").to_lowercase();
             let source = if plat.contains("steam") { "steam" } else if plat.contains("epic") { "epic" }
@@ -586,6 +630,11 @@ mod live {
         println!("{name}: {} items, first = {:?}", v.len(), v[0]);
     }
 
+    // May legitimately be empty (no free-to-keep promotion running); only an Err is a failure.
+    #[tokio::test] #[ignore] async fn steam_free_to_keep_live() {
+        let v = steam_free_to_keep().await.expect("steam free-to-keep");
+        println!("steam free-to-keep: {} items, first = {:?}", v.len(), v.first());
+    }
     #[tokio::test] #[ignore] async fn steam_sales_live() { show("steam sales", steam_sales().await) }
     #[tokio::test] #[ignore] async fn gog_sales_live() { show("gog sales", gog_sales().await) }
     #[tokio::test] #[ignore] async fn epic_sales_live() { show("epic sales", crate::stores::epic_sales().await) }
@@ -618,5 +667,17 @@ mod unit {
         assert_eq!(super::gp_title("Agent A: A puzzle in disguise (Epic Games) Giveaway"), "Agent A: A puzzle in disguise");
         assert_eq!(super::gp_title("Bad Cheese (Epic Games)"), "Bad Cheese");
         assert_eq!(super::gp_title("Foo (Steam) Giveaway"), "Foo");
+    }
+
+    #[test]
+    fn sale_banners_map_to_theme_keys() {
+        use serde_json::json;
+        let key = |name: &str, url: &str| super::sale_from_banners(vec![json!({"name": name, "url": url})]).map(|s| s.key);
+        assert_eq!(key("Steam Summer Sale", "https://store.steampowered.com/sale/summer2026"), Some("summer".into()));
+        assert_eq!(key("Steam Fall Sale", "https://store.steampowered.com/sale/fall"), Some("autumn".into()));
+        assert_eq!(key("Lunar New Year Sale", "https://store.steampowered.com/sale/lunarnewyear"), Some("lunar".into()));
+        assert_eq!(key("Weekly Deals", "https://store.steampowered.com/sale/weekly"), None);
+        assert_eq!(key("Summer Fest", "https://store.steampowered.com/sale/summerfest"), Some("summer".into()));
+        assert!(super::sale_from_banners(vec![]).is_none());
     }
 }

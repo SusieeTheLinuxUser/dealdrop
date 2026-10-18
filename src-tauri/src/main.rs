@@ -43,13 +43,15 @@ struct Settings {
     /// Where GOG / Epic links open: "auto" | "native" | "heroic" | "lutris" | "browser"
     launcher_gog: String,
     launcher_epic: String,
+    /// The first-run tour has been completed or skipped.
+    onboarded: bool,
 }
 impl Default for Settings {
     fn default() -> Self {
         Self { notify_major_sale: true, notify_free_game: true, notify_free_weekend: true,
                notify_wishlist_sale: true, notify_big_deal: false, check_interval: 60,
                theme: "midnight".into(), base_theme: "midnight".into(), last_sale_theme: String::new(),
-               rounded: false, effects: true, launcher_gog: "auto".into(), launcher_epic: "auto".into() }
+               rounded: false, effects: true, launcher_gog: "auto".into(), launcher_epic: "auto".into(), onboarded: false }
     }
 }
 
@@ -69,6 +71,8 @@ struct Db {
     seen_free_ids: HashSet<String>,
     seen_sale_ids: HashSet<String>,
     seen_deal_ids: HashSet<String>,
+    /// The first poll has recorded the free list (absent in old config files, so false).
+    primed: bool,
 }
 
 // ─── App state ────────────────────────────────────────────────────────────────
@@ -123,6 +127,11 @@ impl AppState {
 
 fn now_ms() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
+}
+
+/// Display name for a store/source id in notification text.
+fn store_label(id: &str) -> &str {
+    match id { "steam" => "Steam", "epic" => "Epic Games", "gog" => "GOG", "other" => "another store", o => o }
 }
 
 fn notify(app: &AppHandle, title: &str, body: &str) {
@@ -200,12 +209,21 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
     };
 
     // 2. Everything that needs no account, in parallel
-    let log = |name: &str, r: R<Vec<Free>>| r.unwrap_or_else(|e| { eprintln!("[{name}] {e}"); source_errors.lock().unwrap().push(failure(name, &e)); vec![] });
-    let (ef, sf, sw, gp, ss, gs, es, hot) = tokio::join!(
-        epic_free(), steam_free_featured(), steam_free_weekends(), gamerpower(),
+    // On failure keep the last good items from that source (matched by id prefix) instead of blanking them.
+    let log = |name: &str, r: R<Vec<Free>>, old: &[Free], prefix: &str| r.unwrap_or_else(|e| {
+        eprintln!("[{name}] {e}"); source_errors.lock().unwrap().push(failure(name, &e));
+        // `steam-` is also a prefix of `steam-ftk-`: restoring featured must not swallow free-to-keep rows.
+        old.iter().filter(|g| g.id.starts_with(prefix) && !(prefix == "steam-" && g.id.starts_with("steam-ftk-"))).cloned().collect()
+    });
+    let (ef, sf, sk, sw, gp, ss, gs, es, hot) = tokio::join!(
+        epic_free(), steam_free_featured(), steam_free_to_keep(), steam_free_weekends(), gamerpower(),
         steam_sales(), gog_sales(), stores::epic_sales(), hot_deals(),
     );
-    let (ef, sf, sw, gp) = (log("Epic free games", ef), log("Steam free games", sf), log("Steam free weekends", sw), log("GamerPower giveaways", gp));
+    let (ef, sf, sk, sw, gp) = (
+        log("Epic free games", ef, &prev.free_games, "epic-"), log("Steam free games", sf, &prev.free_games, "steam-"),
+        log("Steam free to keep", sk, &prev.free_games, "steam-ftk-"),
+        log("Steam free weekends", sw, &prev.free_weekends, "steam-fw-"), log("GamerPower giveaways", gp, &prev.free_games, "gp-"),
+    );
     let deals_of = |name: &str, r: R<Vec<Deal>>, old: &Vec<Deal>| r.unwrap_or_else(|e| { eprintln!("[{name}] {e}"); source_errors.lock().unwrap().push(failure(name, &e)); old.clone() });
     let sales = Sales {
         steam: deals_of("Steam sales", ss, &prev.sales.steam),
@@ -214,11 +232,21 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
     };
     let (deals, deals_source, deals_error) = hot;
 
-    let free_games = dedupe_free([ef, sf, gp].concat());
+    let free_games = dedupe_free([ef, sf, sk, gp].concat());
     let free_weekends = dedupe_free(sw);
 
-    if settings.notify_free_game { notify_new_free(app, st, &free_games, false); }
-    if settings.notify_free_weekend { notify_new_free(app, st, &free_weekends, true); }
+    // The very first poll on a fresh install only records what is free today; no notification burst.
+    if st.read(|d| d.primed || !d.seen_free_ids.is_empty()) {
+        if settings.notify_free_game { notify_new_free(app, st, &free_games, false); }
+        if settings.notify_free_weekend { notify_new_free(app, st, &free_weekends, true); }
+        if !st.read(|d| d.primed) { st.edit(|d| d.primed = true); }
+    } else if source_errors.lock().unwrap().is_empty() {
+        // Only prime from a complete baseline: a failed source would otherwise notify in a burst once it recovers.
+        st.edit(|d| {
+            d.primed = true;
+            d.seen_free_ids.extend(free_games.iter().chain(free_weekends.iter()).map(|g| g.id.clone()));
+        });
+    }
 
     // 3. Wishlists
     let mut wishlist_errors = HashMap::new();
@@ -262,7 +290,8 @@ async fn fresh_tokens(_app: &AppHandle, st: &AppState, t: Tokens, gog: bool) -> 
     let n = if gog { stores::gog_refresh(&t).await } else { stores::epic_refresh(&t).await }
         .map_err(|e| format!("{e} — sign in again"))?;
     let saved = n.clone();
-    st.edit(|d| if gog { d.gog = Some(saved) } else { d.epic = Some(saved) });
+    // Only while still signed in: a logout during the refresh must not sign the user back in.
+    st.edit(|d| if gog { if d.gog.is_some() { d.gog = Some(saved) } } else if d.epic.is_some() { d.epic = Some(saved) });
     Ok(n)
 }
 
@@ -279,9 +308,9 @@ fn notify_new_free(app: &AppHandle, st: &AppState, games: &[Free], weekend: bool
     st.edit(|d| d.seen_free_ids.extend(fresh.iter().map(|g| g.id.clone())));
     if let [g] = fresh[..] {
         let title = if weekend { format!("Free weekend: {}", g.title) } else { format!("Free: {}", g.title) };
-        notify(app, &title, &format!("{} is free on {}!", g.title, g.source.to_uppercase()));
+        notify(app, &title, &format!("{} is free on {}!", g.title, store_label(&g.source)));
     } else {
-        let title = format!("{} free {} available", fresh.len(), if weekend { "weekends" } else { "games" });
+        let title = format!("{} free {} available", fresh.len(), if weekend { "weekend games" } else { "games" });
         notify(app, &title, &fresh.iter().map(|g| g.title.as_str()).collect::<Vec<_>>().join(", "));
     }
 }
@@ -293,7 +322,7 @@ fn notify_wishlist(app: &AppHandle, st: &AppState, items: &[WishItem]) {
     let fresh: Vec<&WishItem> = st.read(|d| items.iter().filter(|w| discount(w) >= 20 && !d.seen_sale_ids.contains(&key(w))).collect());
     if let [w] = fresh[..] {
         let p = w.price_info.as_ref().unwrap();
-        notify(app, &format!("🏷️ {} is on sale!", w.name), &format!("{}% off — now {} on {}", p.discount, p.formatted.clone().unwrap_or_default(), w.store.to_uppercase()));
+        notify(app, &format!("🏷️ {} is on sale!", w.name), &format!("{}% off — now {} on {}", p.discount, p.formatted.clone().unwrap_or_default(), store_label(&w.store)));
     } else if !fresh.is_empty() {
         let names: Vec<&str> = fresh.iter().take(4).map(|w| w.name.as_str()).collect();
         notify(app, &format!("{} wishlist games on sale", fresh.len()), &(names.join(", ") + if fresh.len() > 4 { "…" } else { "" }));
@@ -557,12 +586,36 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{safe_https, Acct};
+    use super::{dedupe_free, failure, safe_https, store_label, Acct, Free};
 
     #[test]
     fn account_json_is_camel_case() {
         let v = serde_json::to_value(Acct { name: "n".into(), avatar: None, profile_url: Some("https://x.y".into()) }).unwrap();
         assert_eq!(v["profileUrl"], "https://x.y"); // the UI reads profileUrl
+    }
+
+    #[test]
+    fn store_names_for_notifications() {
+        assert_eq!(store_label("steam"), "Steam");
+        assert_eq!(store_label("epic"), "Epic Games");
+        assert_eq!(store_label("gog"), "GOG");
+        assert_eq!(store_label("other"), "another store");
+        assert_eq!(store_label("itch"), "itch");
+    }
+
+    #[test]
+    fn dedupe_ignores_case_and_punctuation_but_not_kind() {
+        let free = |id: &str, title: &str, kind: &str| Free { id: id.into(), title: title.into(), kind: kind.into(), ..Default::default() };
+        let out = dedupe_free(vec![
+            free("epic-1", "Foo!", "free"), free("gp-2", "foo", "free"), free("steam-fw-3", "Foo", "weekend"),
+        ]);
+        assert_eq!(out.iter().map(|g| g.id.as_str()).collect::<Vec<_>>(), ["epic-1", "steam-fw-3"]);
+    }
+
+    #[test]
+    fn failure_text_is_capped() {
+        let msg = failure("Epic sales", &"x".repeat(1000));
+        assert_eq!(msg.chars().count(), "Epic sales: ".len() + 400);
     }
 
     #[test]

@@ -150,8 +150,8 @@ pub async fn gog_user(access: &str) -> (String, String, String, Option<String>) 
     let v = send_auth("https://embed.gog.com/userData.json", access).await.unwrap_or(Value::Null);
     (
         v["username"].as_str().unwrap_or("GOG user").into(),
-        v["country"].as_str().unwrap_or("US").into(),
-        v["selectedCurrency"]["code"].as_str().unwrap_or("USD").into(),
+        v["country"].as_str().filter(|c| c.len() == 2 && c.bytes().all(|b| b.is_ascii_alphabetic())).unwrap_or("US").into(), // goes into a URL: letters only
+        v["selectedCurrency"]["code"].as_str().filter(|c| c.len() == 3 && c.bytes().all(|b| b.is_ascii_alphabetic())).unwrap_or("USD").into(),
         v["avatar"].as_str().filter(|a| a.starts_with("https://images.gog.com/")).map(|a| format!("{a}_avm.jpg")),
     )
 }
