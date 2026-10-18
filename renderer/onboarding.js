@@ -2,10 +2,10 @@
   let step = 0, dialog = null, returnFocus = null, lastAnnouncedStep = -1
   let tourOverlay = null, tourTrigger = null, tourIndex = -1
   const api = () => window.dealDropOnboarding
-  const labels = ['Welcome', 'Look', 'Notifications', 'Stores & launchers', 'Done']
+  const labels = ['Welcome', 'Appearance', 'Notifications', 'Stores & launchers', 'Done']
   const tourStops = [
-    { selector: '.nav-items', title: 'Find a page', copy: 'Use these buttons to switch between wishlists, free games, store sales, hot deals and the calendar.' },
-    { selector: '#btn-check-now', title: 'Refresh all', copy: 'Check stores and wishlists now whenever you want an update.' },
+    { selector: '.nav-items', title: 'Find a page', copy: 'Use these buttons to switch between Wishlist, Free now, Store sales, Hot deals, Calendar and Settings.' },
+    { selector: '#btn-check-now', title: 'Refresh all', copy: 'Refresh stores and wishlists whenever you want an update.' },
     { selector: '.nav-item[data-page="settings"]', title: 'Settings', copy: 'Change your appearance, notifications and launcher preferences here.' },
     { selector: null, title: 'Stay in the tray', copy: 'Closing this window hides DealDrop in the tray. Choose Quit from the tray menu to exit.' },
   ]
@@ -63,7 +63,7 @@
       b.setAttribute('aria-label', row.label); b.setAttribute('aria-pressed', String(Boolean(settings[row.key])))
       wrap.append(copy, b); return wrap
     }
-    if (step === 0) p('Find free games, store sales, hot deals and wishlist price drops, with tray notifications. No accounts are required.')
+    if (step === 0) p('Find free games, store sales, hot deals and wishlist price drops, with tray notifications. No DealDrop account needed. Store sign-in is optional, for wishlists.')
     if (step === 1) {
       p('Pick a look. You can change it anytime in Settings.')
       const themes = document.createElement('div'); themes.className = 'onboarding-themes'
@@ -86,11 +86,11 @@
       body.appendChild(choices)
     }
     if (step === 3) {
-      p('Sign-in is optional and enables wishlist alerts. Tokens stay on this computer; you enter your password on the store’s own page.')
+      p("Sign-in is optional and enables wishlist alerts. You sign in on the store's own page; DealDrop keeps the sign-in only on this computer.")
       ;[['steam','Steam'],['gog','GOG'],['epic','Epic Games']].forEach(([key,name]) => {
         const row = document.createElement('div'); row.className = 'onboarding-account'
         const account = state.accounts[key], status = document.createElement('span')
-        status.textContent = account ? name + ': signed in as ' + (account.name || name + ' user') : name + ': not signed in'
+        status.textContent = account ? name + ' — signed in as ' + (account.name || name + ' user') : name + ' — not signed in'
         if (account?.avatar) { const image = document.createElement('img'); image.src = account.avatar; image.alt = ''; row.appendChild(image) }
         row.appendChild(status)
         if (!account) { const signIn = button('Sign in', 'onboarding-secondary', async e => {
@@ -102,8 +102,9 @@
         body.appendChild(row)
         if (key !== 'steam' && (state.launchers[key]?.options?.length ?? 0) > 1) {
           const pref = key === 'gog' ? 'launcherGog' : 'launcherEpic', label = document.createElement('label'); label.className = 'onboarding-pref'
-          label.textContent = 'Open ' + name + ' games in '
-          const select = document.createElement('select'); select.setAttribute('aria-label', 'Open ' + name + ' games in')
+          const shortName = name === 'Epic Games' ? 'Epic' : name
+          label.textContent = 'Open ' + shortName + ' games in '
+          const select = document.createElement('select'); select.setAttribute('aria-label', 'Open ' + shortName + ' games in')
           ;[{key:'auto',label:'Auto'}, ...state.launchers[key].options, {key:'browser',label:'Browser'}].forEach(o => { const option = document.createElement('option'); option.value = o.key; option.textContent = o.label; select.appendChild(option) })
           select.value = settings[pref] || 'auto'; select.addEventListener('change', () => { settings[pref] = select.value })
           label.appendChild(select); body.appendChild(label)

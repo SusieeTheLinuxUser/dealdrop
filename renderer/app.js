@@ -719,7 +719,7 @@ const NOTIFICATION_TOGGLES = [
   { key: 'notifyMajorSale', label: 'Steam major sale started', sub: 'Summer, Winter, Autumn & Spring sales' },
   { key: 'notifyFreeGame', label: 'Free game available', sub: 'Epic, Steam, GOG & GamerPower giveaways', gamerpower: true },
   { key: 'notifyFreeWeekend', label: 'Free weekend started', sub: 'Temporary Steam free-to-play promotions' },
-  { key: 'notifyWishlistSale', label: 'Wishlist game on sale', sub: 'Steam, GOG & Epic wishlists, drops of ≥20%' },
+  { key: 'notifyWishlistSale', label: 'Wishlist game on sale', sub: 'Steam, GOG & Epic wishlist games at 20% or more off' },
   { key: 'notifyBigDeal', label: 'Deal over 75% off', sub: 'Hot deals list (CheapShark)' },
 ]
 window.dealDropOnboarding = { state, baseThemes: BASE_THEMES, lookToggles: LOOK_TOGGLES, notificationToggles: NOTIFICATION_TOGGLES, applyTheme, setAccounts, loadData, renderSettings, closeShortcutsDialog }
@@ -896,8 +896,8 @@ function renderSettings () {
   renderSettingsAccounts()
   renderAbout()
   const reset = document.getElementById('btn-reset-settings')
-  reset.textContent = resetSettingsArmed ? 'Really reset?' : 'Reset appearance, notifications & check interval to defaults'
-  reset.setAttribute('aria-label', resetSettingsArmed ? 'Confirm reset appearance, notifications and check interval to defaults' : 'Reset appearance, notifications and check interval to defaults')
+  reset.textContent = resetSettingsArmed ? 'Really reset?' : 'Reset settings to defaults'
+  reset.setAttribute('aria-label', resetSettingsArmed ? 'Confirm reset settings to defaults' : 'Reset settings to defaults')
 }
 
 function renderSettingsAccounts () {
@@ -907,7 +907,8 @@ function renderSettingsAccounts () {
     const row = document.createElement('div'); row.className = 'setting-row settings-account-row'
     const account = state.accounts[store]
     const status = document.createElement('span'); status.className = 'setting-label'
-    status.textContent = account ? `${STORES[store]} — signed in as ${account.name || STORES[store] + ' user'}` : `${STORES[store]} — not signed in`
+    const name = gameStoreName(store)
+    status.textContent = account ? `${name} — signed in as ${account.name || name + ' user'}` : `${name} — not signed in`
     row.appendChild(status)
     if (account) {
       const signOut = document.createElement('button'); signOut.type = 'button'; signOut.className = 'acct-out'; signOut.textContent = 'Sign out'
@@ -958,8 +959,8 @@ function clearResetSettingsConfirmation () {
   resetSettingsArmed = false
   const button = document.getElementById('btn-reset-settings')
   if (button) {
-    button.textContent = 'Reset appearance, notifications & check interval to defaults'
-    button.setAttribute('aria-label', 'Reset appearance, notifications and check interval to defaults')
+    button.textContent = 'Reset settings to defaults'
+    button.setAttribute('aria-label', 'Reset settings to defaults')
   }
 }
 function resetSettings () {
@@ -1160,13 +1161,13 @@ async function init () {
     if (!resetSettingsArmed) {
       resetSettingsArmed = true
       btn.textContent = 'Really reset?'
-      btn.setAttribute('aria-label', 'Confirm reset appearance, notifications and check interval to defaults')
+      btn.setAttribute('aria-label', 'Confirm reset settings to defaults')
       clearTimeout(resetSettingsTimer)
       resetSettingsTimer = setTimeout(() => {
         resetSettingsArmed = false
         resetSettingsTimer = null
-        btn.textContent = 'Reset appearance, notifications & check interval to defaults'
-        btn.setAttribute('aria-label', 'Reset appearance, notifications and check interval to defaults')
+        btn.textContent = 'Reset settings to defaults'
+        btn.setAttribute('aria-label', 'Reset settings to defaults')
       }, 4000)
       return
     }
