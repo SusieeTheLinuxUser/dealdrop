@@ -123,8 +123,9 @@
     if (step < 4) { const skip = button('Skip', 'onboarding-skip', finish); skip.setAttribute('aria-label', 'Skip and keep my choices'); actions.appendChild(skip) }
     actions.appendChild(button(step === 4 ? 'Finish' : 'Next', 'onboarding-primary', () => { if (step === 4) finish(); else { step++; render() } }))
     const restore = focusKey && [...dialog.querySelectorAll('button:not(:disabled)[data-focus-key],select[data-focus-key],a[href][data-focus-key]')].find(el => el.dataset.focusKey === focusKey)
+    dialog.querySelector('.onboarding-dialog').scrollTop = 0
     if (restore) restore.focus()
-    else if (stepChanged || focusKey) actions.querySelector('button:last-child').focus()
+    else if (stepChanged || focusKey) dialog.querySelector('.onboarding-dialog button:not(:disabled),.onboarding-dialog select,.onboarding-dialog a[href]')?.focus()
   }
   function startTour () {
     if (!dialog || tourOverlay) return
