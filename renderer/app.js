@@ -286,7 +286,8 @@ function tmpl (html) {
 const REPO       = 'https://github.com/SusieeTheLinuxUser/dealdrop'
 const openBrowser = url   => window.api.openUrl(url)
 const openSteam   = appId => window.api.openInApp('steam', `https://store.steampowered.com/app/${appId}`)
-const launcherOf  = store => state.launchers[store]?.chosen ?? null
+// Heroic and Lutris open an install dialog, not a store page, so GOG cards only get GOG Galaxy (else just Browser).
+const launcherOf  = store => { const ch = state.launchers[store]?.chosen ?? null; return store === 'gog' && ch?.key !== 'native' ? null : ch }
 
 function closeShortcutsDialog () {
   if (!shortcutsDialog) return
@@ -792,10 +793,12 @@ function makeDealRow (d) {
   const main = document.createElement('button')
   main.type = 'button'; main.className = 'deal-row-main'
   main.setAttribute('aria-label', `Open ${d.title} on ${d.shop}. ${salePriceDescription(d.regular, d.price, d.cut)}`)
-  main.addEventListener('click', () => openBrowser(d.url))
+  // Steam deals open in the Steam app when it's installed; everything else keeps CheapShark's redirect link.
+  const open = () => d.appId && storeKeyFor(d.shop) === 'steam' && launcherOf('steam') ? openSteam(d.appId) : openBrowser(d.url)
+  main.addEventListener('click', open)
   const btn = tmpl(`<button class="deal-open" title="Open store page">↗</button>`)
   btn.setAttribute('aria-label', `Open ${d.title} on ${d.shop}`)
-  btn.addEventListener('click', e => { e.stopPropagation(); openBrowser(d.url) })
+  btn.addEventListener('click', e => { e.stopPropagation(); open() })
   row.append(content, main, btn)
   return row
 }

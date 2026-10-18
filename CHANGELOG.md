@@ -18,6 +18,7 @@ All notable changes to DealDrop are documented in this file.
 - Improved: keyboard and screen-reader support, stronger text contrast in every theme
 - Fixed: Steam sale calendar now uses Steam's published 2026–27 dates
 - Fixed: sale themes, sign-out and reset keep the UI in sync
+- Improved: themed dropdown menus; the guide's last button starts the tour; GOG cards drop the Heroic button (it opened an installer); Steam hot deals open in the Steam app
 - Privacy: fonts are bundled, so the app no longer contacts Google Fonts
 
 ## [v0.7.9] - 2026-10-16

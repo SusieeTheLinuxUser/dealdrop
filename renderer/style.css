@@ -280,7 +280,12 @@ html[data-round="on"] #app,html[data-round="on"] #fx{border-radius:14px}
 .theme-chip.sale{border-style:dashed}
 .list-controls{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px;min-width:0}
 .list-controls input{flex:1 1 160px;min-width:0;width:0;box-sizing:border-box;padding:8px 10px;background:var(--bg1);border:1px solid var(--border);border-radius:var(--r);color:var(--text0);font:inherit}
-.list-controls select{max-width:100%;min-width:0;padding:8px;background:var(--bg1);border:1px solid var(--border);border-radius:var(--r);color:var(--text1);font:inherit}
+.list-controls select{min-width:0}
+/* Themed dropdowns: WebKitGTK paints native selects white unless appearance is off; the chevron is two gradients so it follows the theme */
+select{max-width:100%;appearance:none;-webkit-appearance:none;padding:8px 30px 8px 10px;border:1px solid var(--border);border-radius:var(--r);color:var(--text0);font:inherit;cursor:pointer;
+  background:linear-gradient(45deg,transparent 50%,var(--text1) 50%) calc(100% - 17px) 50%/5px 5px no-repeat,linear-gradient(135deg,var(--text1) 50%,transparent 50%) calc(100% - 12px) 50%/5px 5px no-repeat,var(--bg1)}
+select:hover{border-color:var(--bord2)}
+option{background:var(--bg1);color:var(--text0)}
 .result-count{align-self:center;color:var(--text2);font-size:10px;font-family:var(--mono);white-space:nowrap}
 .result-count[hidden]{display:none}
 .skeleton{position:relative;overflow:hidden;background:linear-gradient(100deg,var(--bg1) 25%,var(--bg2) 50%,var(--bg1) 75%);background-size:200% 100%;animation:skeleton-shimmer 1.3s ease-in-out infinite;border:1px solid var(--border);border-radius:var(--r)}

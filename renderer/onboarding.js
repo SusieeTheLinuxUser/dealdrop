@@ -1,6 +1,6 @@
 (() => {
   let step = 0, dialog = null, returnFocus = null, lastAnnouncedStep = -1
-  let tourOverlay = null, tourTrigger = null, tourIndex = -1
+  let tourOverlay = null, tourIndex = -1
   const api = () => window.dealDropOnboarding
   const labels = ['Welcome', 'Appearance', 'Notifications', 'Stores & launchers', 'Done']
   const tourStops = [
@@ -122,12 +122,11 @@
       const summary = document.createElement('p'); summary.className = 'onboarding-summary'
       summary.textContent = 'Theme: ' + (baseThemes[settings.baseTheme]?.name || 'Midnight') + ' · Checks: every ' + (settings.checkInterval < 60 ? settings.checkInterval + ' min' : settings.checkInterval / 60 + ' hr')
       body.appendChild(summary)
-      body.appendChild(button('Show me around', 'onboarding-secondary onboarding-tour-start', startTour))
     }
     const actions = dialog.querySelector('.onboarding-actions'); actions.replaceChildren()
     if (step) actions.appendChild(button('Back', 'onboarding-secondary', () => { step--; render() }))
     if (step < 4) { const skip = button('Skip', 'onboarding-skip', finish); skip.setAttribute('aria-label', 'Skip and keep my choices'); actions.appendChild(skip) }
-    actions.appendChild(button(step === 4 ? 'Finish' : 'Next', 'onboarding-primary', () => { if (step === 4) finish(); else { step++; render() } }))
+    actions.appendChild(button(step === 4 ? 'Show me around' : 'Next', 'onboarding-primary', () => { if (step === 4) startTour(); else { step++; render() } }))
     const restore = focusKey && [...dialog.querySelectorAll('button:not(:disabled)[data-focus-key],select[data-focus-key],a[href][data-focus-key]')].find(el => el.dataset.focusKey === focusKey)
     fitDialog()
     body.scrollTop = 0
@@ -136,7 +135,6 @@
   }
   function startTour () {
     if (!dialog || tourOverlay) return
-    tourTrigger = document.activeElement
     dialog.classList.add('touring')
     dialog.querySelector('.onboarding-dialog').classList.add('tour-active')
     dialog.querySelector('.onboarding-dialog').setAttribute('aria-hidden', 'true')
@@ -148,14 +146,12 @@
     addEventListener('resize', updateTourSpotlight)
     renderTour()
   }
+  // The tour is the last step: leaving it (Done, Skip or Escape) finishes onboarding.
   function endTour () {
     if (!tourOverlay) return
     removeEventListener('resize', updateTourSpotlight)
     tourOverlay.remove(); tourOverlay = null; tourIndex = -1
-    dialog?.classList.remove('touring')
-    const panel = dialog?.querySelector('.onboarding-dialog')
-    panel?.classList.remove('tour-active'); panel?.removeAttribute('aria-hidden')
-    if (tourTrigger?.isConnected) tourTrigger.focus()
+    finish()
   }
   function updateTourSpotlight () {
     if (!tourOverlay) return
