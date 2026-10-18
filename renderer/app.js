@@ -403,7 +403,8 @@ function renderWishlistDealPanel () {
   const d = state.selectedWishlistDeal
   if (!panel || !d) return
 
-  panel.querySelector('#wishlist-deal-title').textContent = d.gameName ?? `App ${d.appId}`
+  const gameName = d.gameName ?? `App ${d.appId}`
+  panel.querySelector('#wishlist-deal-title').textContent = gameName
   panel.querySelector('#wishlist-deal-updated').textContent = d.loading ? 'Loading…' : fmtChecked(d.checkedAt)
 
   const steamPrice = panel.querySelector('#wishlist-steam-price')
@@ -424,6 +425,7 @@ function renderWishlistDealPanel () {
   const cheapestPrice = panel.querySelector('#wishlist-cheapest-price')
   const cheapestSub = panel.querySelector('#wishlist-cheapest-sub')
   const cheapestBtn = panel.querySelector('#wishlist-open-cheapest')
+  cheapestBtn.setAttribute('aria-label', `Open ${gameName} at ${d.cheapest?.store ?? 'the cheapest store'}`)
   if (d.loading) {
     cheapestPrice.textContent = 'Loading…'
     cheapestSub.textContent = 'Searching external stores…'
@@ -439,7 +441,9 @@ function renderWishlistDealPanel () {
     cheapestBtn.style.display = 'none'
     cheapestBtn.onclick = null
   }
-  panel.querySelector('#wishlist-open-steam').onclick = () => openSteam(d.appId)
+  const steamBtn = panel.querySelector('#wishlist-open-steam')
+  steamBtn.setAttribute('aria-label', `Open ${gameName} on Steam`)
+  steamBtn.onclick = () => openSteam(d.appId)
 }
 
 // ─── Free games page ──────────────────────────────────────────────────────────
