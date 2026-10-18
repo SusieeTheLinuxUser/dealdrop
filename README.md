@@ -13,7 +13,8 @@ Optional store sign-in enables wishlist alerts. No API keys or telemetry; DealDr
 - **Steam free-to-keep games** — includes qualifying DLC, clearly tagged as DLC
 - **Free weekend alerts** — Steam free-to-play weekends
 - **Store sales** — current discounts from **Steam, GOG and Epic Games**, browsable per store
-- **Search and sort** — find deals, store sales and wishlist games by title, discount or price
+- **Search and sort** — find deals, store sales and wishlist games by title, discount or price; discount chips and wishlist sale-only filters narrow results
+- **Remembered list choices** — last page, sort order and discount toggles stay on this computer; search text is cleared when the app closes
 - **Wishlists from Steam, GOG and Epic** — sign in once for alerts when games drop 20% or more; the empty Wishlist page offers sign-in buttons when no store is connected
 - **Hot deals** — top discounts across 30+ stores (via CheapShark, no key needed)
 - **Wishlist links go to the cheapest store** — like deals.gg, a wishlist game that is cheaper elsewhere shows the best offer and opens it
@@ -23,6 +24,7 @@ Optional store sign-in enables wishlist alerts. No API keys or telemetry; DealDr
 - **Sales calendar** — Steam seasonal sales with countdown; click one to open it in Steam
 - **System tray** — minimizes to tray, polls in the background on your chosen interval
 - **Welcome guide and keyboard shortcuts** — quick setup on first run, with shortcuts for common actions
+- **Accessible updates and loading** — live result/refresh feedback and lightweight loading skeletons while the first snapshot arrives
 - **Keyboard-friendly cards** — press Enter on a free game, store sale or hot deal to open its store page; launcher and browser buttons remain available
 - **Responsive layouts** — card grids fill wide windows while keeping rows and text at a readable width
 - **Bundled fonts** — DM Sans and DM Mono load locally, with no third-party font requests

@@ -18,7 +18,11 @@ Start the local server as described in [README.md](README.md), then use `http://
 | Free/sale/deal cards, tags, prices and keyboard open | `?onboarded=1` — inspect all three pages, verify DLC/end-date order, tab to a card, press Enter, and compare badge placement and old/current/discount order. |
 | Refresh all reloads | `?onboarded=1` — click Refresh all; verify it disables and says “Refreshing…” then returns to “Refresh all”. |
 | Updated label counts and resets | `?onboarded=1&stale=1` — check 3-hour label; refresh and verify “Updated just now”. |
-| Initial list loading before the first snapshot | Needs a real build (preview data resolves immediately); inspect Deals, Store sales, and signed-in Wishlist before the first poll completes. |
+| Initial skeleton loading before first snapshot | Needs a real build (preview data resolves immediately); inspect three skeleton cards/rows on Free, Store sales, Hot deals, and signed-in Wishlist before the first poll completes. |
+| Live announcements and result counts | `?onboarded=1&accounts=1` — search/sort/filter each list; verify its result count and screen-reader status, then refresh and copy an error. |
+| Remembered page and list choices | `?onboarded=1` — change page, sort, and filter, reload to confirm restore; search text should be blank. Reset settings should clear the saved UI choices. |
+| Page navigation motion and scroll reset | `?onboarded=1` — switch pages after scrolling; content returns to top with a brief 120 ms entrance. Reduced motion should make it instant. |
+| Truncated title tooltips | `?onboarded=1&stress=1` — hover/focus long card, deal, and wishlist titles; full title should be available. |
 | Failed source keeps earlier rows | Needs a real build (requires a prior successful poll followed by a real source failure). |
 | Error box placement and Copy error | `?onboarded=1&errors=1&accounts=1` — verify the red-tinted box sits below store accounts and above navigation, with Copy error fully visible. |
 | Settings labels and hints | `?onboarded=1` — Settings; verify theme, reset, interval, and refresh helper text is visible. |
