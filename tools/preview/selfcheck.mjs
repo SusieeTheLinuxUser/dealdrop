@@ -117,6 +117,11 @@ h.state.settings.hidden = ['beta b']
 assert.equal(JSON.stringify(h.filteredSorted(items, 'deals').map(x => x.title)), '["Alpha","Beta A","Gamma"]')
 assert.equal(h.filteredSorted([{ name: 'Beta B', priceInfo: { discount: 80 } }], 'wishlist', { title: item => item.name, price: item => item.priceInfo.final, discount: item => item.priceInfo.discount }).length, 1)
 h.state.settings.hidden = []
+filters.sort = 'rating' // rating desc, unrated last, ties by discount
+assert.equal(JSON.stringify(h.filteredSorted([{ title: 'U', cut: 99 }, { title: 'A', rating: 80, cut: 10 }, { title: 'B', rating: 95, cut: 5 }, { title: 'C', rating: 80, cut: 60 }], 'deals').map(x => x.title)), '["B","C","A","U"]')
+filters.sort = 'discount'
+assert.equal(h.mergeUiPrefs({ version: 1, lists: { deals: { sort: 'rating' }, wishlist: { sort: 'rating' } } }).lists.deals.sort, 'rating')
+assert.equal(h.mergeUiPrefs({ version: 1, lists: { wishlist: { sort: 'rating' } } }).lists.wishlist.sort, 'discount')
 assert.equal(JSON.stringify(h.dealShops([...items, { title: 'No shop' }])), '[["Fanatical",1],["GOG",1],["Steam",2]]')
 
 context.now = new Date('2026-10-18T12:00:00Z')

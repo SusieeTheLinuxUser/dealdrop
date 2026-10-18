@@ -44,6 +44,9 @@ pub struct Deal {
     pub regular: f64,
     pub lowest: Option<f64>,
     pub app_id: Option<String>,
+    /// Steam review score in percent and its label ("Very Positive"); CheapShark deals only.
+    pub rating: Option<u32>,
+    pub rating_text: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -461,6 +464,7 @@ fn parse_steam_sales(body: &str) -> R<Vec<Deal>> {
             cut, price, regular,
             lowest: None,
             app_id: Some(id.clone()),
+            rating: None, rating_text: None,
         });
     }
     Ok(out)
@@ -675,6 +679,7 @@ fn parse_gog_sales(body: &str) -> R<Vec<Deal>> {
             cut, price, regular,
             lowest: None,
             app_id: None,
+            rating: None, rating_text: None,
         })
     }).collect())
 }
@@ -733,6 +738,7 @@ fn parse_cheapshark_deals(body: &str, stores: &HashMap<String, String>) -> R<Vec
     let v: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
     Ok(v.as_array().into_iter().flatten().filter_map(|d| {
         let id = s(&d["dealID"])?;
+        let rating = Some(f(&d["steamRatingPercent"]).round() as u32).filter(|&r| r > 0 && f(&d["steamRatingCount"]) > 0.0);
         Some(Deal {
             url: format!("https://www.cheapshark.com/redirect?dealID={id}"),
             id,
@@ -744,6 +750,8 @@ fn parse_cheapshark_deals(body: &str, stores: &HashMap<String, String>) -> R<Vec
             regular: f(&d["normalPrice"]),
             lowest: None,
             app_id: s(&d["steamAppID"]).filter(|x| x != "0"),
+            rating_text: rating.and(s(&d["steamRatingText"])).filter(|x| !x.is_empty()),
+            rating,
         })
     }).collect())
 }
@@ -880,6 +888,7 @@ mod live {
     #[tokio::test] #[ignore] async fn cheapshark_live() {
         let deals = cheapshark_deals().await.expect("CheapShark deals");
         assert!(deals.iter().any(|deal| deal.lowest.is_some()), "no deals included a lowest-ever price");
+        assert!(deals.iter().any(|deal| deal.rating.is_some() && deal.rating_text.is_some()), "no deals included a Steam rating");
         show("cheapshark", Ok(deals));
     }
     #[tokio::test] #[ignore] async fn wishlist_cheapest_live() {
@@ -1078,8 +1087,8 @@ mod unit {
     #[test]
     fn cheapshark_parses_deals() {
         let body = r#"[
-            {"dealID":"AbC","gameID":"10","title":"Hades","storeID":"1","salePrice":"5.00","normalPrice":"20.00","savings":"75.6","steamAppID":"1145360","thumb":"https://cdn.example/t.jpg"},
-            {"dealID":"XyZ","gameID":"11","title":"Loose","storeID":"9","salePrice":"3.00","normalPrice":"3.00","savings":"0","steamAppID":"0"}
+            {"dealID":"AbC","gameID":"10","title":"Hades","storeID":"1","salePrice":"5.00","normalPrice":"20.00","savings":"75.6","steamAppID":"1145360","thumb":"https://cdn.example/t.jpg","steamRatingText":"Overwhelmingly Positive","steamRatingPercent":"98","steamRatingCount":"250000"},
+            {"dealID":"XyZ","gameID":"11","title":"Loose","storeID":"9","salePrice":"3.00","normalPrice":"3.00","savings":"0","steamAppID":"0","steamRatingText":null,"steamRatingPercent":"0","steamRatingCount":"0"}
         ]"#;
         let stores = std::collections::HashMap::from([("1".into(), "Steam".into())]);
         let v = super::parse_cheapshark_deals(body, &stores).unwrap();
@@ -1097,6 +1106,9 @@ mod unit {
         assert_eq!(v[1].shop, "store");
         assert_eq!(v[1].app_id, None);
         assert_eq!(v[1].url, "https://www.cheapshark.com/redirect?dealID=XyZ");
+        assert_eq!(v[0].rating, Some(98));
+        assert_eq!(v[0].rating_text.as_deref(), Some("Overwhelmingly Positive"));
+        assert_eq!((v[1].rating, v[1].rating_text.as_deref()), (None, None));
         assert!(super::parse_cheapshark_deals("nope", &stores).is_err());
         assert!(super::parse_cheapshark_deals("{}", &stores).unwrap().is_empty());
         assert_eq!(super::cheapshark_deals_by_game(body).get("AbC").map(String::as_str), Some("10"));

@@ -75,10 +75,10 @@
     },
     liveSale: flags.get('sale') === 'winter' ? { key: 'winter', name: 'Winter Sale', url: 'https://store.steampowered.com/specials' } : null,
     deals: empty ? [] : [
-      deal('deal-440', 'Team Fortress 2', 'Steam', 20, 7.99, 9.99, '440', undefined, 7.99),
-      deal('deal-123', 'Skyward Bound', 'GOG', 55, 13.49, 29.99, '123', 'https://www.gog.com/game/skyward_bound', 13.49),
+      { ...deal('deal-440', 'Team Fortress 2', 'Steam', 20, 7.99, 9.99, '440', undefined, 7.99), rating: 97, ratingText: 'Overwhelmingly Positive' },
+      { ...deal('deal-123', 'Skyward Bound', 'GOG', 55, 13.49, 29.99, '123', 'https://www.gog.com/game/skyward_bound', 13.49), rating: 88, ratingText: 'Very Positive' },
       deal('deal-456', 'Garden Tactics', 'Epic Games', 80, 5.99, 29.99, '456', 'https://store.epicgames.com/p/garden-tactics'),
-      deal('deal-789', 'The Long Way Home', 'GOG', 95, 1.49, 29.99, '789', 'https://www.gog.com/game/the_long_way_home'),
+      { ...deal('deal-789', 'The Long Way Home', 'GOG', 95, 1.49, 29.99, '789', 'https://www.gog.com/game/the_long_way_home'), rating: 74, ratingText: 'Mostly Positive' },
       deal('deal-124', 'Starlight Courier', 'Steam', 50, 9.99, 19.99, '124'),
       deal('deal-125', 'Hollow Harbor', 'Epic Games', 75, 7.49, 29.99, '125', 'https://store.epicgames.com/p/hollow-harbor'),
     ],
@@ -97,7 +97,7 @@
       const shop = store === 'epic' ? 'Epic Games' : store === 'gog' ? 'GOG' : 'Steam'
       items.push(deal(`stress-${store}`, stressTitle, shop, 80, 1234.56, 6172.80, '999003'))
     })
-    sample.deals.unshift(deal('stress-deal', stressTitle, 'Steam', 80, 1234.56, 6172.80, '999004'))
+    sample.deals.unshift({ ...deal('stress-deal', stressTitle, 'Steam', 80, 1234.56, 6172.80, '999004'), rating: 95, ratingText: 'Overwhelmingly Positive' })
     sample.wishlist.push({ store: 'steam', id: 'stress-wishlist', appId: '999005', name: stressTitle, image: null, url: 'https://store.steampowered.com/app/999005', priceInfo: { discount: 80, final: 1234.56, initial: 6172.80, formatted: '$1234.56' }, cheapest: null })
   }
   const emitters = new Set()

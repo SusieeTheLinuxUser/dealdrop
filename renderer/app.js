@@ -31,7 +31,7 @@ function mergeUiPrefs (saved) {
   if (['wishlist', 'free', 'storesales', 'deals', 'sales', 'settings'].includes(saved.page)) prefs.page = saved.page
   for (const key of Object.keys(prefs.lists)) {
     const value = saved.lists?.[key]
-    if (['discount', 'price', 'name'].includes(value?.sort)) prefs.lists[key].sort = value.sort
+    if (['discount', 'price', 'name'].includes(value?.sort) || (key === 'deals' && value?.sort === 'rating')) prefs.lists[key].sort = value.sort
     if (key !== 'wishlist' && [0, 50, 75, 90].includes(value?.minDiscount)) prefs.lists[key].minDiscount = value.minDiscount
     if (key === 'wishlist' && typeof value?.onSaleOnly === 'boolean') prefs.lists[key].onSaleOnly = value.onSaleOnly
     if (key === 'deals' && typeof value?.shop === 'string' && value.shop && value.shop.length <= 64) prefs.lists[key].shop = value.shop
@@ -184,6 +184,7 @@ function filteredSorted (items, key, fields = {}) {
   }).sort((a, b) => {
     if (sort === 'price') return price(a) - price(b)
     if (sort === 'name') return String(value(a, 'title', 'title') ?? '').localeCompare(String(value(b, 'title', 'title') ?? ''))
+    if (sort === 'rating') return (b.rating ?? -1) - (a.rating ?? -1) || discount(b) - discount(a)
     return discount(b) - discount(a)
   })
 }
@@ -1074,9 +1075,17 @@ function makeDealRow (d, isNew = false) {
   content.innerHTML = `<div class="deal-title-line"><div class="deal-name">${escHtml(d.title)}</div><span class="deal-shop-badge ${shopClass}">${escHtml(d.shop)}</span></div>
     <div class="deal-price-line"><span class="deal-orig">${fmt$(d.regular)}</span><span class="deal-price">${fmt$(d.price)}</span><span class="deal-cut">-${escHtml(d.cut)}%</span>${isNew ? '<span class="tag-new">New</span>' : ''}${lowestTag}</div>`
   content.querySelector('.deal-name').setAttribute('title', d.title)
+  const rating = d.rating ? `Steam reviews: ${d.rating}% positive${d.ratingText ? ` (${d.ratingText})` : ''}` : ''
+  if (rating) {
+    const tag = document.createElement('span')
+    tag.className = 'deal-rating'; tag.title = rating
+    tag.append(`${d.rating}%`)
+    if (d.ratingText) tag.append(Object.assign(document.createElement('span'), { className: 'deal-rating-text', textContent: ` · ${d.ratingText}` }))
+    content.querySelector('.deal-price-line').append(tag)
+  }
   const main = document.createElement('button')
   main.type = 'button'; main.className = 'deal-row-main'
-  main.setAttribute('aria-label', `Open ${d.title} on ${d.shop}. ${salePriceDescription(d.regular, d.price, d.cut)}${lowestTag ? '. Lowest price ever' : ''}${isNew ? '. New' : ''}`)
+  main.setAttribute('aria-label', `Open ${d.title} on ${d.shop}. ${salePriceDescription(d.regular, d.price, d.cut)}${lowestTag ? '. Lowest price ever' : ''}${rating ? `. ${rating}` : ''}${isNew ? '. New' : ''}`)
   // Steam deals use their app id; GOG/Epic are looked up only when clicked and fall back to CheapShark.
   const open = () => {
     const store = storeKeyFor(d.shop)

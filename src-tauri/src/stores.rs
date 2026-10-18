@@ -392,6 +392,7 @@ fn parse_epic_sales(v: &Value) -> Vec<Deal> {
                 cut: p.discount, price: p.fin, regular: p.initial,
                 lowest: None,
                 app_id: None,
+                rating: None, rating_text: None,
             })
         }).collect();
     deals.sort_by_key(|d| std::cmp::Reverse(d.cut));

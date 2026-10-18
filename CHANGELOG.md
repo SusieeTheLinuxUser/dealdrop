@@ -3,6 +3,7 @@
 All notable changes to DealDrop are documented in this file.
 
 ## [Unreleased]
+- Hot deals show the Steam user rating ("92% · Very Positive", just the percent in a narrow window) and can be sorted by "Best rated".
 - Fixed: refreshing an Epic sign-in no longer renames the account to "Epic user" or drops the refresh token when Epic leaves them out of the response (which forced a new sign-in later).
 - Wishlist games that went on sale since you last looked are tagged "New", with a dot on the Wishlist sidebar item until you've looked; a game that goes back to full price and sells again counts as new again.
 - A notification the day before a Steam major sale starts ("Steam Winter Sale starts tomorrow"); toggle in Settings → Notifications.
