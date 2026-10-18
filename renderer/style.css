@@ -254,6 +254,8 @@ html[data-round="on"] #app,html[data-round="on"] #fx{border-radius:14px}
 
 /* ── theme picker ── */
 .theme-grid{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px}
+.launcher-pref-row{align-items:stretch;flex-direction:column;gap:8px}
+.launcher-pref-row>div{width:100%;min-width:0}
 .launcher-pref-grid{margin:0}
 .shortcut-backdrop{position:fixed;inset:0;z-index:30;display:grid;place-items:center;padding:12px;background:#0009}
 .shortcut-dialog{width:min(360px,100%);max-height:calc(100vh - 24px);overflow-y:auto;overflow-x:hidden;padding:18px;background:var(--bg0);border:1px solid var(--border);border-radius:var(--rlg);box-shadow:0 12px 36px #0008;color:var(--text1)}

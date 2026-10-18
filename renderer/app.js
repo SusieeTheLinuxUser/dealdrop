@@ -844,7 +844,7 @@ function renderLauncherPrefs () {
   ;[['gog', 'launcherGog', 'GOG'], ['epic', 'launcherEpic', 'Epic Games']].forEach(([store, key, name]) => {
     const shortName = name === 'Epic Games' ? 'Epic' : name
     const row = document.createElement('div')
-    row.className = 'setting-row'
+    row.className = 'setting-row launcher-pref-row'
     const copy = document.createElement('div')
     const label = document.createElement('div'); label.className = 'setting-label'; label.textContent = `Open ${shortName} games in`
     const sub = document.createElement('div'); sub.className = 'setting-sub'
