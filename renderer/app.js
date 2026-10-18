@@ -43,19 +43,50 @@ const state = {
   selectedWishlistDeal: null,
   wishlistPrivate: false,
   refreshing: false,
-  listFilters: { deals: { query: '', sort: 'discount' }, storesales: { query: '', sort: 'discount' } },
+  listFilters: {
+    deals: { query: '', sort: 'discount' }, storesales: { query: '', sort: 'discount' },
+    wishlist: { query: '', sort: 'discount', onSaleOnly: false },
+  },
 }
 let shortcutsDialog = null
 let refreshAgeInterval = null
 
-function filteredSorted (items, key) {
-  const { query, sort } = state.listFilters[key]
+function filteredSorted (items, key, fields = {}) {
+  const { query, sort, onSaleOnly } = state.listFilters[key]
+  const value = (item, field, defaultField) => fields[field] ? fields[field](item) : item[defaultField]
   const q = query.trim().toLocaleLowerCase()
-  return items.filter(item => !q || String(item.title ?? '').toLocaleLowerCase().includes(q)).sort((a, b) => {
-    if (sort === 'price') return Number(a.price) - Number(b.price)
-    if (sort === 'name') return String(a.title ?? '').localeCompare(String(b.title ?? ''))
-    return Number(b.cut) - Number(a.cut)
+  const discount = item => Number(value(item, 'discount', 'cut')) || 0
+  const price = item => {
+    const amount = Number(value(item, 'price', 'price'))
+    return Number.isFinite(amount) ? amount : Infinity
+  }
+  return items.filter(item => {
+    const title = String(value(item, 'title', 'title') ?? '')
+    return (!q || title.toLocaleLowerCase().includes(q)) && (!onSaleOnly || discount(item) > 0)
+  }).sort((a, b) => {
+    if (sort === 'price') return price(a) - price(b)
+    if (sort === 'name') return String(value(a, 'title', 'title') ?? '').localeCompare(String(value(b, 'title', 'title') ?? ''))
+    return discount(b) - discount(a)
   })
+}
+
+function bindListControls (key, inputId, sortId, render, saleOnlyId) {
+  const input = document.getElementById(inputId)
+  const sort = document.getElementById(sortId)
+  let timer
+  input.addEventListener('input', () => {
+    state.listFilters[key].query = input.value
+    clearTimeout(timer); timer = setTimeout(render, 180)
+  })
+  sort.addEventListener('change', () => { state.listFilters[key].sort = sort.value; render() })
+  if (saleOnlyId) {
+    const toggle = document.getElementById(saleOnlyId)
+    toggle.addEventListener('click', () => {
+      state.listFilters[key].onSaleOnly = !state.listFilters[key].onSaleOnly
+      toggle.setAttribute('aria-pressed', String(state.listFilters[key].onSaleOnly))
+      render()
+    })
+  }
 }
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
@@ -77,6 +108,23 @@ function timeLeft (dateStr) {
   if (d > 0) return `${d}d left`
   if (h > 0) return `${h}h left`
   return 'ending soon'
+}
+
+function endsFirst (items) {
+  return [...items].sort((a, b) => {
+    const aEnd = Date.parse(a.endDate || '')
+    const bEnd = Date.parse(b.endDate || '')
+    const aTime = Number.isFinite(aEnd) ? aEnd : Infinity
+    const bTime = Number.isFinite(bEnd) ? bEnd : Infinity
+    return aTime - bTime
+  })
+}
+
+function endDateLabel (dateStr) {
+  const remaining = timeLeft(dateStr)
+  if (remaining === 'ended') return 'Ended'
+  if (remaining === 'ending soon') return 'Ends soon'
+  return `Ends in ${remaining.replace(/ left$/, '')}`
 }
 
 function fmtChecked (ts) {
@@ -162,8 +210,9 @@ function handleShortcutKeydown (e) {
   if (key === '?') { e.preventDefault(); openShortcutsDialog(); return }
   if (key === 'r') { e.preventDefault(); loadData(true); return }
   if (key === '/') {
-    const search = document.getElementById(state.page === 'deals' ? 'deals-search' : state.page === 'storesales' ? 'sales-search' : '')
-    if (search) { e.preventDefault(); search.focus() }
+    const id = { deals: 'deals-search', storesales: 'sales-search', wishlist: 'wishlist-search' }[state.page]
+    const search = id && document.getElementById(id)
+    if (search?.getClientRects().length) { e.preventDefault(); search.focus() }
     return
   }
   if (key === ',') { e.preventDefault(); navigate('settings'); return }
@@ -228,6 +277,8 @@ function renderWishlist () {
   const loginPrompt = $('wishlist-login-prompt'), onSaleWrap = $('wishlist-on-sale')
   const allWrap = $('wishlist-all-section'), emptyEl = $('empty-wishlist')
   const panel = $('wishlist-deal-panel'), tabs = $('wishlist-tabs'), errs = $('wishlist-errors')
+  const controls = $('wishlist-controls'), search = $('wishlist-search'), sort = $('wishlist-sort')
+  const saleOnly = $('wishlist-sale-only'), filters = state.listFilters.wishlist
 
   updateBadges()
   if ($('lc-wishlist')) $('lc-wishlist').textContent = fmtChecked(state.lastChecked)
@@ -235,7 +286,7 @@ function renderWishlist () {
 
   if (!hasAccount()) {
     loginPrompt.style.display = 'flex'
-    hide(onSaleWrap, allWrap, emptyEl, panel, tabs, errs)
+    hide(onSaleWrap, allWrap, emptyEl, panel, tabs, errs, controls)
     return
   }
   hide(loginPrompt)
@@ -255,12 +306,37 @@ function renderWishlist () {
   })), state.wishlistTab, 'Wishlist stores', s => { state.wishlistTab = s; renderWishlist() })
 
   const items = state.wishlistTab === 'all' ? state.wishlist : state.wishlist.filter(w => w.store === state.wishlistTab)
+  controls.style.display = items.length ? 'flex' : 'none'
+  search.value = filters.query
+  sort.value = filters.sort
+  saleOnly.setAttribute('aria-pressed', String(filters.onSaleOnly))
+  $('wishlist-clear-search')?.remove()
   if (!items.length) {
     hide(onSaleWrap, allWrap, panel)
     const steamOnly = state.wishlistTab === 'steam' || (state.wishlistTab === 'all' && state.accounts.steam && !state.accounts.gog && !state.accounts.epic)
     $('wishlist-empty-msg').textContent = steamOnly && state.wishlistPrivate
       ? 'Your Steam wishlist is set to Private. Make it Public in Steam → Privacy Settings.'
-      : failed.length ? 'Wishlist could not be loaded. See “Something went wrong” in the sidebar, then choose Copy error.' : 'Wishlist is empty.'
+      : failed.length ? 'Wishlist could not be loaded. See “Something went wrong” in the sidebar, then choose Copy error.'
+      : state.wishlist.length ? 'No games in this store wishlist.' : 'Wishlist is empty.'
+    emptyEl.style.display = 'flex'
+    return
+  }
+  const visibleItems = filteredSorted(items, 'wishlist', {
+    title: item => item.name,
+    price: item => item.priceInfo?.final ?? Infinity,
+    discount: item => item.priceInfo?.discount ?? 0,
+  })
+  if (!visibleItems.length) {
+    hide(onSaleWrap, allWrap, panel)
+    $('wishlist-empty-msg').textContent = 'No wishlist games match.'
+    const clear = document.createElement('button')
+    clear.id = 'wishlist-clear-search'; clear.type = 'button'; clear.className = 'clear-filter'; clear.textContent = 'Clear search'
+    clear.addEventListener('click', () => {
+      filters.query = ''; filters.onSaleOnly = false; search.value = ''
+      saleOnly.setAttribute('aria-pressed', 'false')
+      renderWishlist()
+    })
+    $('wishlist-empty-msg').after(clear)
     emptyEl.style.display = 'flex'
     return
   }
@@ -268,12 +344,12 @@ function renderWishlist () {
 
   const listSale = $('list-wishlist-sale'), listAll = $('list-wishlist-all')
   listSale.innerHTML = ''; listAll.innerHTML = ''
-  const onSale = items.filter(w => (w.priceInfo?.discount ?? 0) >= 20)
+  const onSale = visibleItems.filter(w => (w.priceInfo?.discount ?? 0) >= 20)
   onSaleWrap.style.display = onSale.length ? 'block' : 'none'
   onSale.forEach(w => listSale.appendChild(makeWishlistSaleRow(w)))
   allWrap.style.display = 'block'
-  items.forEach(w => listAll.appendChild(makeWishlistRow(w)))
-  panel.style.display = state.selectedWishlistDeal ? 'block' : 'none'
+  visibleItems.forEach(w => listAll.appendChild(makeWishlistRow(w)))
+  panel.style.display = state.selectedWishlistDeal && visibleItems.some(w => w.store === 'steam' && String(w.appId) === String(state.selectedWishlistDeal.appId)) ? 'block' : 'none'
   renderWishlistDealPanel()
 }
 
@@ -466,11 +542,11 @@ function renderFreeGames () {
     return
   }
   emptyEl.style.display = 'none'
-  state.freeGames.forEach(g => gridFree.appendChild(makeFreeCard(g, 'tag-free', 'FREE')))
+  endsFirst(state.freeGames).forEach(g => gridFree.appendChild(makeFreeCard(g, 'tag-free', 'FREE')))
 
   if (state.freeWeekends.length) {
     lblWknd.style.display = 'block'
-    state.freeWeekends.forEach(g => gridWknd.appendChild(makeFreeCard(g, 'tag-weekend', 'WEEKEND')))
+    endsFirst(state.freeWeekends).forEach(g => gridWknd.appendChild(makeFreeCard(g, 'tag-weekend', 'WEEKEND')))
   } else {
     lblWknd.style.display = 'none'
   }
@@ -503,7 +579,7 @@ function makeFreeCard (g, tagClass, tagText) {
       <div class="game-title" title="${escHtml(g.title)}">${escHtml(g.title)}</div>
       <div class="price-row">
         <span class="${tagClass}">${tagText}</span>
-        ${g.endDate ? `<span class="time-left">${timeLeft(g.endDate)}</span>` : ''}
+        ${g.endDate ? `<span class="time-left">${escHtml(endDateLabel(g.endDate))}</span>` : ''}
       </div>
     </div>`
   card.appendChild(makeCardActions(g.source, g.url, g.appId, g.title))
@@ -1177,16 +1253,9 @@ async function init () {
       applyTheme(); renderSettings()
     } finally { btn.disabled = false }
   })
-  ;[['deals', renderDeals], ['storesales', renderStoreSales]].forEach(([key, render]) => {
-    const input = document.getElementById(key === 'deals' ? 'deals-search' : 'sales-search')
-    const sort = document.getElementById(key === 'deals' ? 'deals-sort' : 'sales-sort')
-    let timer
-    input.addEventListener('input', () => {
-      state.listFilters[key].query = input.value
-      clearTimeout(timer); timer = setTimeout(render, 180)
-    })
-    sort.addEventListener('change', () => { state.listFilters[key].sort = sort.value; render() })
-  })
+  bindListControls('deals', 'deals-search', 'deals-sort', renderDeals)
+  bindListControls('storesales', 'sales-search', 'sales-sort', renderStoreSales)
+  bindListControls('wishlist', 'wishlist-search', 'wishlist-sort', renderWishlist, 'wishlist-sale-only')
 
   // ── Links (only hard-coded official URLs carry data-href) ───────────────
   document.addEventListener('click', e => {

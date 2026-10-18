@@ -94,6 +94,11 @@
           <span class="last-checked" id="lc-wishlist"></span>
         </div>
         <div class="tabs" id="wishlist-tabs" style="display:none"></div>
+        <div class="list-controls" id="wishlist-controls" style="display:none">
+          <input type="search" id="wishlist-search" placeholder="Search titles" aria-label="Search wishlist games" />
+          <select id="wishlist-sort" aria-label="Sort wishlist games"><option value="discount">Biggest discount</option><option value="price">Lowest price</option><option value="name">Name A–Z</option></select>
+          <button type="button" class="list-filter-toggle" id="wishlist-sale-only" aria-pressed="false">On sale only</button>
+        </div>
         <div id="wishlist-errors" class="info-notice" style="display:none"></div>
         <div id="wishlist-login-prompt" class="login-prompt" style="display:none">
           <span style="font-size:32px">🎯</span>
