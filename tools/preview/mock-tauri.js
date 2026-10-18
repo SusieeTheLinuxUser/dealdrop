@@ -32,6 +32,16 @@
     { store: 'gog', id: 'gog-123456', appId: null, name: 'Classic Quest', image: null, url: 'https://www.gog.com/game/classic_quest', priceInfo: { discount: 0, final: 9.99, initial: 9.99, formatted: '$9.99', currency: 'USD' }, cheapest: null, lowest: 9.99 },
     { store: 'epic', id: 'epic-123', appId: null, name: 'Skyward Bound', image: null, url: 'https://store.epicgames.com/', priceInfo: { discount: 20, final: 7.99, initial: 9.99, formatted: '$7.99', currency: 'USD' }, cheapest: null, lowest: 5.99 },
   ]
+  // ?bigwishlist=1: a huge public wishlist (paging and render-time checks); every 4th game on sale
+  if (flags.get('bigwishlist') === '1') {
+    for (let i = 1; i <= 3000; i++) {
+      const store = ['steam', 'gog', 'epic'][i % 3], discount = i % 4 ? 0 : 20 + (i % 8) * 10, initial = 9.99 + (i % 50)
+      const final = Math.round(initial * (100 - discount)) / 100
+      wishlistItems.push({ store, id: `${store}-big-${i}`, appId: store === 'steam' ? String(100000 + i) : null, name: `Big Wishlist Game ${i}`, image: '/renderer/logo.png',
+        url: store === 'steam' ? `https://store.steampowered.com/app/${100000 + i}` : store === 'gog' ? 'https://www.gog.com/game/classic_quest' : 'https://store.epicgames.com/',
+        priceInfo: { discount, final, initial, formatted: `$${final.toFixed(2)}`, currency: 'USD' }, cheapest: null, lowest: i % 8 ? null : final })
+    }
+  }
   const sample = {
     freeGames: empty ? [] : [
       { id: 'epic-sample-free', title: 'The Long Way Home', source: 'epic', url: 'https://store.epicgames.com/', image: null, appId: null, endDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), type: 'giveaway' },

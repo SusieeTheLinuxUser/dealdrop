@@ -26,7 +26,8 @@ vm.runInContext([
   between('function escHtml (', '\n// ─── Boot'),
   between('function seenIds (', '\nconst unseen'),
   between('function updateRefreshAge (', '\nfunction updateLastCheckedLabels'),
-  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge, mergeUiPrefs, dealShops, parseClaimed, pruneClaimed, toggleClaimed, claimedLast, normalizeTitle, hiddenTitle, searchRank, parseSeen, newIds, mergeSeen, wishlistKey, seenIds }',
+  between('const PAGE_SIZE', '\n// Rows for the first'),
+  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge, mergeUiPrefs, dealShops, parseClaimed, pruneClaimed, toggleClaimed, claimedLast, normalizeTitle, hiddenTitle, searchRank, parseSeen, newIds, mergeSeen, wishlistKey, seenIds, PAGE_SIZE, pageSlice }',
 ].join('\n'), context)
 
 const h = context.helpers
@@ -124,6 +125,14 @@ assert.equal(h.mergeUiPrefs({ version: 1, lists: { deals: { sort: 'rating' }, wi
 assert.equal(h.mergeUiPrefs({ version: 1, lists: { wishlist: { sort: 'rating' } } }).lists.wishlist.sort, 'discount')
 assert.equal(JSON.stringify(h.dealShops([...items, { title: 'No shop' }])), '[["Fanatical",1],["GOG",1],["Steam",2]]')
 
+// Paged lists: first `shown` items, the rest counted (never negative)
+const many = Array.from({ length: 250 }, (_, i) => i)
+assert.equal(h.PAGE_SIZE, 100)
+assert.equal(JSON.stringify([h.pageSlice(many, 100).page.length, h.pageSlice(many, 100).left]), '[100,150]')
+assert.equal(h.pageSlice(many, 200).page[199], 199)
+assert.equal(JSON.stringify([h.pageSlice(many, 300).page.length, h.pageSlice(many, 300).left]), '[250,0]')
+assert.equal(h.pageSlice([], 100).left, 0)
+
 context.now = new Date('2026-10-18T12:00:00Z')
 assert.equal(vm.runInContext(nextSale, context).name, 'Winter Sale') // Steam Scream is a fest, not listed in SALES
 h.state.lastChecked = Date.now() - 7 * 60_000
@@ -133,4 +142,4 @@ h.state.lastChecked = Date.now()
 h.updateRefreshAge()
 assert.equal(label.textContent, 'Updated just now')
 
-console.log('Renderer self-check passed (escaping, hidden titles, search ranking, filters, store filter, UI preference merge, claimed games, seen deals, next sale, refresh age).')
+console.log('Renderer self-check passed (escaping, hidden titles, search ranking, filters, store filter, UI preference merge, claimed games, seen deals, list paging, next sale, refresh age).')

@@ -136,6 +136,8 @@ const state = {
   dataLoaded:   false,
   lastChecked:  null,
   selectedWishlistDeal: null,
+  wishlistPages: { sale: {}, all: {} }, // renderPaged state per list
+  revealTitle: '', // set by openSearchResult so the page renders far enough to show that row
   wishlistPrivate: false,
   refreshing: false,
   listFilters: {
@@ -517,7 +519,9 @@ function openSearchResult (r) {
     }
     document.getElementById(SEARCH_INPUTS[r.page]).value = r.title
   }
+  state.revealTitle = r.title // a paged list renders far enough to include the row
   navigate(r.page)
+  state.revealTitle = ''
   const name = [...document.querySelectorAll(`#page-${r.page} .deal-name, #page-${r.page} .wishlist-name, #page-${r.page} .game-title`)]
     .find(el => el.getAttribute('title') === r.title)
   name?.closest('.deal-row, .wishlist-row, .game-card')?.querySelector('button')?.focus()
@@ -616,6 +620,38 @@ function makeCardOpenButton (store, url, title, description = '') {
   return button
 }
 
+// ─── Paged lists ──────────────────────────────────────────────────────────────
+
+// Long lists (public Steam wishlists reach 10,000+ games) render a page at a time
+const PAGE_SIZE = 100
+const pageSlice = (items, shown) => ({ page: items.slice(0, shown), left: Math.max(0, items.length - shown) })
+
+// Rows for the first pages of `items`, then a "Show more" button that appends the next page.
+// `pager` keeps the page count across re-renders until `key` (the list's filters) changes;
+// `reveal` (optional predicate) extends the pages to include the first item it matches.
+function renderPaged (container, items, pager, key, makeRow, reveal) {
+  if (pager.key !== key) { pager.key = key; pager.shown = PAGE_SIZE }
+  const at = reveal ? items.findIndex(reveal) : -1
+  if (at >= pager.shown) pager.shown = Math.ceil((at + 1) / PAGE_SIZE) * PAGE_SIZE
+  const { page, left } = pageSlice(items, pager.shown)
+  container.replaceChildren(...page.map(makeRow))
+  if (!left) return
+  const more = document.createElement('button')
+  more.type = 'button'; more.className = 'action-btn show-more'
+  more.textContent = `Show more games (${left.toLocaleString()} left)`
+  more.addEventListener('click', () => {
+    const from = pager.shown
+    pager.shown += PAGE_SIZE
+    const { page, left } = pageSlice(items, pager.shown)
+    const rows = page.slice(from).map(makeRow)
+    more.before(...rows)
+    rows[0]?.querySelector('button')?.focus() // keyboard users continue at the first new row
+    if (left) more.textContent = `Show more games (${left.toLocaleString()} left)`
+    else more.remove()
+  })
+  container.append(more)
+}
+
 // ─── Wishlist page ────────────────────────────────────────────────────────────
 
 function renderWishlist () {
@@ -703,14 +739,14 @@ function renderWishlist () {
   }
   emptyEl.style.display = 'none'
 
-  const listSale = $('list-wishlist-sale'), listAll = $('list-wishlist-all')
-  listSale.innerHTML = ''; listAll.innerHTML = ''
   const onSale = visibleItems.filter(w => (w.priceInfo?.discount ?? 0) >= 20)
   onSaleWrap.style.display = onSale.length ? 'block' : 'none'
   const fresh = unseen('wishlist')
-  onSale.forEach(w => listSale.appendChild(makeWishlistSaleRow(w, fresh.has(wishlistKey(w)))))
+  const pageKey = JSON.stringify([state.wishlistTab, filters.query, filters.sort, filters.onSaleOnly])
+  const reveal = state.revealTitle && (w => w.name === state.revealTitle)
+  renderPaged($('list-wishlist-sale'), onSale, state.wishlistPages.sale, pageKey, w => makeWishlistSaleRow(w, fresh.has(wishlistKey(w))), reveal)
   allWrap.style.display = 'block'
-  visibleItems.forEach(w => listAll.appendChild(makeWishlistRow(w, fresh.has(wishlistKey(w)))))
+  renderPaged($('list-wishlist-all'), visibleItems, state.wishlistPages.all, pageKey, w => makeWishlistRow(w, fresh.has(wishlistKey(w))), reveal)
   panel.style.display = state.selectedWishlistDeal && visibleItems.some(w => w.store === 'steam' && String(w.appId) === String(state.selectedWishlistDeal.appId)) ? 'block' : 'none'
   renderWishlistDealPanel()
 }
@@ -794,6 +830,7 @@ function makeWishlistRow (w, isNew = false) {
 
   const thumb = document.createElement('img')
   thumb.className = 'wishlist-thumb'
+  thumb.loading = 'lazy' // before src, or the image starts loading at once
   thumb.src   = w.image ?? ''
   thumb.alt   = ''
   thumb.dataset.fb = ''
@@ -981,7 +1018,7 @@ function makeFreeCard (g, tagClass, tagText, claimable = false) {
     <div class="game-card-content" aria-hidden="true">
     <div class="game-thumb">
       ${g.image
-        ? `<img src="${escHtml(g.image)}" alt="" data-fb="${srcIcon(g.source)}">`
+        ? `<img src="${escHtml(g.image)}" alt="" loading="lazy" data-fb="${srcIcon(g.source)}">`
         : `<span class="fallback">${srcIcon(g.source)}</span>`}
       <span class="src-badge ${srcClass}">${escHtml(gameStoreName(g.source).toUpperCase())}</span>
     </div>
@@ -1143,7 +1180,7 @@ function makeSaleCard (d, isNew = false) {
   card.innerHTML = `
     <div class="game-card-content" aria-hidden="true">
     <div class="game-thumb">
-      ${d.image ? `<img src="${escHtml(d.image)}" alt="" data-fb="${srcIcon(src)}">` : `<span class="fallback">${srcIcon(src)}</span>`}
+      ${d.image ? `<img src="${escHtml(d.image)}" alt="" loading="lazy" data-fb="${srcIcon(src)}">` : `<span class="fallback">${srcIcon(src)}</span>`}
       <span class="src-badge ${srcClass}">${escHtml(gameStoreName(src).toUpperCase())}</span>
     </div>
     <div class="game-info">

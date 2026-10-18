@@ -4,6 +4,7 @@ All notable changes to DealDrop are documented in this file.
 
 ## [Unreleased]
 - Fixed: after CheapShark rate-limits DealDrop (HTTP 429), every CheapShark request pauses until it allows them again (its Retry-After, else 15 min doubling up to 2 h) instead of retrying each poll and prolonging the block; hot deals and wishlist prices keep their last good data meanwhile.
+- Long wishlists (public Steam wishlists can hold 10,000+ games) show 100 games at a time with a "Show more games" button, so the Wishlist page opens and searches quickly; Ctrl+K still jumps to any game.
 - Hot deals show the Steam user rating ("92% · Very Positive", just the percent in a narrow window) and can be sorted by "Best rated".
 - Fixed: refreshing an Epic sign-in no longer renames the account to "Epic user" or drops the refresh token when Epic leaves them out of the response (which forced a new sign-in later).
 - Wishlist games that went on sale since you last looked are tagged "New", with a dot on the Wishlist sidebar item until you've looked; a game that goes back to full price and sells again counts as new again.
