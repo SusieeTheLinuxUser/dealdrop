@@ -158,4 +158,12 @@ mod tests {
         let odd = Url::parse("https://www.gog.com/en/game/a%20b;c").unwrap();
         assert!(link("gog", "lutris", &odd, None).is_none());
     }
+
+    #[test]
+    fn gog_ids_and_slugs_reject_untrusted_characters() {
+        assert_eq!(numeric(Some("gog-1207664643")), Some("1207664643"));
+        assert_eq!(numeric(Some("gog-12/3")), None);
+        assert_eq!(slug("the_witcher-3/"), Some("the_witcher-3"));
+        assert_eq!(slug("bad%2fslug"), None);
+    }
 }
