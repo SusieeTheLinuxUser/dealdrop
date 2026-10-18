@@ -150,9 +150,9 @@ html,body{background:transparent} /* window is transparent; #app paints the colo
 .tl-dot{width:8px;height:8px;border-radius:50%;background:var(--text2);flex-shrink:0}
 .timeline-item.past .tl-dot{background:var(--green)}
 .timeline-item.next .tl-dot{background:var(--acc);box-shadow:0 0 8px var(--acc)}
-.tl-name{font-size:13px;font-weight:500;color:var(--text0);flex:1}
+.tl-name{font-size:13px;font-weight:500;color:var(--text0);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .timeline-item.past .tl-name{color:var(--text1)}
-.tl-date{font-size:11px;font-family:var(--mono);color:var(--text2)}
+.tl-date{font-size:11px;font-family:var(--mono);color:var(--text2);flex-shrink:0}
 .timeline-item.next .tl-date{color:var(--acc)}
 
 /* ── settings ── */
