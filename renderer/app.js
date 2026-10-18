@@ -107,14 +107,18 @@ function bindListControls (key, inputId, sortId, render, { saleOnlyId, minDiscou
   }
 }
 
-function showFilterEmpty (emptyEl, key, inputId, minDiscountId, render, message) {
-  const copy = document.createElement('p'); copy.textContent = message
+function showFilterEmpty (emptyEl, key, inputId, minDiscountId, render, message, { saleOnlyId } = {}) {
+  const copy = emptyEl.querySelector('#wishlist-empty-msg') || document.createElement('p')
+  copy.textContent = message
   const clear = document.createElement('button')
   clear.type = 'button'; clear.className = 'clear-filter'; clear.textContent = 'Clear filters'
   clear.addEventListener('click', () => {
-    state.listFilters[key].query = ''; state.listFilters[key].minDiscount = 0
+    state.listFilters[key].query = ''
+    if ('minDiscount' in state.listFilters[key]) state.listFilters[key].minDiscount = 0
+    if ('onSaleOnly' in state.listFilters[key]) state.listFilters[key].onSaleOnly = false
     document.getElementById(inputId).value = ''
-    syncMinDiscount(key, minDiscountId)
+    if (minDiscountId) syncMinDiscount(key, minDiscountId)
+    if (saleOnlyId) document.getElementById(saleOnlyId).setAttribute('aria-pressed', 'false')
     render()
   })
   emptyEl.replaceChildren(copy, clear)
@@ -337,6 +341,7 @@ function renderWishlist () {
   })), state.wishlistTab, 'Wishlist stores', s => { state.wishlistTab = s; renderWishlist() })
 
   const items = state.wishlistTab === 'all' ? state.wishlist : state.wishlist.filter(w => w.store === state.wishlistTab)
+  emptyEl.querySelector('.clear-filter')?.remove()
   controls.style.display = items.length ? 'flex' : 'none'
   search.value = filters.query
   sort.value = filters.sort
@@ -360,14 +365,7 @@ function renderWishlist () {
   if (!visibleItems.length) {
     hide(onSaleWrap, allWrap, panel)
     $('wishlist-empty-msg').textContent = 'No wishlist games match.'
-    const clear = document.createElement('button')
-    clear.id = 'wishlist-clear-search'; clear.type = 'button'; clear.className = 'clear-filter'; clear.textContent = 'Clear search'
-    clear.addEventListener('click', () => {
-      filters.query = ''; filters.onSaleOnly = false; search.value = ''
-      saleOnly.setAttribute('aria-pressed', 'false')
-      renderWishlist()
-    })
-    $('wishlist-empty-msg').after(clear)
+    showFilterEmpty(emptyEl, 'wishlist', 'wishlist-search', null, renderWishlist, 'No wishlist games match.', { saleOnlyId: 'wishlist-sale-only' })
     emptyEl.style.display = 'flex'
     return
   }
@@ -1177,7 +1175,7 @@ async function loadData (force = false) {
   }
 }
 
-// Red box above "Refresh all": only shown when something is wrong. It says so without details;
+// Red box below accounts: only shown when something is wrong. It says so without details;
 // "Copy error" puts the details on the clipboard for a bug report.
 let lastErrorText = ''
 function renderErrors () {
