@@ -37,6 +37,7 @@ const state = {
   lastChecked:  null,
   selectedWishlistDeal: null,
   wishlistPrivate: false,
+  refreshing: false,
   listFilters: { deals: { query: '', sort: 'discount' }, storesales: { query: '', sort: 'discount' } },
 }
 
@@ -331,6 +332,8 @@ function renderFreeGames () {
   if (tsEl) tsEl.textContent = fmtChecked(state.lastChecked)
 
   if (!state.freeGames.length && !state.freeWeekends.length) {
+    const mins = Number(state.settings.checkInterval) || 60
+    document.getElementById('free-empty-copy').textContent = `No free games right now. We check every ${mins < 60 ? mins + ' minutes' : mins / 60 + ' hour' + (mins === 60 ? '' : 's')}.`
     emptyEl.style.display = 'flex'
     return
   }
@@ -593,7 +596,7 @@ const NOTIFICATION_TOGGLES = [
   { key: 'notifyWishlistSale', label: 'Wishlist game on sale', sub: 'Steam, GOG & Epic wishlists, drops of ≥20%' },
   { key: 'notifyBigDeal', label: 'Deal over 75% off', sub: 'Hot deals list (CheapShark)' },
 ]
-window.dealDropOnboarding = { state, baseThemes: BASE_THEMES, lookToggles: LOOK_TOGGLES, notificationToggles: NOTIFICATION_TOGGLES, applyTheme, setAccounts }
+window.dealDropOnboarding = { state, baseThemes: BASE_THEMES, lookToggles: LOOK_TOGGLES, notificationToggles: NOTIFICATION_TOGGLES, applyTheme, setAccounts, loadData }
 
 // A sale starting switches to its theme once. If the user picks something else, lastSaleTheme
 // stays set, so a restart doesn't switch back. When the sale ends its theme is dropped.
@@ -825,8 +828,11 @@ function setAccounts (acc) {
 // ─── Data loading ─────────────────────────────────────────────────────────────
 
 async function loadData (force = false) {
-  const btn = document.getElementById('btn-check-now')
-  if (btn) { btn.disabled = true; btn.textContent = 'Refreshing…' }
+  if (state.refreshing) return
+  state.refreshing = true
+  const buttons = [[document.getElementById('btn-check-now'), 'Refresh all'], [document.getElementById('btn-check-settings'), 'Refresh all now']]
+  buttons.forEach(([btn]) => { if (btn) { btn.disabled = true; btn.setAttribute('aria-busy', 'true') } })
+  buttons.forEach(([btn]) => { if (btn) btn.textContent = 'Refreshing…' })
   try {
     if (force) state.launchers = await window.api.launchers().catch(() => state.launchers)
     state.fetchError = null
@@ -836,7 +842,8 @@ async function loadData (force = false) {
     state.fetchError = `Couldn't update: ${String(e).slice(0, 90)}`
     renderErrors()
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Refresh all' }
+    state.refreshing = false
+    buttons.forEach(([btn, label]) => { if (btn) { btn.disabled = false; btn.textContent = label; btn.removeAttribute('aria-busy') } })
   }
 }
 

@@ -56,6 +56,7 @@ html,body{background:transparent} /* window is transparent; #app paints the colo
 .sidebar-footer{padding:12px 14px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:8px}
 .check-now-btn{width:100%;padding:7px;font-size:12px;font-family:var(--sans);background:var(--bg3);border:1px solid var(--bord2);border-radius:var(--r);color:var(--text0);cursor:pointer;transition:background .12s}
 .check-now-btn:hover{background:var(--bg4)}
+.check-now-btn:disabled{opacity:.72;cursor:wait}
 .check-now-btn:active{transform:scale(0.98)}
 
 /* ── main ── */
@@ -170,6 +171,7 @@ html,body{background:transparent} /* window is transparent; #app paints the colo
 .api-key-group input:focus{border-color:var(--acc)}
 .api-key-group button,.action-btn{padding:9px 18px;font-size:13px;background:var(--bg3);border:1px solid var(--bord2);border-radius:var(--r);color:var(--text0);cursor:pointer;font-family:var(--sans);transition:background .12s}
 .api-key-group button:hover,.action-btn:hover{background:var(--bg4)}
+.action-btn:disabled{opacity:.72;cursor:wait}
 .action-btn{width:100%;margin-top:4px}
 .hint{font-size:12px;color:var(--text2);margin-top:8px}
 .hint a{color:var(--acc);text-decoration:none;cursor:pointer}
