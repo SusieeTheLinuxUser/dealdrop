@@ -12,6 +12,7 @@
   const button = (text, cls, fn) => { const b = document.createElement('button'); b.type = 'button'; b.className = cls; b.textContent = text; b.addEventListener('click', fn); return b }
   function start () {
     if (dialog) return
+    api().closeShortcutsDialog?.()
     api().state.onboardingOpen = true; api().state.onboardingThemePicked = false
     returnFocus = document.activeElement; step = 0; lastAnnouncedStep = -1
     dialog = document.createElement('div'); dialog.className = 'onboarding-backdrop'

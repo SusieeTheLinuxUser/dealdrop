@@ -718,7 +718,7 @@ const NOTIFICATION_TOGGLES = [
   { key: 'notifyWishlistSale', label: 'Wishlist game on sale', sub: 'Steam, GOG & Epic wishlists, drops of ≥20%' },
   { key: 'notifyBigDeal', label: 'Deal over 75% off', sub: 'Hot deals list (CheapShark)' },
 ]
-window.dealDropOnboarding = { state, baseThemes: BASE_THEMES, lookToggles: LOOK_TOGGLES, notificationToggles: NOTIFICATION_TOGGLES, applyTheme, setAccounts, loadData, renderSettings }
+window.dealDropOnboarding = { state, baseThemes: BASE_THEMES, lookToggles: LOOK_TOGGLES, notificationToggles: NOTIFICATION_TOGGLES, applyTheme, setAccounts, loadData, renderSettings, closeShortcutsDialog }
 
 // A sale starting switches to its theme once. If the user picks something else, lastSaleTheme
 // stays set, so a restart doesn't switch back. When the sale ends its theme is dropped.
@@ -1197,12 +1197,6 @@ async function init () {
   })
   document.addEventListener('keydown', e => {
     const target = e.target
-    const link = target.closest?.('a[data-href]')
-    if (link && e.key === 'Enter') {
-      e.preventDefault()
-      link.click()
-      return
-    }
     if (e.key !== 'Enter' && e.key !== ' ') return
     const row = target.closest?.('[data-keyboard-action="activate"]')
     if (!row || (target !== row && target.closest?.('button, a, input, select, textarea'))) return
