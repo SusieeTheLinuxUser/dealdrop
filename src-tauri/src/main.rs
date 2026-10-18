@@ -631,7 +631,9 @@ fn main() {
                 .min_inner_size(570.0, 420.0)
                 .decorations(false)
                 .transparent(true) // the page paints the background so the window corners can be rounded
-                .on_navigation(|u| matches!(u.scheme(), "tauri" | "about") || u.host_str() == Some("tauri.localhost"))
+                // `cargo tauri dev` serves the UI from http://127.0.0.1:1430; release builds never do.
+                .on_navigation(|u| matches!(u.scheme(), "tauri" | "about") || u.host_str() == Some("tauri.localhost")
+                    || (cfg!(debug_assertions) && u.scheme() == "http" && matches!(u.host_str(), Some("127.0.0.1" | "localhost"))))
                 .build()?;
 
             let menu = Menu::with_items(app, &[
