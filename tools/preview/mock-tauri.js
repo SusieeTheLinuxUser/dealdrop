@@ -54,11 +54,16 @@
     lastChecked: Date.now(),
   }
   const emitters = new Set()
-  const launchers = () => ({
-    steam: { options: [{ key: 'native', label: 'Steam' }], chosen: { key: 'native', label: 'Steam' } },
-    gog: { options: [{ key: 'native', label: 'GOG Galaxy' }, { key: 'heroic', label: 'Heroic' }], chosen: { key: 'native', label: 'GOG Galaxy' } },
-    epic: { options: [{ key: 'native', label: 'Epic Games' }, { key: 'heroic', label: 'Heroic' }], chosen: { key: 'native', label: 'Epic Games' } },
-  })
+  const launcherOptions = {
+    steam: [{ key: 'native', label: 'Steam' }],
+    gog: [{ key: 'native', label: 'GOG Galaxy' }, { key: 'heroic', label: 'Heroic' }],
+    epic: [{ key: 'native', label: 'Epic Games' }, { key: 'heroic', label: 'Heroic' }],
+  }
+  const launchers = () => Object.fromEntries(Object.entries(launcherOptions).map(([store, options]) => {
+    const pref = store === 'gog' ? settings.launcherGog : store === 'epic' ? settings.launcherEpic : 'auto'
+    const chosen = pref === 'browser' ? null : options.find(option => option.key === pref) || options[0] || null
+    return [store, { options: clone(options), chosen: clone(chosen) }]
+  }))
   const clone = value => JSON.parse(JSON.stringify(value))
   async function invoke (cmd, args = {}) {
     switch (cmd) {
@@ -72,7 +77,7 @@
       case 'gog_login': accounts.gog = { name: 'Preview GOG', avatar: null, profileUrl: 'https://www.gog.com/u/' }; return clone(accounts)
       case 'epic_login': accounts.epic = { name: 'Preview Epic', avatar: null, profileUrl: 'https://www.epicgames.com/account/personal' }; return clone(accounts)
       case 'logout': accounts[args.store] = null; return clone(accounts)
-      case 'wishlist_game_deals': return { appId: args.appId, gameName: args.name, steam: { discount: 50, final: 4.99, initial: 9.99, formatted: '$4.99' }, cheapest: { store: 'GOG', price: 3.99, url: 'https://www.gog.com/game/classic_quest' }, checkedAt: Date.now() }
+      case 'wishlist_game_deals': return { appId: args.appId, gameName: args.name, steam: { onSale: true, discount: 50, final: 4.99, initial: 9.99, formatted: '$4.99' }, cheapest: { store: 'GOG', price: 3.99, url: 'https://www.gog.com/game/classic_quest', savingsPercent: 60, retailPrice: 9.99 }, checkedAt: Date.now() }
       case 'open_url':
       case 'open_in_app': console.info(`[preview] ${cmd}`, args); return true
       case 'window_minimize':
