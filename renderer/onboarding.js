@@ -39,6 +39,7 @@
     const focusKey = dialog.contains(document.activeElement) ? document.activeElement.dataset.focusKey : null
     const stepChanged = lastAnnouncedStep !== step
     const settings = state.settings, body = dialog.querySelector('.onboarding-content')
+    dialog.querySelector('.onboarding-error').textContent = ''
     dialog.querySelector('.onboarding-count').textContent = 'Step ' + (step + 1) + ' of 5'
     if (lastAnnouncedStep !== step) {
       dialog.querySelector('.onboarding-sr-only').textContent = 'Step ' + (step + 1) + ' of 5: ' + labels[step]
