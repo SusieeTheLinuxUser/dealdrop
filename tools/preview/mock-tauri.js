@@ -18,8 +18,8 @@
     gog: signedIn ? { name: 'PlayerOne', avatar: null, profileUrl: 'https://www.gog.com/u/' } : null,
     epic: signedIn ? { name: 'PlayerOne', avatar: null, profileUrl: 'https://www.epicgames.com/account/personal' } : null,
   }
-  const deal = (id, title, shop, cut, price, regular, appId) => ({
-    id, title, shop, url: `https://store.steampowered.com/app/${appId}`, image: null,
+  const deal = (id, title, shop, cut, price, regular, appId, url) => ({
+    id, title, shop, url: url || `https://store.steampowered.com/app/${appId}`, image: null,
     cut, price, regular, appId,
   })
   const sample = {
@@ -34,15 +34,39 @@
       { id: 'steam-fw-570', title: 'Dota 2 Weekend Trial', source: 'steam', url: 'https://store.steampowered.com/app/570', image: null, appId: '570', endDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(), type: 'weekend' },
     ],
     sales: empty ? { steam: [], gog: [], epic: [] } : {
-      steam: [deal('steam-sale-440', 'Team Fortress 2', 'Steam', 75, 2.49, 9.99, '440')],
-      gog: [deal('gog-sale-123456', 'Classic Quest', 'GOG', 60, 3.99, 9.99, '123456')],
-      epic: [deal('epic-sale-123', 'Skyward Bound', 'Epic Games', 40, 11.99, 19.99, '123')],
+      steam: [
+        deal('steam-sale-440', 'Team Fortress 2', 'Steam', 20, 7.99, 9.99, '440'),
+        deal('steam-sale-441', 'Garden Tactics', 'Steam', 55, 13.49, 29.99, '441'),
+        deal('steam-sale-442', 'Skyward Bound', 'Steam', 55, 8.99, 19.99, '442'),
+        deal('steam-sale-443', 'The Long Way Home', 'Steam', 80, 5.99, 29.99, '443'),
+        deal('steam-sale-444', 'Starlight Courier', 'Steam', 80, 3.99, 19.99, '444'),
+        deal('steam-sale-445', 'Hollow Harbor', 'Steam', 95, 1.49, 29.99, '445'),
+      ],
+      gog: [
+        deal('gog-sale-123456', 'Classic Quest', 'GOG', 20, 7.99, 9.99, '123456', 'https://www.gog.com/game/classic_quest'),
+        deal('gog-sale-123457', 'The Long Way Home', 'GOG', 55, 13.49, 29.99, '123457', 'https://www.gog.com/game/the_long_way_home'),
+        deal('gog-sale-123458', 'Skyward Bound', 'GOG', 55, 8.99, 19.99, '123458', 'https://www.gog.com/game/skyward_bound'),
+        deal('gog-sale-123459', 'Garden Tactics', 'GOG', 80, 5.99, 29.99, '123459', 'https://www.gog.com/game/garden_tactics'),
+        deal('gog-sale-123460', 'Starlight Courier', 'GOG', 80, 3.99, 19.99, '123460', 'https://www.gog.com/game/starlight_courier'),
+        deal('gog-sale-123461', 'Hollow Harbor', 'GOG', 95, 1.49, 29.99, '123461', 'https://www.gog.com/game/hollow_harbor'),
+      ],
+      epic: [
+        deal('epic-sale-123', 'Skyward Bound', 'Epic Games', 20, 15.99, 19.99, '123', 'https://store.epicgames.com/p/skyward-bound'),
+        deal('epic-sale-124', 'Garden Tactics', 'Epic Games', 55, 13.49, 29.99, '124', 'https://store.epicgames.com/p/garden-tactics'),
+        deal('epic-sale-125', 'The Long Way Home', 'Epic Games', 55, 8.99, 19.99, '125', 'https://store.epicgames.com/p/the-long-way-home'),
+        deal('epic-sale-126', 'Starlight Courier', 'Epic Games', 80, 5.99, 29.99, '126', 'https://store.epicgames.com/p/starlight-courier'),
+        deal('epic-sale-127', 'Hollow Harbor', 'Epic Games', 80, 3.99, 19.99, '127', 'https://store.epicgames.com/p/hollow-harbor'),
+        deal('epic-sale-128', 'Classic Quest', 'Epic Games', 95, 1.49, 29.99, '128', 'https://store.epicgames.com/p/classic-quest'),
+      ],
     },
     liveSale: flags.get('sale') === 'winter' ? { key: 'winter', name: 'Winter Sale', url: 'https://store.steampowered.com/specials' } : null,
     deals: empty ? [] : [
-      deal('deal-440', 'Team Fortress 2', 'Steam', 75, 2.49, 9.99, '440'),
-      deal('deal-123', 'Skyward Bound', 'GOG', 50, 14.99, 29.99, '123'),
-      deal('deal-456', 'Garden Tactics', 'Epic Games', 30, 6.99, 9.99, '456'),
+      deal('deal-440', 'Team Fortress 2', 'Steam', 20, 7.99, 9.99, '440'),
+      deal('deal-123', 'Skyward Bound', 'GOG', 55, 13.49, 29.99, '123', 'https://www.gog.com/game/skyward_bound'),
+      deal('deal-456', 'Garden Tactics', 'Epic Games', 80, 5.99, 29.99, '456', 'https://store.epicgames.com/p/garden-tactics'),
+      deal('deal-789', 'The Long Way Home', 'GOG', 95, 1.49, 29.99, '789', 'https://www.gog.com/game/the_long_way_home'),
+      deal('deal-124', 'Starlight Courier', 'Steam', 50, 9.99, 19.99, '124'),
+      deal('deal-125', 'Hollow Harbor', 'Epic Games', 75, 7.49, 29.99, '125', 'https://store.epicgames.com/p/hollow-harbor'),
     ],
     dealsSource: 'CheapShark', dealsError: null,
     wishlist: empty || !signedIn ? [] : [
