@@ -25,7 +25,7 @@ vm.runInContext([
   between('function storeKeyFor (', '\nconst gameStoreName'),
   between('function escHtml (', '\n// ─── Boot'),
   between('function updateRefreshAge (', '\nfunction updateLastCheckedLabels'),
-  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge, mergeUiPrefs, dealShops, parseClaimed, pruneClaimed, toggleClaimed, claimedLast, normalizeTitle, hiddenTitle, parseSeen, newIds, mergeSeen }',
+  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge, mergeUiPrefs, dealShops, parseClaimed, pruneClaimed, toggleClaimed, claimedLast, normalizeTitle, hiddenTitle, searchRank, parseSeen, newIds, mergeSeen }',
 ].join('\n'), context)
 
 const h = context.helpers
@@ -39,6 +39,13 @@ h.state.settings.hidden = ['hades']
 assert.equal(h.hiddenTitle(' Hades '), true)
 assert.equal(h.hiddenTitle('Control'), false)
 assert.equal(h.hiddenTitle('hades ii', ['Hades  II']), true)
+
+const games = ['Portal Knights', 'Super Portal', 'portal', 'Hades', 'The  PORTAL  2'].map(title => ({ title }))
+assert.equal(JSON.stringify(h.searchRank(games, ' PORTAL ').map(g => g.title)), '["Portal Knights","portal","Super Portal","The  PORTAL  2"]')
+assert.equal(JSON.stringify(h.searchRank(games, 'portal 2').map(g => g.title)), '["The  PORTAL  2"]')
+assert.equal(h.searchRank(games, '  ').length, 0)
+assert.equal(h.searchRank(games, 'zzz').length, 0)
+assert.equal(h.searchRank(games, 'a', 2).length, 2)
 
 const merged = h.mergeUiPrefs({
   version: 1, page: 'wishlist',
@@ -109,4 +116,4 @@ h.state.lastChecked = Date.now()
 h.updateRefreshAge()
 assert.equal(label.textContent, 'Updated just now')
 
-console.log('Renderer self-check passed (escaping, hidden titles, filters, store filter, UI preference merge, claimed games, seen deals, next sale, refresh age).')
+console.log('Renderer self-check passed (escaping, hidden titles, search ranking, filters, store filter, UI preference merge, claimed games, seen deals, next sale, refresh age).')

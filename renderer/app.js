@@ -142,6 +142,7 @@ const state = {
   },
 }
 let shortcutsDialog = null
+let searchDialog = null
 let refreshAgeInterval = null
 
 function normalizeTitle (title) {
@@ -151,6 +152,19 @@ function normalizeTitle (title) {
 function hiddenTitle (title, hidden = state.settings.hidden) {
   const key = normalizeTitle(title)
   return hidden.some(h => normalizeTitle(h) === key)
+}
+
+// Up to `limit` items whose title contains the query: title-prefix matches first, then the rest, each in list order
+function searchRank (items, query, limit = 20) {
+  const q = normalizeTitle(query)
+  if (!q) return []
+  const starts = [], contains = []
+  for (const item of items) {
+    const title = normalizeTitle(item.title)
+    if (title.startsWith(q)) starts.push(item)
+    else if (title.includes(q)) contains.push(item)
+  }
+  return [...starts, ...contains].slice(0, limit)
 }
 
 function filteredSorted (items, key, fields = {}) {
@@ -368,6 +382,8 @@ const REPO       = 'https://github.com/SusieeTheLinuxUser/dealdrop'
 const openBrowser = url   => window.api.openUrl(url)
 const openSteam   = appId => window.api.openInApp('steam', `https://store.steampowered.com/app/${appId}`)
 const launcherOf  = store => state.launchers[store]?.chosen ?? null
+const MOD_KEY     = /Mac/.test(navigator.userAgent) ? '⌘' : 'Ctrl+'
+const SEARCH_INPUTS = { deals: 'deals-search', storesales: 'sales-search', wishlist: 'wishlist-search' }
 
 function closeShortcutsDialog () {
   if (!shortcutsDialog) return
@@ -387,7 +403,7 @@ function openShortcutsDialog () {
   const title = document.createElement('h2'); title.id = 'shortcut-dialog-title'; title.textContent = 'Keyboard shortcuts'
   const list = document.createElement('dl'); list.className = 'shortcut-list'
   ;[
-    ['R', 'Refresh all'], ['/','Focus search on this page'],
+    ['R', 'Refresh all'], ['/','Focus search on this page'], [MOD_KEY + 'K', 'Search everything'],
     ['1–5', 'Open Wishlist, Free now, Store sales, Hot deals, or Calendar'],
     [',', 'Open Settings'], ['?', 'Show this help'],
   ].forEach(([key, description]) => {
@@ -401,11 +417,124 @@ function openShortcutsDialog () {
   close.focus()
 }
 
+// Everything Ctrl+K can find, hidden games left out except on the wishlist (same rule as the lists)
+function searchEntries () {
+  const off = d => d.cut ? ` · -${d.cut}%` : ''
+  const free = (games, label, price) => games.filter(g => !hiddenTitle(g.title))
+    .map(g => ({ title: g.title, page: 'free', where: `${label} · ${gameStoreName(g.source)}`, price: price(g) }))
+  return [
+    ...free(state.freeGames, 'Free now', () => 'Free'),
+    ...free(state.freeWeekends, 'Free weekend', () => 'Free'),
+    ...free(state.freeUpcoming, 'Coming next', g => startDateLabel(g.starts)),
+    ...Object.entries(state.sales).flatMap(([store, list]) => list.filter(d => !hiddenTitle(d.title))
+      .map(d => ({ title: d.title, page: 'storesales', tab: store, item: d, where: `Store sales · ${STORES[store] ?? store}`, price: fmt$(d.price) + off(d) }))),
+    ...state.deals.filter(d => !hiddenTitle(d.title))
+      .map(d => ({ title: d.title, page: 'deals', item: d, where: 'Hot deals' + (d.shop ? ` · ${d.shop}` : ''), price: fmt$(d.price) + off(d) })),
+    ...state.wishlist.map(w => ({
+      title: w.name, page: 'wishlist', tab: w.store, item: w, where: `Wishlist · ${STORES[w.store] ?? w.store}`,
+      price: (w.priceInfo?.formatted ?? '') + (w.priceInfo?.discount ? ` · -${w.priceInfo.discount}%` : ''),
+    })),
+  ]
+}
+
+function closeSearchDialog (restoreFocus = true) {
+  if (!searchDialog) return
+  const { overlay, returnFocus, timer } = searchDialog
+  searchDialog = null
+  clearTimeout(timer)
+  overlay.remove()
+  if (restoreFocus) returnFocus?.focus?.()
+}
+
+function openSearchDialog () {
+  if (searchDialog) return
+  const returnFocus = document.activeElement
+  const overlay = document.createElement('div'); overlay.className = 'shortcut-backdrop search-backdrop'
+  const dialog = document.createElement('section')
+  dialog.className = 'shortcut-dialog search-dialog'; dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true')
+  dialog.setAttribute('aria-labelledby', 'search-dialog-title')
+  const title = document.createElement('h2'); title.id = 'search-dialog-title'; title.className = 'sr-only'; title.textContent = 'Search everything'
+  const input = document.createElement('input')
+  input.type = 'text'; input.className = 'search-input'; input.placeholder = 'Search free games, sales, deals and wishlist'
+  input.autocomplete = 'off'; input.spellcheck = false
+  input.setAttribute('role', 'combobox'); input.setAttribute('aria-label', 'Search everything')
+  input.setAttribute('aria-autocomplete', 'list'); input.setAttribute('aria-controls', 'search-results'); input.setAttribute('aria-expanded', 'false')
+  const list = document.createElement('ul'); list.id = 'search-results'; list.className = 'search-results'
+  list.setAttribute('role', 'listbox'); list.setAttribute('aria-label', 'Results')
+  let results = [], active = -1
+  const select = index => {
+    active = index
+    ;[...list.children].forEach((option, i) => option.setAttribute('aria-selected', String(i === index)))
+    const option = list.children[index]
+    if (option) { input.setAttribute('aria-activedescendant', option.id); option.scrollIntoView({ block: 'nearest' }) } else input.removeAttribute('aria-activedescendant')
+  }
+  const update = () => {
+    results = searchRank(searchEntries(), input.value)
+    list.replaceChildren(...results.map((r, i) => {
+      const option = document.createElement('li')
+      option.id = `search-option-${i}`; option.className = 'search-option'; option.setAttribute('role', 'option')
+      const name = document.createElement('span'); name.className = 'search-title'; name.textContent = r.title; name.title = r.title
+      const where = document.createElement('span'); where.className = 'search-where'; where.textContent = r.where
+      const price = document.createElement('span'); price.className = 'search-price'; price.textContent = r.price
+      option.append(name, price, where)
+      option.addEventListener('mousedown', e => e.preventDefault()) // keep focus in the input
+      option.addEventListener('click', () => openSearchResult(r))
+      return option
+    }))
+    input.setAttribute('aria-expanded', String(results.length > 0))
+    select(results.length ? 0 : -1)
+    if (input.value.trim()) announceStatus(`${results.length} result${results.length === 1 ? '' : 's'}`)
+  }
+  input.addEventListener('input', () => { clearTimeout(searchDialog.timer); searchDialog.timer = setTimeout(update, 180) })
+  input.addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      if (results.length) select((active + (e.key === 'ArrowDown' ? 1 : -1) + results.length) % results.length)
+    } else if (e.key === 'Enter' && results[active]) { e.preventDefault(); openSearchResult(results[active]) }
+  })
+  overlay.addEventListener('click', e => { if (e.target === overlay) closeSearchDialog() })
+  dialog.append(title, input, list); overlay.appendChild(dialog); document.body.appendChild(overlay)
+  searchDialog = { overlay, returnFocus, timer: null }
+  input.focus()
+}
+
+// Go to the result's page, filter its list to the title (clearing filters that would hide it) and focus its row or card
+function openSearchResult (r) {
+  closeSearchDialog(false)
+  if (r.page === 'storesales') state.salesTab = r.tab
+  if (r.page === 'wishlist' && state.wishlistTab !== 'all' && state.wishlistTab !== r.tab) state.wishlistTab = 'all'
+  const filters = state.listFilters[r.page]
+  if (filters) {
+    filters.query = r.title
+    const fields = r.page === 'wishlist' ? { title: item => item.name, discount: item => item.priceInfo?.discount ?? 0 } : {}
+    if (!filteredSorted([r.item], r.page, fields).length) {
+      if ('minDiscount' in filters) filters.minDiscount = 0
+      if ('onSaleOnly' in filters) filters.onSaleOnly = false
+      if ('shop' in filters) filters.shop = ''
+    }
+    document.getElementById(SEARCH_INPUTS[r.page]).value = r.title
+  }
+  navigate(r.page)
+  const name = [...document.querySelectorAll(`#page-${r.page} .deal-name, #page-${r.page} .wishlist-name, #page-${r.page} .game-title`)]
+    .find(el => el.getAttribute('title') === r.title)
+  name?.closest('.deal-row, .wishlist-row, .game-card')?.querySelector('button')?.focus()
+}
+
 function handleShortcutKeydown (e) {
+  if (searchDialog) {
+    if (e.key === 'Escape') { e.preventDefault(); closeSearchDialog(); return }
+    if (e.key === 'Tab' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k')) { e.preventDefault(); searchDialog.overlay.querySelector('input').focus() }
+    return
+  }
   if (shortcutsDialog) {
     if (e.key === 'Escape') { e.preventDefault(); closeShortcutsDialog(); return }
     if (e.key === 'Tab') { e.preventDefault(); shortcutsDialog.overlay.querySelector('button').focus() }
     return
+  }
+  // Ctrl/Cmd+K works even while typing in another field; nothing else uses a modifier
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') {
+    if (document.querySelector('.onboarding-backdrop, .tour-backdrop')) return
+    e.preventDefault(); openSearchDialog(); return
   }
   if (e.ctrlKey || e.metaKey || e.altKey) return
   if (e.target.isContentEditable || e.target.closest?.('input, textarea, select, [contenteditable="true"]')) return
@@ -414,7 +543,7 @@ function handleShortcutKeydown (e) {
   if (key === '?') { e.preventDefault(); openShortcutsDialog(); return }
   if (key === 'r') { e.preventDefault(); loadData(true); return }
   if (key === '/') {
-    const id = { deals: 'deals-search', storesales: 'sales-search', wishlist: 'wishlist-search' }[state.page]
+    const id = SEARCH_INPUTS[state.page]
     const search = id && document.getElementById(id)
     if (search?.getClientRects().length) { e.preventDefault(); search.focus() }
     return

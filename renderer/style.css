@@ -288,6 +288,17 @@ html[data-round="on"] #app,html[data-round="on"] #fx{border-radius:14px}
 .shortcut-list dt{margin:0}.shortcut-list dd{margin:0;overflow-wrap:anywhere}
 .shortcut-dialog kbd{display:inline-block;min-width:30px;padding:3px 6px;border:1px solid var(--bord2);border-radius:var(--rs);background:var(--bg1);color:var(--text0);font:12px var(--mono);text-align:center}
 .shortcut-close{display:block;margin-left:auto;padding:6px 12px;border:1px solid var(--bord2);border-radius:var(--r);background:var(--bg3);color:var(--text0);font:inherit;cursor:pointer}
+.search-backdrop{place-items:start center;padding-top:min(12vh,80px)}
+.search-dialog{width:min(480px,100%);max-height:calc(100vh - min(12vh,80px) - 12px);display:flex;flex-direction:column;gap:10px;padding:12px;overflow:hidden}
+.search-input{width:100%;box-sizing:border-box;padding:9px 12px;background:var(--bg1);border:1px solid var(--bord2);border-radius:var(--r);color:var(--text0);font:inherit}
+.search-results{list-style:none;margin:0;padding:0;min-height:0;overflow-y:auto;overflow-x:hidden}
+.search-results:empty{display:none}
+.search-option{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:10px;padding:7px 10px;border-radius:var(--r);cursor:pointer}
+.search-option:hover{background:var(--bg2)}
+.search-option[aria-selected="true"]{background:var(--acc-d);box-shadow:inset 2px 0 var(--acc)}
+.search-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text0)}
+.search-price{color:var(--amber);font:12px var(--mono);white-space:nowrap;align-self:center}
+.search-where{grid-column:1/-1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text2);font-size:11px}
 .theme-chip{display:flex;align-items:center;gap:8px;padding:7px 12px;font-size:12px;font-family:var(--sans);background:var(--bg1);border:1px solid var(--border);border-radius:var(--r);color:var(--text1);cursor:pointer}
 .theme-chip:hover{color:var(--text0);border-color:var(--bord2)}
 .theme-chip.active{border-color:var(--acc);color:var(--acc);background:var(--acc-d)}

@@ -3,6 +3,7 @@
 All notable changes to DealDrop are documented in this file.
 
 ## [Unreleased]
+- Search everything with Ctrl+K (⌘K on macOS): one box finds games across Free now, Store sales, Hot deals and Wishlist; Enter jumps to the game on its page.
 - Fixed: very large Steam wishlists no longer trip CheapShark's rate limit; GOG wishlist prices in other currencies show their currency and are no longer compared with US-dollar prices.
 - Wishlist games on sale at their all-time low (CheapShark) show a "Lowest ever" badge; USD prices only.
 - Settings can choose wishlist sale and big-deal notification thresholds.
