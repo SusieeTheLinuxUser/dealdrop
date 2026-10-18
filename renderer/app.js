@@ -13,7 +13,7 @@ const SALES = [
 ]
 
 const DEFAULT_SETTINGS = {
-  notifyMajorSale: true, notifyFreeGame: true, notifyFreeWeekend: true,
+  notifyMajorSale: true, notifySaleSoon: true, notifyFreeGame: true, notifyFreeWeekend: true,
   notifyWishlistSale: true, wishlistMinCut: 20, notifyBigDeal: false, bigDealMinCut: 75, checkInterval: 60,
   theme: 'midnight', baseTheme: 'midnight', lastSaleTheme: '', rounded: false, effects: true,
   launcherGog: 'auto', launcherEpic: 'auto', onboarded: false, hidden: [],
@@ -1256,6 +1256,7 @@ const LOOK_TOGGLES = [
 ]
 const NOTIFICATION_TOGGLES = [
   { key: 'notifyMajorSale', label: 'Steam major sale started', sub: 'Summer, Winter, Autumn & Spring sales' },
+  { key: 'notifySaleSoon', label: 'Steam sale starts tomorrow', sub: 'A heads-up the day before a major sale' },
   { key: 'notifyFreeGame', label: 'Free game available', sub: 'Epic, Steam, GOG & GamerPower giveaways', gamerpower: true },
   { key: 'notifyFreeWeekend', label: 'Free weekend started', sub: 'Temporary Steam free-to-play promotions' },
   { key: 'notifyWishlistSale', label: 'Wishlist game on sale', sub: 'Steam, GOG & Epic wishlist games', threshold: 'wishlistMinCut', cuts: [10, 20, 30, 50, 75] },

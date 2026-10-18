@@ -40,6 +40,7 @@ Short manual test checklist for Windows and macOS. Check each item as you verify
 - [ ] **No burst on first run**: A fresh install sends no free-game notifications on its first check.
 - [ ] **Notification triggers**: Ensure notification toggles are enabled in Settings -> Notifications.
 - [ ] **Receive notification**: Lower the check interval to 15 minutes in Settings (or wait/refresh during a new free game, >75% deal, or sale) and verify an OS desktop notification appears.
+- [ ] **Sale heads-up**: The day before a Steam major sale (UTC date), one "Steam … Sale starts tomorrow" notification appears; restarting or refreshing that day does not repeat it.
 
 ## 6. Store Accounts & Wishlists (Optional)
 - [ ] **Sign-in windows**: Click "Sign in" for Steam, GOG, or Epic in the sidebar; store authentication window opens.

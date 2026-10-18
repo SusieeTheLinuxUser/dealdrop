@@ -3,6 +3,7 @@
 All notable changes to DealDrop are documented in this file.
 
 ## [Unreleased]
+- A notification the day before a Steam major sale starts ("Steam Winter Sale starts tomorrow"); toggle in Settings → Notifications.
 - Search everything with Ctrl+K (⌘K on macOS): one box finds games across Free now, Store sales, Hot deals and Wishlist; Enter jumps to the game on its page.
 - Fixed: Steam account names containing "]" (clan tags like "[TAG] Name") are no longer cut short; Epic free games whose listing has a placeholder slug link to the game instead of the generic free-games page.
 - Fixed: very large Steam wishlists no longer trip CheapShark's rate limit; GOG wishlist prices in other currencies show their currency and are no longer compared with US-dollar prices.

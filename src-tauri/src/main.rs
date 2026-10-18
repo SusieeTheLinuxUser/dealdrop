@@ -28,6 +28,7 @@ use tokio::sync::{Mutex as AsyncMutex, Notify};
 #[serde(rename_all = "camelCase", default)]
 struct Settings {
     notify_major_sale: bool,
+    notify_sale_soon: bool,
     notify_free_game: bool,
     notify_free_weekend: bool,
     notify_wishlist_sale: bool,
@@ -52,7 +53,7 @@ struct Settings {
 }
 impl Default for Settings {
     fn default() -> Self {
-        Self { notify_major_sale: true, notify_free_game: true, notify_free_weekend: true,
+        Self { notify_major_sale: true, notify_sale_soon: true, notify_free_game: true, notify_free_weekend: true,
                notify_wishlist_sale: true, wishlist_min_cut: 20, notify_big_deal: false, big_deal_min_cut: 75, check_interval: 60,
                theme: "midnight".into(), base_theme: "midnight".into(), last_sale_theme: String::new(),
                rounded: false, effects: true, launcher_gog: "auto".into(), launcher_epic: "auto".into(), onboarded: false, hidden: Vec::new() }
@@ -72,6 +73,8 @@ struct Db {
     gog: Option<Tokens>,
     epic: Option<Tokens>,
     last_sale_key: Option<String>,
+    /// Start date ("2026-12-17") of the sale we already sent the day-before heads-up for.
+    last_sale_soon_key: Option<String>,
     seen_free_ids: HashSet<String>,
     seen_sale_ids: HashSet<String>,
     seen_deal_ids: HashSet<String>,
@@ -199,6 +202,65 @@ fn dedupe_free(list: Vec<Free>) -> Vec<Free> {
     }).collect()
 }
 
+// ─── Sale calendar ────────────────────────────────────────────────────────────
+
+/// Steam's major sales; mirrors `SALES` in renderer/app.js (a test fails if they drift).
+struct Sale { name: &'static str, start: &'static str, end: &'static str, est: bool }
+
+const SALES: &[Sale] = &[
+    Sale { name: "Spring Sale", start: "2026-03-19", end: "2026-03-26", est: false },
+    Sale { name: "Summer Sale", start: "2026-06-25", end: "2026-07-09", est: false },
+    Sale { name: "Autumn Sale", start: "2026-10-01", end: "2026-10-08", est: false },
+    Sale { name: "Winter Sale", start: "2026-12-17", end: "2027-01-04", est: false },
+    Sale { name: "Spring Sale", start: "2027-03-18", end: "2027-03-25", est: false },
+    Sale { name: "Summer Sale", start: "2027-06-24", end: "2027-07-08", est: false },
+    Sale { name: "Autumn Sale", start: "2027-10-07", end: "2027-10-14", est: true },
+];
+
+/// "2026-12-17" → (2026, 12, 17).
+fn ymd(s: &str) -> (i64, u32, u32) {
+    let mut p = s.split('-').map(|n| n.parse::<i64>().unwrap_or(0));
+    let (y, m, d) = (p.next().unwrap_or(0), p.next().unwrap_or(0), p.next().unwrap_or(0));
+    (y, m as u32, d as u32)
+}
+
+/// Days since 1970-01-01 (Howard Hinnant's days_from_civil).
+fn days_from_civil((y, m, d): (i64, u32, u32)) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * ((m as i64 + 9) % 12) + 2) / 5 + d as i64 - 1;
+    era * 146_097 + yoe * 365 + yoe / 4 - yoe / 100 + doy - 719_468
+}
+
+/// Inverse of `days_from_civil`.
+fn civil_from_days(z: i64) -> (i64, u32, u32) {
+    let z = z + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let (d, m) = ((doy - (153 * mp + 2) / 5 + 1) as u32, if mp < 10 { mp + 3 } else { mp - 9 } as u32);
+    (yoe + era * 400 + i64::from(m <= 2), m, d)
+}
+
+/// The sale whose first day is the day after `today`.
+fn sale_starting_tomorrow(today: (i64, u32, u32)) -> Option<&'static Sale> {
+    let tomorrow = days_from_civil(today) + 1;
+    SALES.iter().find(|s| days_from_civil(ymd(s.start)) == tomorrow)
+}
+
+/// ("Steam Winter Sale starts tomorrow", "Dec 17 – Jan 4. Time to check your wishlist.")
+fn sale_soon_notice(sale: &Sale) -> (String, String) {
+    const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    let day = |s| { let (_, m, d) = ymd(s); format!("{} {d}", MONTHS[(m.clamp(1, 12) - 1) as usize]) };
+    let dates = format!("{} – {}", day(sale.start), day(sale.end));
+    let body = if sale.est { format!("Expected to start tomorrow ({dates}, dates not announced yet). Time to check your wishlist.") }
+               else { format!("{dates}. Time to check your wishlist.") };
+    (format!("Steam {} starts tomorrow", sale.name), body)
+}
+
 // ─── Poll ─────────────────────────────────────────────────────────────────────
 
 async fn poll(app: &AppHandle) -> Snapshot {
@@ -272,6 +334,18 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
         }
         Err(e) => { eprintln!("[sale-detect] {e}"); source_errors.lock().unwrap().push(failure("Steam sale detection", &e)); prev.live_sale.clone() }
     };
+
+    // 1b. Heads-up the day before a major sale (from the SALES calendar, once per sale).
+    // ponytail: UTC date, not the user's local one (std has no time zones), so it can fire a few hours early/late.
+    if settings.notify_sale_soon {
+        if let Some(sale) = sale_starting_tomorrow(civil_from_days((now_ms() / 86_400_000) as i64)) {
+            if st.read(|d| d.last_sale_soon_key.as_deref() != Some(sale.start)) {
+                let (title, body) = sale_soon_notice(sale);
+                notify(app, &title, &body);
+                st.edit(|d| d.last_sale_soon_key = Some(sale.start.into()));
+            }
+        }
+    }
 
     // 2. Everything that needs no account, in parallel
     // On failure keep the last good items from that source (matched by id prefix) instead of blanking them.
@@ -819,8 +893,38 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, normalize_hidden, normalize_title, remember_big_deals, remember_wishlist, restore_by_prefix, safe_https, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, Acct, Deal, Free, Price, Prime, Settings, WishItem};
+    use super::{civil_from_days, days_from_civil, sale_soon_notice, sale_starting_tomorrow, SALES, clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, normalize_hidden, normalize_title, remember_big_deals, remember_wishlist, restore_by_prefix, safe_https, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, Acct, Deal, Free, Price, Prime, Settings, WishItem};
     use std::collections::HashSet;
+
+    #[test]
+    fn sale_calendar_matches_the_ui() {
+        let js = include_str!("../../renderer/app.js");
+        let block = &js[js.find("const SALES = [").unwrap()..];
+        let block = &block[..block.find("\n]").unwrap()];
+        for s in SALES {
+            let row = format!("{{ name: '{}', start: '{}', end: '{}'", s.name, s.start, s.end);
+            let line = block.lines().find(|l| l.contains(&row)).unwrap_or_else(|| panic!("{row} missing from app.js SALES"));
+            assert_eq!(line.contains("est: true"), s.est, "{row}: est differs");
+        }
+        assert_eq!(block.matches("{ name:").count(), SALES.len(), "app.js SALES has rows the Rust table lacks");
+    }
+
+    #[test]
+    fn sale_heads_up_only_the_day_before() {
+        assert_eq!(sale_starting_tomorrow((2026, 12, 16)).map(|s| s.start), Some("2026-12-17"));
+        assert!(sale_starting_tomorrow((2026, 12, 17)).is_none()); // already started
+        assert!(sale_starting_tomorrow((2026, 12, 15)).is_none());
+        assert!(sale_starting_tomorrow((2026, 10, 18)).is_none());
+        assert_eq!(sale_starting_tomorrow((2026, 9, 30)).map(|s| s.name), Some("Autumn Sale")); // month boundary
+        assert_eq!(days_from_civil((2026, 12, 31)) + 1, days_from_civil((2027, 1, 1))); // year boundary
+        for d in [-1, 0, 20_000, days_from_civil((2026, 12, 31)), days_from_civil((2028, 2, 29))] {
+            assert_eq!(days_from_civil(civil_from_days(d)), d);
+        }
+        assert_eq!(civil_from_days(0), (1970, 1, 1));
+        let winter = sale_starting_tomorrow((2026, 12, 16)).unwrap();
+        assert_eq!(sale_soon_notice(winter), ("Steam Winter Sale starts tomorrow".into(), "Dec 17 – Jan 4. Time to check your wishlist.".into()));
+        assert!(sale_soon_notice(SALES.last().unwrap()).1.starts_with("Expected to start tomorrow (Oct 7 – Oct 14"));
+    }
 
     #[test]
     fn tray_text_counts_like_the_badges() {
