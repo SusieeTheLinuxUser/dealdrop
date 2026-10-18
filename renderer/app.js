@@ -22,7 +22,7 @@ const DEFAULT_SETTINGS = {
 const UI_PREFS_KEY = 'dealdrop-ui'
 const UI_PREFS_DEFAULTS = {
   version: 1, page: 'free',
-  lists: { deals: { sort: 'discount', minDiscount: 0 }, storesales: { sort: 'discount', minDiscount: 0 }, wishlist: { sort: 'discount', onSaleOnly: false } },
+  lists: { deals: { sort: 'discount', minDiscount: 0, shop: '' }, storesales: { sort: 'discount', minDiscount: 0 }, wishlist: { sort: 'discount', onSaleOnly: false } },
 }
 
 function mergeUiPrefs (saved) {
@@ -34,6 +34,7 @@ function mergeUiPrefs (saved) {
     if (['discount', 'price', 'name'].includes(value?.sort)) prefs.lists[key].sort = value.sort
     if (key !== 'wishlist' && [0, 50, 75, 90].includes(value?.minDiscount)) prefs.lists[key].minDiscount = value.minDiscount
     if (key === 'wishlist' && typeof value?.onSaleOnly === 'boolean') prefs.lists[key].onSaleOnly = value.onSaleOnly
+    if (key === 'deals' && typeof value?.shop === 'string' && value.shop && value.shop.length <= 64) prefs.lists[key].shop = value.shop
   }
   return prefs
 }
@@ -48,7 +49,7 @@ function persistUiPrefs () {
   const { deals, storesales, wishlist } = state.listFilters
   try {
     localStorage.setItem(UI_PREFS_KEY, JSON.stringify({ version: 1, page: state.page, lists: {
-      deals: { sort: deals.sort, minDiscount: deals.minDiscount },
+      deals: { sort: deals.sort, minDiscount: deals.minDiscount, shop: deals.shop },
       storesales: { sort: storesales.sort, minDiscount: storesales.minDiscount },
       wishlist: { sort: wishlist.sort, onSaleOnly: wishlist.onSaleOnly },
     } }))
@@ -93,7 +94,7 @@ let shortcutsDialog = null
 let refreshAgeInterval = null
 
 function filteredSorted (items, key, fields = {}) {
-  const { query, sort, onSaleOnly, minDiscount = 0 } = state.listFilters[key]
+  const { query, sort, onSaleOnly, minDiscount = 0, shop = '' } = state.listFilters[key]
   const value = (item, field, defaultField) => fields[field] ? fields[field](item) : item[defaultField]
   const q = query.trim().toLocaleLowerCase()
   const discount = item => Number(value(item, 'discount', 'cut')) || 0
@@ -103,12 +104,19 @@ function filteredSorted (items, key, fields = {}) {
   }
   return items.filter(item => {
     const title = String(value(item, 'title', 'title') ?? '')
-    return (!q || title.toLocaleLowerCase().includes(q)) && discount(item) >= Math.max(minDiscount, onSaleOnly ? 1 : 0)
+    return (!q || title.toLocaleLowerCase().includes(q)) && (!shop || item.shop === shop) && discount(item) >= Math.max(minDiscount, onSaleOnly ? 1 : 0)
   }).sort((a, b) => {
     if (sort === 'price') return price(a) - price(b)
     if (sort === 'name') return String(value(a, 'title', 'title') ?? '').localeCompare(String(value(b, 'title', 'title') ?? ''))
     return discount(b) - discount(a)
   })
+}
+
+// [[shop, count], …] sorted by shop name, for the Hot deals store filter.
+function dealShops (deals) {
+  const counts = new Map()
+  for (const d of deals) if (d.shop) counts.set(d.shop, (counts.get(d.shop) || 0) + 1)
+  return [...counts].sort((a, b) => a[0].localeCompare(b[0]))
 }
 
 function announceStatus (message) {
@@ -147,7 +155,7 @@ function updateResultCount (key, visible, total) {
   const count = document.getElementById(`${key}-result-count`)
   if (!count) return
   const filters = state.listFilters[key]
-  const active = state.dataLoaded && (!!filters.query.trim() || !!filters.minDiscount || !!filters.onSaleOnly)
+  const active = state.dataLoaded && (!!filters.query.trim() || !!filters.minDiscount || !!filters.onSaleOnly || !!filters.shop)
   count.hidden = !active
   count.textContent = `${visible} of ${total}`
 }
@@ -159,7 +167,7 @@ function syncMinDiscount (key, controlId) {
   })
 }
 
-function bindListControls (key, inputId, sortId, render, { saleOnlyId, minDiscountId } = {}) {
+function bindListControls (key, inputId, sortId, render, { saleOnlyId, minDiscountId, shopId } = {}) {
   const input = document.getElementById(inputId)
   const sort = document.getElementById(sortId)
   let timer
@@ -169,6 +177,10 @@ function bindListControls (key, inputId, sortId, render, { saleOnlyId, minDiscou
     clearTimeout(timer); timer = setTimeout(update, 180)
   })
   sort.addEventListener('change', () => { state.listFilters[key].sort = sort.value; update() })
+  if (shopId) {
+    const shop = document.getElementById(shopId)
+    shop.addEventListener('change', () => { state.listFilters[key].shop = shop.value; update() })
+  }
   if (saleOnlyId) {
     const toggle = document.getElementById(saleOnlyId)
     toggle.addEventListener('click', () => {
@@ -199,6 +211,7 @@ function showFilterEmpty (emptyEl, key, inputId, minDiscountId, render, message,
     state.listFilters[key].query = ''
     if ('minDiscount' in state.listFilters[key]) state.listFilters[key].minDiscount = 0
     if ('onSaleOnly' in state.listFilters[key]) state.listFilters[key].onSaleOnly = false
+    if ('shop' in state.listFilters[key]) state.listFilters[key].shop = ''
     document.getElementById(inputId).value = ''
     if (minDiscountId) syncMinDiscount(key, minDiscountId)
     if (saleOnlyId) document.getElementById(saleOnlyId).setAttribute('aria-pressed', 'false')
@@ -753,6 +766,7 @@ function renderDeals () {
   const emptyEl = document.getElementById('empty-deals')
   const tsEl    = document.getElementById('lc-deals')
   document.getElementById('deals-sort').value = state.listFilters.deals.sort
+  syncDealsShop()
 
   emptyEl.classList.toggle('loading-state', !state.dataLoaded)
   list.innerHTML = ''
@@ -771,13 +785,25 @@ function renderDeals () {
   if (!items.length && !state.dataLoaded) {
     renderSkeletons(list, 'row')
     emptyEl.style.display = 'none'
-  } else if (!items.length && (state.listFilters.deals.query.trim() || state.listFilters.deals.minDiscount)) {
+  } else if (!items.length && (state.listFilters.deals.query.trim() || state.listFilters.deals.minDiscount || state.listFilters.deals.shop)) {
     showFilterEmpty(emptyEl, 'deals', 'deals-search', 'deals-discount-filters', renderDeals, 'No deals match.')
   } else if (!items.length) {
     emptyEl.replaceChildren(Object.assign(document.createElement('p'), { textContent: 'No deals could be loaded right now.' }))
   }
   items.forEach(d => list.appendChild(makeDealRow(d)))
   updateResultCount('deals', items.length, state.deals.length)
+}
+
+// Rebuilds the store options from the current deals; a store that has gone falls back to All.
+function syncDealsShop () {
+  const select = document.getElementById('deals-shop')
+  const filters = state.listFilters.deals
+  const shops = dealShops(state.deals)
+  if (state.dataLoaded && filters.shop && !shops.some(([shop]) => shop === filters.shop)) filters.shop = ''
+  select.replaceChildren(new Option('All stores', ''), ...shops.map(([shop, count]) => new Option(`${shop} (${count})`, shop)))
+  // Before the first data arrives keep the saved store selectable so it isn't lost.
+  if (filters.shop && !shops.length) select.append(new Option(filters.shop, filters.shop))
+  select.value = filters.shop
 }
 
 function makeDealRow (d) {
@@ -1226,7 +1252,7 @@ function resetSettings () {
     lastSaleTheme: SALE_THEMES[state.liveSale?.key] ? state.liveSale.key : '',
   })
   state.listFilters = {
-    deals: { query: '', sort: 'discount', minDiscount: 0 }, storesales: { query: '', sort: 'discount', minDiscount: 0 },
+    deals: { query: '', sort: 'discount', minDiscount: 0, shop: '' }, storesales: { query: '', sort: 'discount', minDiscount: 0 },
     wishlist: { query: '', sort: 'discount', onSaleOnly: false },
   }
   clearUiPrefs()
@@ -1461,7 +1487,7 @@ async function init () {
       applyTheme(); navigate('free', false)
     } finally { btn.disabled = false }
   })
-  bindListControls('deals', 'deals-search', 'deals-sort', renderDeals, { minDiscountId: 'deals-discount-filters' })
+  bindListControls('deals', 'deals-search', 'deals-sort', renderDeals, { minDiscountId: 'deals-discount-filters', shopId: 'deals-shop' })
   bindListControls('storesales', 'sales-search', 'sales-sort', renderStoreSales, { minDiscountId: 'sales-discount-filters' })
   bindListControls('wishlist', 'wishlist-search', 'wishlist-sort', renderWishlist, { saleOnlyId: 'wishlist-sale-only' })
 
