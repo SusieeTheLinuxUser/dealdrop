@@ -206,17 +206,16 @@ function makeCardActions (store, url, id, title) {
   const wrap     = document.createElement('div')
   wrap.className = 'card-actions'
   const ch = launcherOf(store)
-  const storeName = gameStoreName(store)
   if (ch) {
     const appBtn = document.createElement('button')
     appBtn.type = 'button'; appBtn.className = 'card-btn steam-btn'; appBtn.title = `Open in ${ch.label}`; appBtn.textContent = ch.label
-    appBtn.setAttribute('aria-label', `Open ${title} in ${ch.label} (${storeName})`)
+    appBtn.setAttribute('aria-label', `Open ${title} in ${ch.label}`)
     appBtn.addEventListener('click', e => { e.stopPropagation(); window.api.openInApp(store, url, id) })
     wrap.append(appBtn)
   }
   const webBtn = document.createElement('button')
   webBtn.type = 'button'; webBtn.className = 'card-btn'; webBtn.title = 'Open in browser'; webBtn.textContent = '🌐 Browser'
-  webBtn.setAttribute('aria-label', `Open ${title} on ${storeName} in browser`)
+  webBtn.setAttribute('aria-label', `Open ${title} in your browser`)
   webBtn.addEventListener('click', e => { e.stopPropagation(); openBrowser(url) })
   wrap.append(webBtn)
   return wrap
@@ -374,7 +373,7 @@ function makeIconBtns (w) {
   if (ch) {
     const appBtn = tmpl(`<button class="icon-btn" title="Open in launcher">${LOGO_PATH[w.store] ? logo(w.store) : escHtml(ch.label[0])}</button>`)
     appBtn.title = `Open in ${ch.label}`
-    appBtn.setAttribute('aria-label', `Open ${w.name} in ${ch.label} (${storeName})`)
+    appBtn.setAttribute('aria-label', `Open ${w.name} in ${ch.label}`)
     appBtn.addEventListener('click', e => { e.stopPropagation(); window.api.openInApp(w.store, w.url, w.id) })
     wrap.append(appBtn)
   }
