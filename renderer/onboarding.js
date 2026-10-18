@@ -159,8 +159,14 @@
       return
     }
     tourOverlay.classList.remove('tour-note-only'); spotlight.hidden = false; card.classList.remove('tour-card-centered')
-    target.scrollIntoView({block:'center', inline:'nearest'})
     const sidebar = target.closest('.sidebar')
+    if (sidebar) {
+      const box = sidebar.getBoundingClientRect()
+      let rect = target.getBoundingClientRect()
+      if (rect.top < box.top + 8) sidebar.scrollTop -= box.top + 8 - rect.top
+      else if (rect.bottom > box.bottom - 8) sidebar.scrollTop += rect.bottom - box.bottom + 8
+    }
+    target.scrollIntoView({block:'nearest', inline:'nearest'})
     const sidePlacement = sidebar && innerWidth - sidebar.getBoundingClientRect().right >= 280
     card.classList.toggle('tour-card-side', Boolean(sidePlacement))
     if (sidePlacement) card.classList.remove('tour-card-top')
