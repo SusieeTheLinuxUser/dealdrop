@@ -184,6 +184,9 @@ function makeWishlistSaleRow (w) {
   const p   = w.priceInfo
   const row = document.createElement('div')
   row.className = 'deal-row'
+  row.setAttribute('role', 'button')
+  row.tabIndex = 0
+  row.dataset.keyboardAction = 'activate'
   row.innerHTML = `
     <div>
       <div class="deal-name">${escHtml(w.name)}</div>
@@ -204,6 +207,9 @@ function makeWishlistRow (w) {
   const onSale = (p?.discount ?? 0) >= 20
   const row    = document.createElement('div')
   row.className = 'wishlist-row' + (onSale ? ' on-sale' : '')
+  row.setAttribute('role', 'button')
+  row.tabIndex = 0
+  row.dataset.keyboardAction = 'activate'
 
   const thumb = document.createElement('img')
   thumb.className = 'wishlist-thumb'
@@ -387,6 +393,9 @@ function renderDeals () {
 function makeDealRow (d) {
   const row = document.createElement('div')
   row.className = 'deal-row'
+  row.setAttribute('role', 'button')
+  row.tabIndex = 0
+  row.dataset.keyboardAction = 'activate'
   row.innerHTML = `
     <div>
       <div class="deal-name">${escHtml(d.title)}</div>
@@ -467,7 +476,10 @@ function renderSalesCalendar () {
   if (next) {
     const days = Math.ceil((new Date(next.start) - now) / 86400000)
     banner.style.cursor = 'pointer'
-    banner.onclick = () => openSale(next)
+    banner.setAttribute('role', 'button')
+    banner.tabIndex = 0
+    banner.dataset.keyboardAction = 'activate'
+    banner.dataset.openSaleIndex = String(SALES.indexOf(next))
     banner.innerHTML = `
       <div class="nsb-icon">${next.icon}</div>
       <div class="nsb-info">
@@ -479,6 +491,11 @@ function renderSalesCalendar () {
         <div class="nsb-lbl">days away</div>
       </div>`
   } else {
+    banner.style.cursor = ''
+    banner.removeAttribute('role')
+    banner.removeAttribute('tabindex')
+    delete banner.dataset.keyboardAction
+    delete banner.dataset.openSaleIndex
     banner.innerHTML = `<div class="nsb-icon">✅</div><div class="nsb-info"><div class="nsb-title">No upcoming sales found</div></div>`
   }
 
@@ -491,8 +508,11 @@ function renderSalesCalendar () {
     const isNext = s === next
     const item   = document.createElement('div')
     item.className = 'timeline-item clickable' + (isPast ? ' past' : '') + (isNext ? ' next' : '')
+    item.setAttribute('role', 'button')
+    item.tabIndex = 0
+    item.dataset.keyboardAction = 'activate'
+    item.dataset.openSaleIndex = String(SALES.indexOf(s))
     item.title = 'Open on Steam'
-    item.addEventListener('click', () => openSale(s))
     item.innerHTML = `
       <div class="tl-dot"></div>
       <span class="tl-name">
@@ -627,10 +647,14 @@ function toggleRows (con, rows, after) {
         <div class="setting-sub">${r.sub}</div>
       </div>
       <button class="toggle ${s[r.key] ? 'on' : ''}" data-key="${r.key}"></button>`
-    row.querySelector('.toggle').addEventListener('click', e => {
+    const toggle = row.querySelector('.toggle')
+    toggle.setAttribute('aria-label', r.label)
+    toggle.setAttribute('aria-pressed', String(Boolean(s[r.key])))
+    toggle.addEventListener('click', e => {
       const btn = e.currentTarget
       btn.classList.toggle('on')
       s[r.key] = btn.classList.contains('on')
+      btn.setAttribute('aria-pressed', String(s[r.key]))
       window.api.saveSettings(s)
       after?.()
     })
@@ -875,6 +899,19 @@ async function init () {
   document.addEventListener('click', e => {
     const a = e.target.closest('a[data-href]')
     if (a) { e.preventDefault(); window.api.openUrl(a.dataset.href) }
+  })
+  document.addEventListener('click', e => {
+    const target = e.target.closest?.('[data-open-sale-index]')
+    const sale = target && SALES[Number(target.dataset.openSaleIndex)]
+    if (sale) openSale(sale)
+  })
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ') return
+    const target = e.target
+    const row = target.closest?.('[data-keyboard-action="activate"]')
+    if (!row || (target !== row && target.closest?.('button, a, input, select, textarea'))) return
+    e.preventDefault()
+    row.click()
   })
   document.getElementById('btn-github')?.addEventListener('click', () => openBrowser(REPO))
   document.getElementById('btn-feedback')?.addEventListener('click', () => openBrowser(REPO + '/issues'))
