@@ -116,10 +116,10 @@ pub async fn get_json(url: &str) -> R<Value> {
     send(client().get(url)).await?.json().await.map_err(|e| e.to_string())
 }
 
-async fn get_json_browser(url: &str) -> R<Value> {
+async fn get_text_browser(url: &str) -> R<String> {
     send(client().get(url).header("User-Agent", UA_BROWSER).header("Accept", "application/json"))
         .await?
-        .json()
+        .text()
         .await
         .map_err(|e| e.to_string())
 }
@@ -312,40 +312,8 @@ fn appdetails_is_dlc(body: &str) -> Option<bool> {
 /// Paid apps at 100% off (`specials=1&maxprice=free`). Rows are HTML inside JSON.
 /// Id prefix `steam-ftk-` so a failure restore does not collide with `steam-{appid}`.
 pub async fn steam_free_to_keep() -> R<Vec<Free>> {
-    static ROW: OnceLock<Regex> = OnceLock::new();
-    static TITLE: OnceLock<Regex> = OnceLock::new();
-    static DISC: OnceLock<Regex> = OnceLock::new();
-    static FINAL: OnceLock<Regex> = OnceLock::new();
-    static ORIG: OnceLock<Regex> = OnceLock::new();
-    static CAPSULE: OnceLock<Regex> = OnceLock::new();
-    let row = re(r#"data-ds-appid="(\d+)""#, &ROW);
-    let title = re(r#"<span class="title">([^<]*)</span>"#, &TITLE);
-    let disc = re(r#"data-discount="(\d+)""#, &DISC);
-    let fin = re(r#"data-price-final="(\d+)""#, &FINAL);
-    let orig = re(r#"discount_original_price">([^<]+)<"#, &ORIG);
-    let capsule = re(r#"<img src="([^"]+)""#, &CAPSULE);
-
-    let v = get_json("https://store.steampowered.com/search/results/?query&start=0&count=50&specials=1&maxprice=free&infinite=1&cc=us&l=en&json=1").await?;
-    let html = v["results_html"].as_str().ok_or("no results_html")?;
-    let starts: Vec<_> = row.captures_iter(html).map(|c| (c.get(0).unwrap().start(), c[1].to_string())).collect();
-    let mut out = vec![];
-    for (n, (at, id)) in starts.iter().enumerate() {
-        let end = starts.get(n + 1).map_or(html.len(), |x| x.0);
-        let chunk = &html[*at..end];
-        let (Some(t), Some(d), Some(p)) = (title.captures(chunk), disc.captures(chunk), fin.captures(chunk)) else { continue };
-        // 100% off a listed original price: drops permanent free-to-play, which has no such pair.
-        if &d[1] != "100" || &p[1] != "0" || orig.captures(chunk).is_none() { continue; }
-        out.push(Free {
-            id: format!("steam-ftk-{id}"),
-            title: unescape(t[1].trim()),
-            source: "steam".into(),
-            url: format!("https://store.steampowered.com/app/{id}"),
-            image: capsule.captures(chunk).map(|c| c[1].to_string()),
-            app_id: Some(id.clone()),
-            kind: "free".into(),
-            ..Default::default()
-        });
-    }
+    let search = get_text("https://store.steampowered.com/search/results/?query&start=0&count=50&specials=1&maxprice=free&infinite=1&cc=us&l=en&json=1").await?;
+    let mut out = parse_steam_free_to_keep(&search)?;
     // Search HTML has no app type. Label DLC; a failed or skipped lookup leaves the name as it was.
     // These calls are sequential inside the poll's join, and each may use the full 8s timeout,
     // so the labeling pass stops after 12s total (an unlabeled row is the existing fallback).
@@ -371,24 +339,75 @@ pub async fn steam_free_to_keep() -> R<Vec<Free>> {
     Ok(out)
 }
 
-/// Steam's own "specials" search — the same list the store's Specials page
-/// shows. The JSON wraps server-rendered HTML rows, so we pick the fields out.
-pub async fn steam_sales() -> R<Vec<Deal>> {
+fn parse_steam_free_to_keep(body: &str) -> R<Vec<Free>> {
     static ROW: OnceLock<Regex> = OnceLock::new();
     static TITLE: OnceLock<Regex> = OnceLock::new();
     static DISC: OnceLock<Regex> = OnceLock::new();
     static FINAL: OnceLock<Regex> = OnceLock::new();
     static ORIG: OnceLock<Regex> = OnceLock::new();
+    static CAPSULE: OnceLock<Regex> = OnceLock::new();
+    let row = re(r#"data-ds-appid="(\d+)""#, &ROW);
+    let title = re(r#"<span class="title">([^<]*)</span>"#, &TITLE);
+    let disc = re(r#"data-discount="(\d+)""#, &DISC);
+    let fin = re(r#"data-price-final="(\d+)""#, &FINAL);
+    let orig = re(r#"discount_original_price">([^<]+)<"#, &ORIG);
+    let capsule = re(r#"<img src="([^"]+)""#, &CAPSULE);
+
+    let v: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+    let html = v["results_html"].as_str().ok_or("no results_html")?;
+    let starts: Vec<_> = row.captures_iter(html).map(|c| (c.get(0).unwrap().start(), c[1].to_string())).collect();
+    let mut out = vec![];
+    for (n, (at, id)) in starts.iter().enumerate() {
+        let end = starts.get(n + 1).map_or(html.len(), |x| x.0);
+        let chunk = &html[*at..end];
+        let (Some(t), Some(d), Some(p)) = (title.captures(chunk), disc.captures(chunk), fin.captures(chunk)) else { continue };
+        // 100% off a listed original price: drops permanent free-to-play, which has no such pair.
+        if &d[1] != "100" || &p[1] != "0" || orig.captures(chunk).is_none() { continue; }
+        out.push(Free {
+            id: format!("steam-ftk-{id}"),
+            title: unescape(t[1].trim()),
+            source: "steam".into(),
+            url: format!("https://store.steampowered.com/app/{id}"),
+            image: capsule.captures(chunk).map(|c| c[1].to_string()),
+            app_id: Some(id.clone()),
+            kind: "free".into(),
+            ..Default::default()
+        });
+    }
+    Ok(out)
+}
+
+/// Steam's own "specials" search — the same list the store's Specials page
+/// shows. The JSON wraps server-rendered HTML rows, so we pick the fields out.
+pub async fn steam_sales() -> R<Vec<Deal>> {
+    let search = get_text("https://store.steampowered.com/search/results/?query&start=0&count=50&specials=1&infinite=1&cc=us&l=en&json=1").await?;
+    let mut out = parse_steam_sales(&search)?;
+    // Replace the tiny search capsules with proper header art where we can
+    let ids: Vec<String> = out.iter().filter_map(|d| d.app_id.clone()).collect();
+    if let Ok(items) = steam_items(&ids).await {
+        for d in &mut out {
+            if let Some(i) = d.app_id.as_ref().and_then(|a| items.get(a)) { d.image = Some(i.image.clone()); }
+        }
+    }
+    Ok(out)
+}
+
+fn parse_steam_sales(body: &str) -> R<Vec<Deal>> {
+    static ROW: OnceLock<Regex> = OnceLock::new();
+    static TITLE: OnceLock<Regex> = OnceLock::new();
+    static DISC: OnceLock<Regex> = OnceLock::new();
+    static FINAL: OnceLock<Regex> = OnceLock::new();
+    static ORIG: OnceLock<Regex> = OnceLock::new();
+    static CAPSULE: OnceLock<Regex> = OnceLock::new();
     let row = re(r#"data-ds-appid="(\d+)""#, &ROW);
     let title = re(r#"<span class="title">([^<]*)</span>"#, &TITLE);
     let disc = re(r#"data-discount="(\d+)""#, &DISC);
     let fin = re(r#"data-price-final="(\d+)""#, &FINAL);
     let orig = re(r#"discount_original_price">\$?([\d.,]+)<"#, &ORIG);
-
-    let v = get_json("https://store.steampowered.com/search/results/?query&start=0&count=50&specials=1&infinite=1&cc=us&l=en&json=1").await?;
-    let html = v["results_html"].as_str().ok_or("no results_html")?;
-    static CAPSULE: OnceLock<Regex> = OnceLock::new();
     let capsule = re(r#"<img src="([^"]+)""#, &CAPSULE);
+
+    let v: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+    let html = v["results_html"].as_str().ok_or("no results_html")?;
     let mut out = vec![];
     // Each result row starts at its anchor tag; chunk on the appid attribute.
     let starts: Vec<_> = row.captures_iter(html).map(|c| (c.get(0).unwrap().start(), c[1].to_string())).collect();
@@ -411,13 +430,6 @@ pub async fn steam_sales() -> R<Vec<Deal>> {
             cut, price, regular,
             app_id: Some(id.clone()),
         });
-    }
-    // Replace the tiny search capsules with proper header art where we can
-    let ids: Vec<String> = out.iter().filter_map(|d| d.app_id.clone()).collect();
-    if let Ok(items) = steam_items(&ids).await {
-        for d in &mut out {
-            if let Some(i) = d.app_id.as_ref().and_then(|a| items.get(a)) { d.image = Some(i.image.clone()); }
-        }
     }
     Ok(out)
 }
@@ -476,7 +488,12 @@ pub async fn steam_profile(steam_id: &str) -> (String, Option<String>) {
 // ─── Free games: Epic + GamerPower ────────────────────────────────────────────
 
 pub async fn epic_free() -> R<Vec<Free>> {
-    let v = get_json_browser("https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions?locale=en-US&country=US&allowCountries=US").await?;
+    let body = get_text_browser("https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions?locale=en-US&country=US&allowCountries=US").await?;
+    parse_epic_free(&body)
+}
+
+fn parse_epic_free(body: &str) -> R<Vec<Free>> {
+    let v: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
     Ok(v["data"]["Catalog"]["searchStore"]["elements"].as_array().into_iter().flatten()
         .filter_map(|g| {
             let offer = &g["promotions"]["promotionalOffers"][0]["promotionalOffers"][0];
@@ -515,7 +532,12 @@ fn gp_title(raw: &str) -> String {
 }
 
 pub async fn gamerpower() -> R<Vec<Free>> {
-    let v = get_json("https://www.gamerpower.com/api/giveaways?platform=pc&type=game").await?;
+    let body = get_text("https://www.gamerpower.com/api/giveaways?platform=pc&type=game").await?;
+    parse_gamerpower(&body)
+}
+
+fn parse_gamerpower(body: &str) -> R<Vec<Free>> {
+    let v: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
     Ok(v.as_array().into_iter().flatten()
         .filter(|g| g["status"].as_str().is_none_or(|st| st.eq_ignore_ascii_case("active")))
         .filter_map(|g| {
@@ -540,7 +562,12 @@ pub async fn gamerpower() -> R<Vec<Free>> {
 // ─── GOG sales ────────────────────────────────────────────────────────────────
 
 pub async fn gog_sales() -> R<Vec<Deal>> {
-    let v = get_json("https://catalog.gog.com/v1/catalog?limit=48&order=desc:trending&discounted=eq:true&productType=in:game,pack&page=1&countryCode=US&locale=en-US&currencyCode=USD").await?;
+    let body = get_text("https://catalog.gog.com/v1/catalog?limit=48&order=desc:trending&discounted=eq:true&productType=in:game,pack&page=1&countryCode=US&locale=en-US&currencyCode=USD").await?;
+    parse_gog_sales(&body)
+}
+
+fn parse_gog_sales(body: &str) -> R<Vec<Deal>> {
+    let v: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
     Ok(v["products"].as_array().into_iter().flatten().filter_map(|p| {
         let price = f(&p["price"]["finalMoney"]["amount"]);
         let regular = f(&p["price"]["baseMoney"]["amount"]);
@@ -568,11 +595,16 @@ async fn cheapshark_stores() -> HashMap<String, String> {
 
 /// No key needed: CheapShark aggregates ~30 stores and sorts by savings.
 pub async fn cheapshark_deals() -> R<Vec<Deal>> {
-    let (stores, v) = futures::join!(
+    let (stores, body) = futures::join!(
         cheapshark_stores(),
-        get_json("https://www.cheapshark.com/api/1.0/deals?sortBy=Savings&onSale=1&pageSize=60&lowerPrice=1&metacritic=60&steamRating=70")
+        get_text("https://www.cheapshark.com/api/1.0/deals?sortBy=Savings&onSale=1&pageSize=60&lowerPrice=1&metacritic=60&steamRating=70")
     );
-    Ok(v?.as_array().into_iter().flatten().filter_map(|d| {
+    parse_cheapshark_deals(&body?, &stores)
+}
+
+fn parse_cheapshark_deals(body: &str, stores: &HashMap<String, String>) -> R<Vec<Deal>> {
+    let v: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+    Ok(v.as_array().into_iter().flatten().filter_map(|d| {
         let id = s(&d["dealID"])?;
         Some(Deal {
             url: format!("https://www.cheapshark.com/redirect?dealID={id}"),
@@ -708,6 +740,152 @@ mod unit {
         assert_eq!(super::gp_title("Agent A: A puzzle in disguise (Epic Games) Giveaway"), "Agent A: A puzzle in disguise");
         assert_eq!(super::gp_title("Bad Cheese (Epic Games)"), "Bad Cheese");
         assert_eq!(super::gp_title("Foo (Steam) Giveaway"), "Foo");
+    }
+
+    fn search_body(html: &str) -> String {
+        serde_json::json!({"results_html": html}).to_string()
+    }
+
+    #[test]
+    fn steam_free_to_keep_parses_search_html() {
+        let html = r#"
+<a data-ds-appid="1091500"><img src="https://cdn.example/c.jpg"><span class="title">Hades &amp; Co </span>
+<div data-price-final="0"><div data-discount="100"><div class="discount_original_price">$9.99</div></div></div></a>
+<a data-ds-appid="10"><span class="title">Half Off</span><div data-price-final="500" data-discount="50"><div class="discount_original_price">$10.00</div></div></a>
+<a data-ds-appid="20"><span class="title">Free To Play</span><div data-discount="100" data-price-final="0"></div></a>"#;
+        let v = super::parse_steam_free_to_keep(&search_body(html)).unwrap();
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].id, "steam-ftk-1091500");
+        assert_eq!(v[0].title, "Hades & Co");
+        assert_eq!(v[0].app_id.as_deref(), Some("1091500"));
+        assert_eq!(v[0].source, "steam");
+        assert_eq!(v[0].kind, "free");
+        assert_eq!(v[0].url, "https://store.steampowered.com/app/1091500");
+        assert_eq!(v[0].image.as_deref(), Some("https://cdn.example/c.jpg"));
+        assert!(v[0].end_date.is_none());
+        assert!(super::parse_steam_free_to_keep("{}").is_err());
+        assert!(super::parse_steam_free_to_keep("not json").is_err());
+    }
+
+    #[test]
+    fn steam_sales_parses_search_html() {
+        let html = r#"
+<a data-ds-appid="1091500"><img src="https://cdn.example/c.jpg"><span class="title">Hades &amp; Co</span>
+<div data-discount="50" data-price-final="50000"><div class="discount_original_price">$1,000.00</div></div></a>
+<a data-ds-appid="2"><span class="title">Fallback</span><div data-discount="25" data-price-final="750"></div></a>
+<a data-ds-appid="1"><span class="title">No Cut</span><div data-discount="0" data-price-final="100"></div></a>"#;
+        let v = super::parse_steam_sales(&search_body(html)).unwrap();
+        assert_eq!(v.len(), 2);
+        assert_eq!(v[0].id, "steam-1091500");
+        assert_eq!(v[0].title, "Hades & Co");
+        assert_eq!(v[0].shop, "Steam");
+        assert_eq!(v[0].cut, 50);
+        assert_eq!(v[0].price, 500.0);
+        assert_eq!(v[0].regular, 1000.0);
+        assert_eq!(v[0].app_id.as_deref(), Some("1091500"));
+        assert_eq!(v[0].url, "https://store.steampowered.com/app/1091500");
+        assert_eq!(v[0].image.as_deref(), Some("https://cdn.example/c.jpg"));
+        assert_eq!(v[1].id, "steam-2");
+        assert_eq!(v[1].title, "Fallback");
+        assert_eq!(v[1].cut, 25);
+        assert_eq!(v[1].price, 7.5);
+        assert_eq!(v[1].regular, 10.0);
+        assert!(v[1].image.is_none());
+        assert!(super::parse_steam_sales("{}").is_err());
+        assert!(super::parse_steam_sales("not json").is_err());
+    }
+
+    #[test]
+    fn gog_sales_parses_catalog() {
+        let body = r#"{
+            "products": [
+                {"id":"1454315831","title":"The Witcher 3","storeLink":"https://www.gog.com/en/game/the_witcher_3_wild_hunt","coverHorizontal":"https://images.gog.com/cover.jpg","price":{"finalMoney":{"amount":"5.00"},"baseMoney":{"amount":"10.00"},"discount":"-50%"}},
+                {"id":"999","title":"No Link","price":{"finalMoney":{"amount":"1.00"},"baseMoney":{"amount":"2.00"},"discount":"-50%"}}
+            ]
+        }"#;
+        let v = super::parse_gog_sales(body).unwrap();
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].id, "gog-1454315831");
+        assert_eq!(v[0].title, "The Witcher 3");
+        assert_eq!(v[0].shop, "GOG");
+        assert_eq!(v[0].url, "https://www.gog.com/en/game/the_witcher_3_wild_hunt");
+        assert_eq!(v[0].image.as_deref(), Some("https://images.gog.com/cover.jpg"));
+        assert_eq!(v[0].cut, 50);
+        assert_eq!(v[0].price, 5.0);
+        assert_eq!(v[0].regular, 10.0);
+        assert!(v[0].app_id.is_none());
+        assert!(super::parse_gog_sales("nope").is_err());
+        assert!(super::parse_gog_sales("{}").unwrap().is_empty());
+    }
+
+    #[test]
+    fn epic_free_parses_promotions() {
+        let body = r#"{
+            "data": {"Catalog": {"searchStore": {"elements": [
+                {"title":"Control","id":"offer1","productSlug":"control/home",
+                 "promotions":{"promotionalOffers":[{"promotionalOffers":[{"endDate":"2026-10-22T15:00:00.000Z","discountSetting":{"discountPercentage":0}}]}]},
+                 "keyImages":[{"type":"Thumbnail","url":"https://cdn.example/thumb.jpg"}]},
+                {"title":"Not Free","id":"offer2",
+                 "promotions":{"promotionalOffers":[{"promotionalOffers":[{"discountSetting":{"discountPercentage":20}}]}]}}
+            ]}}}
+        }"#;
+        let v = super::parse_epic_free(body).unwrap();
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].id, "epic-offer1");
+        assert_eq!(v[0].title, "Control");
+        assert_eq!(v[0].source, "epic");
+        assert_eq!(v[0].kind, "free");
+        assert_eq!(v[0].end_date.as_deref(), Some("2026-10-22T15:00:00.000Z"));
+        assert_eq!(v[0].url, "https://store.epicgames.com/p/control");
+        assert_eq!(v[0].image.as_deref(), Some("https://cdn.example/thumb.jpg"));
+        assert!(v[0].app_id.is_none());
+        assert!(super::parse_epic_free("nope").is_err());
+        assert!(super::parse_epic_free("{}").unwrap().is_empty());
+    }
+
+    #[test]
+    fn gamerpower_parses_giveaways() {
+        let body = r#"[
+            {"id":3100,"title":"Hades (Steam) Giveaway","status":"Active","platforms":"PC, Steam","end_date":"2026-10-24 23:59:59","steam_appid":1145360,"open_giveaway_url":"https://www.gamerpower.com/open/hades","thumbnail":"https://www.gamerpower.com/thumb.jpg"},
+            {"id":3101,"title":"Old (Epic Games)","status":"Ended","platforms":"PC, Epic Games Store","end_date":"N/A"}
+        ]"#;
+        let v = super::parse_gamerpower(body).unwrap();
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].id, "gp-3100");
+        assert_eq!(v[0].title, "Hades");
+        assert_eq!(v[0].source, "steam");
+        assert_eq!(v[0].app_id.as_deref(), Some("1145360"));
+        assert_eq!(v[0].end_date.as_deref(), Some("2026-10-24 23:59:59"));
+        assert_eq!(v[0].url, "https://www.gamerpower.com/open/hades");
+        assert_eq!(v[0].image.as_deref(), Some("https://www.gamerpower.com/thumb.jpg"));
+        assert_eq!(v[0].kind, "free");
+        assert!(super::parse_gamerpower("nope").is_err());
+        assert!(super::parse_gamerpower(r#"{"status":0}"#).unwrap().is_empty());
+    }
+
+    #[test]
+    fn cheapshark_parses_deals() {
+        let body = r#"[
+            {"dealID":"AbC","title":"Hades","storeID":"1","salePrice":"5.00","normalPrice":"20.00","savings":"75.6","steamAppID":"1145360","thumb":"https://cdn.example/t.jpg"},
+            {"dealID":"XyZ","title":"Loose","storeID":"9","salePrice":"3.00","normalPrice":"3.00","savings":"0","steamAppID":"0"}
+        ]"#;
+        let stores = std::collections::HashMap::from([("1".into(), "Steam".into())]);
+        let v = super::parse_cheapshark_deals(body, &stores).unwrap();
+        assert_eq!(v.len(), 2);
+        assert_eq!(v[0].id, "AbC");
+        assert_eq!(v[0].title, "Hades");
+        assert_eq!(v[0].shop, "Steam");
+        assert_eq!(v[0].url, "https://www.cheapshark.com/redirect?dealID=AbC");
+        assert_eq!(v[0].cut, 76);
+        assert_eq!(v[0].price, 5.0);
+        assert_eq!(v[0].regular, 20.0);
+        assert_eq!(v[0].app_id.as_deref(), Some("1145360"));
+        assert_eq!(v[0].image.as_deref(), Some("https://cdn.example/t.jpg"));
+        assert_eq!(v[1].shop, "store");
+        assert_eq!(v[1].app_id, None);
+        assert_eq!(v[1].url, "https://www.cheapshark.com/redirect?dealID=XyZ");
+        assert!(super::parse_cheapshark_deals("nope", &stores).is_err());
+        assert!(super::parse_cheapshark_deals("{}", &stores).unwrap().is_empty());
     }
 
     #[test]

@@ -185,8 +185,7 @@ async fn send_auth(url: &str, access: &str) -> R<Value> {
 
 pub async fn gog_wishlist(access: &str) -> R<Vec<WishItem>> {
     let v = send_auth("https://embed.gog.com/user/wishlist.json", access).await?;
-    let ids: Vec<String> = v["wishlist"].as_object().into_iter().flatten()
-        .filter(|(_, on)| **on != false && **on != 0).map(|(k, _)| k.clone()).collect();
+    let ids = parse_gog_wishlist_ids(&v);
     if ids.is_empty() { return Ok(vec![]); }
     let (_, country, currency, _) = gog_user(access).await;
 
@@ -197,30 +196,40 @@ pub async fn gog_wishlist(access: &str) -> R<Vec<WishItem>> {
         let price_url = format!("https://api.gog.com/products/prices?ids={list}&countryCode={country}&currency={currency}");
         let (info, prices) = futures::join!(get_json(&info_url), get_json(&price_url));
         let prices = prices.unwrap_or(Value::Null);
-        for p in info?.as_array().into_iter().flatten() {
-            let id = p["id"].as_u64().map(|n| n.to_string()).unwrap_or_default();
-            let price = prices["_embedded"]["items"].as_array().into_iter().flatten()
-                .find(|i| i["_embedded"]["product"]["id"].as_u64().map(|n| n.to_string()).as_deref() == Some(&id))
-                .and_then(|i| {
-                    let pr = &i["_embedded"]["prices"][0];
-                    let cents = |k: &str| pr[k].as_str()?.split_whitespace().next()?.parse::<f64>().ok().map(|c| c / 100.0);
-                    let (base, fin) = (cents("basePrice")?, cents("finalPrice")?);
-                    Some(Price {
-                        discount: if base > 0.0 { ((1.0 - fin / base) * 100.0).round() as u32 } else { 0 },
-                        fin, initial: base,
-                        formatted: Some(if fin == 0.0 { "Free".into() } else { format!("${fin:.2}") }),
-                    })
-                });
-            out.push(WishItem {
-                store: "gog".into(),
-                url: format!("https://www.gog.com/en/game/{}", p["slug"].as_str().unwrap_or_default()),
-                image: p["images"]["logo2x"].as_str().map(|u| format!("https:{u}")),
-                name: p["title"].as_str().unwrap_or("GOG game").into(),
-                id, app_id: None, price_info: price, cheapest: None,
-            });
-        }
+        let info = info?;
+        out.extend(parse_gog_wishlist_products(&info, &prices));
     }
     Ok(out)
+}
+
+fn parse_gog_wishlist_ids(v: &Value) -> Vec<String> {
+    v["wishlist"].as_object().into_iter().flatten()
+        .filter(|(_, on)| **on != false && **on != 0).map(|(k, _)| k.clone()).collect()
+}
+
+fn parse_gog_wishlist_products(products: &Value, prices: &Value) -> Vec<WishItem> {
+    products.as_array().into_iter().flatten().map(|p| {
+        let id = p["id"].as_u64().map(|n| n.to_string()).unwrap_or_default();
+        let price = prices["_embedded"]["items"].as_array().into_iter().flatten()
+            .find(|i| i["_embedded"]["product"]["id"].as_u64().map(|n| n.to_string()).as_deref() == Some(&id))
+            .and_then(|i| {
+                let pr = &i["_embedded"]["prices"][0];
+                let cents = |k: &str| pr[k].as_str()?.split_whitespace().next()?.parse::<f64>().ok().map(|c| c / 100.0);
+                let (base, fin) = (cents("basePrice")?, cents("finalPrice")?);
+                Some(Price {
+                    discount: if base > 0.0 { ((1.0 - fin / base) * 100.0).round() as u32 } else { 0 },
+                    fin, initial: base,
+                    formatted: Some(if fin == 0.0 { "Free".into() } else { format!("${fin:.2}") }),
+                })
+            });
+        WishItem {
+            store: "gog".into(),
+            url: format!("https://www.gog.com/en/game/{}", p["slug"].as_str().unwrap_or_default()),
+            image: p["images"]["logo2x"].as_str().map(|u| format!("https:{u}")),
+            name: p["title"].as_str().unwrap_or("GOG game").into(),
+            id, app_id: None, price_info: price, cheapest: None,
+        }
+    }).collect()
 }
 
 // ─── Epic Games ───────────────────────────────────────────────────────────────
@@ -361,24 +370,110 @@ pub async fn epic_wishlist(access: &str) -> R<Vec<WishItem>> {
         ("https://store.epicgames.com/graphql", EPIC_UA_BROWSER),
     ] {
         match epic_gql(url, ua, Some(access), &q, json!({})).await {
-            Ok(v) if v["data"]["Wishlist"]["wishlistItems"]["elements"].is_array() => {
-                return Ok(v["data"]["Wishlist"]["wishlistItems"]["elements"].as_array().unwrap().iter().filter_map(|e| {
-                    let o = &e["offer"];
-                    Some(WishItem {
-                        store: "epic".into(),
-                        id: e["offerId"].as_str()?.into(),
-                        name: o["title"].as_str()?.into(),
-                        url: epic_page(o),
-                        image: epic_image(o),
-                        price_info: epic_price(o),
-                        app_id: None,
-                        cheapest: None,
-                    })
-                }).collect());
-            }
-            Ok(_) => last = "unexpected wishlist response".into(),
+            Ok(v) => match parse_epic_wishlist(&v) {
+                Ok(items) => return Ok(items),
+                Err(e) => last = e,
+            },
             Err(e) => last = e,
         }
     }
     Err(format!("Epic wishlist unavailable ({last})"))
+}
+
+fn parse_epic_wishlist(v: &Value) -> R<Vec<WishItem>> {
+    let elements = v["data"]["Wishlist"]["wishlistItems"]["elements"].as_array()
+        .ok_or("unexpected wishlist response")?;
+    Ok(elements.iter().filter_map(|e| {
+        let o = &e["offer"];
+        Some(WishItem {
+            store: "epic".into(),
+            id: e["offerId"].as_str()?.into(),
+            name: o["title"].as_str()?.into(),
+            url: epic_page(o),
+            image: epic_image(o),
+            price_info: epic_price(o),
+            app_id: None,
+            cheapest: None,
+        })
+    }).collect())
+}
+
+#[cfg(test)]
+mod unit {
+    use serde_json::json;
+
+    #[test]
+    fn gog_wishlist_ids_skip_off_entries() {
+        let v = json!({"wishlist": {"10": true, "20": false, "30": 0, "40": 1}});
+        let mut ids = super::parse_gog_wishlist_ids(&v);
+        ids.sort();
+        assert_eq!(ids, vec!["10".to_string(), "40".to_string()]);
+        assert!(super::parse_gog_wishlist_ids(&json!({})).is_empty());
+        assert!(super::parse_gog_wishlist_ids(&json!({"wishlist": []})).is_empty());
+    }
+
+    #[test]
+    fn gog_wishlist_parses_products_and_prices() {
+        let products = json!([
+            {"id": 1454315831, "title": "The Witcher 3", "slug": "the_witcher_3_wild_hunt", "images": {"logo2x": "//images.gog.com/logo.jpg"}},
+            {"id": 2, "title": "Unpriced", "slug": "unpriced"}
+        ]);
+        let prices = json!({"_embedded": {"items": [{"_embedded": {
+            "product": {"id": 1454315831},
+            "prices": [{"basePrice": "1000 USD", "finalPrice": "500 USD"}]
+        }}]}});
+        let v = super::parse_gog_wishlist_products(&products, &prices);
+        assert_eq!(v.len(), 2);
+        assert_eq!(v[0].store, "gog");
+        assert_eq!(v[0].id, "1454315831");
+        assert_eq!(v[0].name, "The Witcher 3");
+        assert_eq!(v[0].url, "https://www.gog.com/en/game/the_witcher_3_wild_hunt");
+        assert_eq!(v[0].image.as_deref(), Some("https://images.gog.com/logo.jpg"));
+        assert!(v[0].app_id.is_none());
+        let p = v[0].price_info.as_ref().unwrap();
+        assert_eq!(p.discount, 50);
+        assert_eq!(p.fin, 5.0);
+        assert_eq!(p.initial, 10.0);
+        assert_eq!(p.formatted.as_deref(), Some("$5.00"));
+        assert!(v[1].price_info.is_none());
+        assert_eq!(v[1].name, "Unpriced");
+        assert!(super::parse_gog_wishlist_products(&json!({}), &json!(null)).is_empty());
+    }
+
+    #[test]
+    fn epic_wishlist_parses_elements() {
+        let v = json!({"data": {"Wishlist": {"wishlistItems": {"elements": [
+            {
+                "offerId": "offer1",
+                "offer": {
+                    "title": "Hades",
+                    "productSlug": "hades/home",
+                    "keyImages": [
+                        {"type": "Thumbnail", "url": "https://cdn.example/thumb.jpg"},
+                        {"type": "OfferImageWide", "url": "https://cdn.example/wide.jpg"}
+                    ],
+                    "price": {"totalPrice": {
+                        "discountPrice": 500, "originalPrice": 1000,
+                        "currencyInfo": {"decimals": 2},
+                        "fmtPrice": {"discountPrice": "$5.00"}
+                    }}
+                }
+            },
+            {"offer": {"title": "No Id"}}
+        ]}}}});
+        let rows = super::parse_epic_wishlist(&v).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].store, "epic");
+        assert_eq!(rows[0].id, "offer1");
+        assert_eq!(rows[0].name, "Hades");
+        assert_eq!(rows[0].url, "https://store.epicgames.com/en-US/p/hades");
+        assert_eq!(rows[0].image.as_deref(), Some("https://cdn.example/wide.jpg"));
+        let p = rows[0].price_info.as_ref().unwrap();
+        assert_eq!(p.discount, 50);
+        assert_eq!(p.fin, 5.0);
+        assert_eq!(p.initial, 10.0);
+        assert_eq!(p.formatted.as_deref(), Some("$5.00"));
+        assert!(super::parse_epic_wishlist(&json!({})).is_err());
+        assert!(super::parse_epic_wishlist(&json!({"data": {"Wishlist": {"wishlistItems": {"elements": []}}}})).unwrap().is_empty());
+    }
 }
