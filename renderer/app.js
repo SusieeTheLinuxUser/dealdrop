@@ -316,6 +316,7 @@ function renderWishlist () {
   const controls = $('wishlist-controls'), search = $('wishlist-search'), sort = $('wishlist-sort')
   const saleOnly = $('wishlist-sale-only'), filters = state.listFilters.wishlist
 
+  emptyEl.classList.toggle('loading-state', !state.dataLoaded)
   updateBadges()
   if ($('lc-wishlist')) $('lc-wishlist').textContent = fmtChecked(state.lastChecked)
   const hide = (...els) => els.forEach(e => { if (e) e.style.display = 'none' })
@@ -564,6 +565,7 @@ function renderFreeGames () {
   const emptyEl   = document.getElementById('empty-free')
   const tsEl      = document.getElementById('lc-free')
 
+  emptyEl.classList.toggle('loading-state', !state.dataLoaded)
   updateBadges()
   gridFree.innerHTML = ''
   gridWknd.innerHTML = ''
@@ -633,6 +635,7 @@ function renderDeals () {
   const emptyEl = document.getElementById('empty-deals')
   const tsEl    = document.getElementById('lc-deals')
 
+  emptyEl.classList.toggle('loading-state', !state.dataLoaded)
   list.innerHTML = ''
   if (tsEl) tsEl.textContent = fmtChecked(state.lastChecked)
 
@@ -687,6 +690,7 @@ function renderStoreSales () {
   const emptyEl = document.getElementById('empty-storesales')
   document.getElementById('lc-storesales').textContent = fmtChecked(state.lastChecked)
 
+  emptyEl.classList.toggle('loading-state', !state.dataLoaded)
   renderTabList(tabs, Object.keys(STORES).map(s => ({key:s, text:`${STORES[s]} (${state.sales[s]?.length ?? 0})`})),
     state.salesTab, 'Stores', s => { state.salesTab = s; renderStoreSales() })
 
