@@ -4,6 +4,7 @@ All notable changes to DealDrop are documented in this file.
 
 ## [Unreleased]
 - Fixed: refreshing an Epic sign-in no longer renames the account to "Epic user" or drops the refresh token when Epic leaves them out of the response (which forced a new sign-in later).
+- Wishlist games that went on sale since you last looked are tagged "New", with a dot on the Wishlist sidebar item until you've looked; a game that goes back to full price and sells again counts as new again.
 - A notification the day before a Steam major sale starts ("Steam Winter Sale starts tomorrow"); toggle in Settings → Notifications.
 - Daylight theme: all text meets WCAG AA contrast (FREE, weekend and discount tags, cheaper-store prices, Steam badges, hints, counts and dates are a little darker).
 - Search everything with Ctrl+K (⌘K on macOS): one box finds games across Free now, Store sales, Hot deals and Wishlist; Enter jumps to the game on its page.

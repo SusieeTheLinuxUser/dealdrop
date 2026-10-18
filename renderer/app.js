@@ -86,9 +86,9 @@ function saveClaimed () {
   try { localStorage.setItem(CLAIMED_KEY, JSON.stringify(state.claimed)) } catch {}
 }
 
-// Ids already shown on Hot deals / Store sales; anything else gets a "New" tag (UI-only, like claimed)
+// Ids already shown on Hot deals / Store sales / Wishlist; anything else gets a "New" tag (UI-only, like claimed)
 const SEEN_KEY = 'dealdrop-seen'
-const SEEN_PAGES = ['deals', 'storesales']
+const SEEN_PAGES = ['deals', 'storesales', 'wishlist']
 function parseSeen (raw) {
   let saved = null
   try { saved = JSON.parse(raw) } catch {}
@@ -101,9 +101,11 @@ function newIds (ids, seen) {
   return new Set(ids.filter(id => !old.has(id)))
 }
 // The seen set becomes exactly the current ids so it can't grow forever; an empty list may be a failed load, so keep the old set then
-function mergeSeen (seen, page, ids) {
-  return ids.length ? { ...seen, [page]: [...new Set(ids)] } : seen
+function mergeSeen (seen, page, ids, loaded = ids.length > 0) {
+  return loaded ? { ...seen, [page]: [...new Set(ids)] } : seen
 }
+// The discount is part of the key, so a game that sells again after going back to full price is new again
+const wishlistKey = w => `${w.store}:${w.id}:${w.priceInfo?.discount ?? 0}`
 function readSeen () {
   try { return parseSeen(localStorage.getItem(SEEN_KEY)) } catch { return parseSeen(null) }
 }
@@ -704,9 +706,10 @@ function renderWishlist () {
   listSale.innerHTML = ''; listAll.innerHTML = ''
   const onSale = visibleItems.filter(w => (w.priceInfo?.discount ?? 0) >= 20)
   onSaleWrap.style.display = onSale.length ? 'block' : 'none'
-  onSale.forEach(w => listSale.appendChild(makeWishlistSaleRow(w)))
+  const fresh = unseen('wishlist')
+  onSale.forEach(w => listSale.appendChild(makeWishlistSaleRow(w, fresh.has(wishlistKey(w)))))
   allWrap.style.display = 'block'
-  visibleItems.forEach(w => listAll.appendChild(makeWishlistRow(w)))
+  visibleItems.forEach(w => listAll.appendChild(makeWishlistRow(w, fresh.has(wishlistKey(w)))))
   panel.style.display = state.selectedWishlistDeal && visibleItems.some(w => w.store === 'steam' && String(w.appId) === String(state.selectedWishlistDeal.appId)) ? 'block' : 'none'
   renderWishlistDealPanel()
 }
@@ -752,7 +755,9 @@ function wishlistLowestTag (w) {
     : ''
 }
 
-function makeWishlistSaleRow (w) {
+const NEW_TAG = ' <span class="tag-new" aria-hidden="true">New</span><span class="sr-only"> New.</span>'
+
+function makeWishlistSaleRow (w, isNew = false) {
   const p   = w.priceInfo
   const row = document.createElement('div')
   row.className = 'deal-row'
@@ -762,7 +767,7 @@ function makeWishlistSaleRow (w) {
   main.innerHTML = `
     <div>
       <div class="deal-name">${escHtml(w.name)}</div>
-      <div class="deal-store">${storeTag(w.store)}${w.cheapest ? `<span class="cheapest-tag">↘ ${escHtml(w.cheapest.store)} ${fmt$(w.cheapest.price)}</span>` : ''}${wishlistLowestTag(w)}</div>
+      <div class="deal-store">${storeTag(w.store)}${w.cheapest ? `<span class="cheapest-tag">↘ ${escHtml(w.cheapest.store)} ${fmt$(w.cheapest.price)}</span>` : ''}${isNew ? NEW_TAG : ''}${wishlistLowestTag(w)}</div>
     </div>
     <span class="sr-only">${escHtml(salePriceDescription(p.initial, p.final, p.discount, p.formatted))}</span>
     <span class="deal-orig" aria-hidden="true">${fmt$(p.initial)}</span>
@@ -777,7 +782,7 @@ function makeWishlistSaleRow (w) {
   return row
 }
 
-function makeWishlistRow (w) {
+function makeWishlistRow (w, isNew = false) {
   const p      = w.priceInfo
   const onSale = (p?.discount ?? 0) >= 20
   const row    = document.createElement('div')
@@ -800,7 +805,7 @@ function makeWishlistRow (w) {
         : `<span style="color:var(--text2)">${escHtml(p.formatted)}</span>`)
     : ''
   const cheap = w.cheapest ? ` <span class="cheapest-tag">${ARROW_DOWN} cheaper at ${escHtml(w.cheapest.store)}: ${fmt$(w.cheapest.price)}</span>` : ''
-  info.innerHTML = `<div class="wishlist-name">${storeTag(w.store)}${escHtml(w.name)}</div><div class="wishlist-sub">${priceStr}${cheap}${wishlistLowestTag(w)}</div>`
+  info.innerHTML = `<div class="wishlist-name">${storeTag(w.store)}${escHtml(w.name)}</div><div class="wishlist-sub">${priceStr}${cheap}${isNew ? NEW_TAG : ''}${wishlistLowestTag(w)}</div>`
   info.querySelector('.wishlist-name').setAttribute('title', w.name)
 
   main.append(thumb, info)
@@ -948,17 +953,20 @@ function updateBadges () {
   const fb = document.getElementById('badge-free')
   if (fb) { fb.querySelector('.badge-count').textContent = total; fb.classList.toggle('visible', total > 0) }
 
-  SEEN_PAGES.forEach(page => document.getElementById('badge-' + page)?.classList.toggle('visible', unseen(page).size > 0))
+  SEEN_PAGES.forEach(page => document.getElementById(page === 'wishlist' ? 'badge-wishlist-new' : 'badge-' + page)?.classList.toggle('visible', unseen(page).size > 0))
 }
 
-const seenIds = (page, visibleOnly = false) => (page === 'deals' ? state.deals : Object.values(state.sales).flat())
-  .filter(d => !visibleOnly || !hiddenTitle(d.title)).map(d => d.id)
+function seenIds (page, visibleOnly = false) {
+  if (page === 'wishlist') return state.wishlist.filter(w => w.priceInfo?.discount > 0 && (!visibleOnly || !hiddenTitle(w.name))).map(wishlistKey)
+  return (page === 'deals' ? state.deals : Object.values(state.sales).flat()).filter(d => !visibleOnly || !hiddenTitle(d.title)).map(d => d.id)
+}
 const unseen = page => newIds(seenIds(page, true), state.seen[page]) // hidden games don't light the dot
 
 // Called when the user leaves the page or hides the window, not on render, so the tags stay while they look
 function markSeen (page) {
   if (!SEEN_PAGES.includes(page) || !state.dataLoaded) return
-  state.seen = mergeSeen(state.seen, page, seenIds(page))
+  // A loaded wishlist with nothing on sale is a real empty set, so the first sale afterwards is new
+  state.seen = mergeSeen(state.seen, page, seenIds(page), page === 'wishlist' ? state.wishlist.length > 0 : undefined)
   try { localStorage.setItem(SEEN_KEY, JSON.stringify(state.seen)) } catch {}
   updateBadges()
 }
@@ -1838,7 +1846,7 @@ async function init () {
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden || !SEEN_PAGES.includes(state.page)) return
     markSeen(state.page)
-    if (state.page === 'deals') renderDeals(); else renderStoreSales()
+    ;({ deals: renderDeals, storesales: renderStoreSales, wishlist: renderWishlist })[state.page]()
   })
 
   // Sidebar navigation

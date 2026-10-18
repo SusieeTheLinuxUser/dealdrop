@@ -45,6 +45,7 @@ html,body{background:transparent} /* window is transparent; #app paints the colo
 .nav-item .badge{margin-left:auto;background:var(--green);color:#0a1a10;font-size:10px;font-weight:600;font-family:var(--mono);padding:1px 6px;border-radius:10px;min-width:18px;text-align:center;display:none}
 .nav-item .badge.visible{display:inline-block}
 .nav-item .badge.dot{min-width:0;width:7px;height:7px;padding:0;background:var(--acc)}
+.nav-item .badge.visible~.badge.dot{margin-left:5px}
 
 .sidebar-footer{padding:12px 14px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:8px}
 .refresh-age{color:var(--text2);font-size:10px;font-family:var(--mono);text-align:center}

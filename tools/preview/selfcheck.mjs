@@ -24,8 +24,9 @@ vm.runInContext([
   between('function normalizeTitle (', '\nfunction announceStatus'),
   between('function storeKeyFor (', '\nconst gameStoreName'),
   between('function escHtml (', '\n// ─── Boot'),
+  between('function seenIds (', '\nconst unseen'),
   between('function updateRefreshAge (', '\nfunction updateLastCheckedLabels'),
-  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge, mergeUiPrefs, dealShops, parseClaimed, pruneClaimed, toggleClaimed, claimedLast, normalizeTitle, hiddenTitle, searchRank, parseSeen, newIds, mergeSeen }',
+  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge, mergeUiPrefs, dealShops, parseClaimed, pruneClaimed, toggleClaimed, claimedLast, normalizeTitle, hiddenTitle, searchRank, parseSeen, newIds, mergeSeen, wishlistKey, seenIds }',
 ].join('\n'), context)
 
 const h = context.helpers
@@ -73,14 +74,25 @@ assert.equal(JSON.stringify(h.toggleClaimed(['a', 'b'], 'a')), '["b"]')
 assert.equal(JSON.stringify(h.pruneClaimed(['a', 'gone', 'b'], [{ id: 'b' }, { id: 'a' }, { id: 'c' }])), '["a","b"]')
 assert.equal(JSON.stringify(h.claimedLast([{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }], ['a', 'c']).map(g => g.id)), '["b","d","a","c"]')
 
-assert.equal(JSON.stringify(h.state.seen), '{"deals":null,"storesales":null}') // no localStorage: first run, nothing tagged
-assert.equal(JSON.stringify(h.parseSeen('{"deals":["a",2],"storesales":"x"}')), '{"deals":["a"],"storesales":null}')
-assert.equal(JSON.stringify(h.parseSeen('not json')), '{"deals":null,"storesales":null}')
+assert.equal(JSON.stringify(h.state.seen), '{"deals":null,"storesales":null,"wishlist":null}') // no localStorage: first run, nothing tagged
+assert.equal(JSON.stringify(h.parseSeen('{"deals":["a",2],"storesales":"x"}')), '{"deals":["a"],"storesales":null,"wishlist":null}')
+assert.equal(JSON.stringify(h.parseSeen('not json')), '{"deals":null,"storesales":null,"wishlist":null}')
 assert.equal(h.newIds(['a', 'b'], null).size, 0)
 assert.equal(JSON.stringify([...h.newIds(['a', 'b', 'c'], ['b'])]), '["a","c"]')
 assert.equal(JSON.stringify(h.mergeSeen({ deals: ['old'], storesales: null }, 'deals', ['a', 'b', 'a'])), '{"deals":["a","b"],"storesales":null}')
 const seenBefore = { deals: ['a'], storesales: ['s'] }
 assert.equal(h.mergeSeen(seenBefore, 'storesales', []), seenBefore) // empty list may be a failed load: keep the old set
+
+// Wishlist: only discounted games count, a new sale after full price is a new key, hidden titles never light the dot
+const wish = (id, discount, name = id) => ({ store: 'gog', id, name, priceInfo: discount == null ? null : { discount } })
+assert.equal(h.wishlistKey(wish('7', 30)), 'gog:7:30')
+h.state.wishlist = [wish('a', 30), wish('b', 0), wish('c', null), wish('d', 50, 'Hidden Game')]
+h.state.settings.hidden = ['hidden game']
+assert.equal(JSON.stringify(h.seenIds('wishlist')), '["gog:a:30","gog:d:50"]')
+assert.equal(JSON.stringify(h.seenIds('wishlist', true)), '["gog:a:30"]')
+assert.equal(JSON.stringify(h.mergeSeen({ wishlist: null }, 'wishlist', [], true)), '{"wishlist":[]}') // loaded, nothing on sale: seed empty
+assert.equal(JSON.stringify([...h.newIds([h.wishlistKey(wish('a', 30))], ['gog:a:20'])]), '["gog:a:30"]')
+h.state.wishlist = []; h.state.settings.hidden = []
 
 const items = [
   { title: 'Beta B', price: 8, cut: 50, shop: 'Steam' }, { title: 'Alpha', price: 5, cut: 90, shop: 'GOG' },
