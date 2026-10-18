@@ -464,7 +464,7 @@ function makeWishlistRow (w) {
   const info  = document.createElement('div')
   const priceStr = p?.formatted
     ? (onSale
-        ? `<span class="sr-only">${escHtml(salePriceDescription(p.initial, p.final, p.discount, p.formatted))}</span><span aria-hidden="true" style="color:var(--amber)">-${p.discount}% · ${escHtml(p.formatted)}</span>`
+        ? `<span class="sr-only">${escHtml(salePriceDescription(p.initial, p.final, p.discount, p.formatted))}</span><span aria-hidden="true" style="color:var(--amber)">-${escHtml(p.discount)}% · ${escHtml(p.formatted)}</span>`
         : `<span style="color:var(--text2)">${escHtml(p.formatted)}</span>`)
     : ''
   const cheap = w.cheapest ? ` <span class="cheapest-tag">${ARROW_DOWN} cheaper at ${escHtml(w.cheapest.store)}: ${fmt$(w.cheapest.price)}</span>` : ''
