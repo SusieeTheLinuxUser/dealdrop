@@ -29,7 +29,7 @@ const state = {
   settings:     {
     notifyMajorSale: true, notifyFreeGame: true, notifyFreeWeekend: true,
     notifyWishlistSale: true, notifyBigDeal: false, checkInterval: 60,
-    theme: 'midnight', baseTheme: 'midnight', lastSaleTheme: '', rounded: false, effects: true, launcherGog: 'auto', launcherEpic: 'auto',
+    theme: 'midnight', baseTheme: 'midnight', lastSaleTheme: '', rounded: false, effects: true, launcherGog: 'auto', launcherEpic: 'auto', onboarded: false,
   },
   accounts:     { steam: null, gog: null, epic: null },
   sourceErrors: [],
@@ -557,6 +557,19 @@ function applyTheme () {
   if (fxKey !== applyTheme.fxKey) { applyTheme.fxKey = fxKey; startFx(SALE_THEMES[s.theme]) }
 }
 
+const LOOK_TOGGLES = [
+  { key: 'rounded', label: 'Rounded window', sub: 'Round the corners of the app window' },
+  { key: 'effects', label: 'Seasonal effects', sub: 'Falling leaves, snow & more during Steam sale themes' },
+]
+const NOTIFICATION_TOGGLES = [
+  { key: 'notifyMajorSale', label: 'Steam major sale started', sub: 'Summer, Winter, Autumn & Spring sales' },
+  { key: 'notifyFreeGame', label: 'Free game available', sub: 'Epic, Steam, GOG & GamerPower giveaways', gamerpower: true },
+  { key: 'notifyFreeWeekend', label: 'Free weekend started', sub: 'Temporary Steam free-to-play promotions' },
+  { key: 'notifyWishlistSale', label: 'Wishlist game on sale', sub: 'Steam, GOG & Epic wishlists, drops of ≥20%' },
+  { key: 'notifyBigDeal', label: 'Deal over 75% off', sub: 'Hot deals list (CheapShark)' },
+]
+window.dealDropOnboarding = { state, baseThemes: BASE_THEMES, lookToggles: LOOK_TOGGLES, notificationToggles: NOTIFICATION_TOGGLES, applyTheme, setAccounts }
+
 // A sale starting switches to its theme once. If the user picks something else, lastSaleTheme
 // stays set, so a restart doesn't switch back. When the sale ends its theme is dropped.
 function syncSaleTheme () {
@@ -692,19 +705,10 @@ function renderLauncherPrefs () {
 function renderSettings () {
   const s = state.settings
   renderThemeGrid()
-  toggleRows(document.getElementById('look-settings'), [
-    { key: 'rounded', label: 'Rounded window',  sub: 'Round the corners of the app window' },
-    { key: 'effects', label: 'Seasonal effects', sub: 'Falling leaves, snow & more during Steam sale themes' },
-  ], applyTheme)
+  toggleRows(document.getElementById('look-settings'), LOOK_TOGGLES, applyTheme)
 
   renderLauncherPrefs()
-  toggleRows(document.getElementById('notif-settings'), [
-    { key: 'notifyMajorSale',    label: 'Steam major sale started',   sub: 'Summer, Winter, Autumn & Spring sales' },
-    { key: 'notifyFreeGame',     label: 'Free game available',         sub: 'Epic, Steam, GOG & <a data-href="https://www.gamerpower.com" role="link" tabindex="0">GamerPower</a> giveaways' },
-    { key: 'notifyFreeWeekend',  label: 'Free weekend started',        sub: 'Temporary Steam free-to-play promotions' },
-    { key: 'notifyWishlistSale', label: 'Wishlist game on sale',       sub: 'Steam, GOG & Epic wishlists, drops of ≥20%' },
-    { key: 'notifyBigDeal',      label: 'Deal over 75% off',           sub: 'Hot deals list (CheapShark)' },
-  ])
+  toggleRows(document.getElementById('notif-settings'), NOTIFICATION_TOGGLES.map(r => ({ ...r, sub: r.gamerpower ? 'Epic, Steam, GOG & <a data-href="https://www.gamerpower.com" role="link" tabindex="0">GamerPower</a> giveaways' : r.sub })))
 
   const ig = document.getElementById('interval-group')
   ig.innerHTML = ''
@@ -894,6 +898,7 @@ async function init () {
   document.getElementById('sidebar-errors')?.addEventListener('click', e => { if (e.target.closest('#btn-copy-error')) copyError() })
   document.getElementById('btn-check-now')?.addEventListener('click',      () => loadData(true))
   document.getElementById('btn-check-settings')?.addEventListener('click', () => loadData(true))
+  document.getElementById('btn-show-onboarding')?.addEventListener('click', () => startOnboarding())
 
   // ── Links (only hard-coded official URLs carry data-href) ───────────────
   document.addEventListener('click', e => {
@@ -947,6 +952,7 @@ async function init () {
     const tsEl = document.getElementById('lc-' + state.page)
     if (tsEl && state.lastChecked) tsEl.textContent = fmtChecked(state.lastChecked)
   }, 30_000)
+  if (!state.settings.onboarded) startOnboarding()
 }
 
 document.addEventListener('DOMContentLoaded', init)
