@@ -4,7 +4,6 @@
 
 - [ ] **Release v0.8.0** (all three platforms, see AGENTS.md → Releasing): bump the version in the four places, date the CHANGELOG `[Unreleased]` section, push `dev` and fast-forward `main`, run `scripts/release-linux.sh`, wait for the maintainer to OK the AppImage, then run `gh workflow run release.yml -f tag=v0.8.0` and check for all three assets.
 - [ ] **Clean up branches:** delete the leftover agent branches `t3/project-status-review*` and the stale `.claude/worktrees/*` checkouts. Keep only `dev` and `main`.
-- [ ] **Onboarding step 2 (Appearance) is cramped:** the theme chips sit right on top of the "Rounded window" row. Add spacing between them (`renderer/onboarding.css`).
 - [ ] **Remove Heroic/Lutris from the GOG launcher choices:** they open an install dialog, not a store page. GOG cards now show only Browser unless GOG Galaxy is installed (`launcherOf` in `app.js`), so the Heroic/Lutris option in Settings → Launchers does nothing. Drop those rows from `GOG` in `launchers.rs` (plus `link()`, the tests and the AGENTS/README mentions) and from `tools/preview/mock-tauri.js`.
 - [ ] **Hot deals for GOG/Epic in the launcher:** Steam deals now open in the Steam app. GOG and Epic deals still use CheapShark's redirect in the browser, because CheapShark gives no GOG id or Epic slug. That needs a title lookup.
 
