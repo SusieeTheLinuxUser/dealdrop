@@ -2,7 +2,7 @@
 
 **Free, open source desktop app** that notifies you when Steam sales start, when free games drop on Epic/Steam/GOG, and when games on your Steam wishlist go on sale.
 
-No accounts. No telemetry. No secrets. Runs in your system tray.
+Optional store sign-in enables wishlist alerts. No API keys or telemetry; DealDrop runs in your system tray.
 
 ---
 
@@ -17,7 +17,7 @@ No accounts. No telemetry. No secrets. Runs in your system tray.
 - **Wishlist links go to the cheapest store** — like deals.gg, a wishlist game that is cheaper elsewhere shows the best offer and opens it
 - **Themes** — 6 built-in themes (Midnight, Lavender, Spooktober, Forest, Graphite, Daylight), optional rounded window corners, plus a **seasonal theme with falling leaves / snow / petals / lanterns that unlocks and switches on automatically while each Steam sale is live** (your own pick is remembered)
 - **Your accounts in the sidebar** — avatar (or store logo), store tag, click to open your profile; a red "Something went wrong" box with a **Copy error** button appears only when a source fails
-- **Open in your launcher** — Steam, Epic Games Launcher and GOG (GOG Galaxy / Heroic / Lutris) buttons appear when installed; pick your preferred one per store in Settings, ready for GOG's native Linux client
+- **Open in your launcher** — Steam and Epic, plus GOG Galaxy, Heroic or Lutris for GOG games; choose a preference in Settings
 - **Sales calendar** — Steam seasonal sales with countdown; click one to open it in Steam
 - **System tray** — minimizes to tray, polls in the background on your chosen interval
 - Native Rust backend (Tauri) — small AppImage, low memory
@@ -26,7 +26,7 @@ No accounts. No telemetry. No secrets. Runs in your system tray.
 
 ## Install
 
-Every release ships all three: grab the file for your OS from [Releases](../../releases).
+v0.7.9 ships all three builds. Download the file for your OS from [Releases](../../releases): Linux AppImage, Windows `.msi`, or universal macOS `.dmg` (Intel and Apple Silicon).
 
 ### Windows (.msi)
 
@@ -45,7 +45,7 @@ chmod +x DealDrop_*.AppImage
 ./DealDrop_*.AppImage
 ```
 
-No installation needed. Needs `webkit2gtk-4.1` on the host (present on most desktop distros). Existing settings and Steam sign-in from the Electron versions are picked up automatically.
+No installation needed. Linux requires `webkit2gtk-4.1`. Existing settings and Steam sign-in from the earlier Electron app are picked up automatically.
 
 ### Build from source
 
@@ -55,7 +55,8 @@ Requires Rust, `webkit2gtk-4.1`/GTK dev packages (Linux only), and `cargo instal
 git clone https://github.com/SusieeTheLinuxUser/dealdrop
 cd dealdrop/src-tauri
 cargo tauri dev                             # run in dev mode
-cargo tauri build                           # build for your current OS
+cargo tauri build --bundles appimage        # Linux AppImage
+cargo tauri build                           # Windows MSI or macOS DMG on that OS
 ```
 
 ---
@@ -66,27 +67,10 @@ DealDrop is designed so **no secrets ever live in the source code**.
 
 - Sign-in tokens are stored locally in the OS user data dir, never in the repo
 - Steam login uses OpenID — DealDrop never sees your password, only your public Steam ID
-- All external API calls happen in the main process (Node.js), not the renderer
-- No telemetry, no analytics, no data leaves your machine except to the APIs listed below
+- External API calls run in the Rust/Tauri backend; the renderer does not call external APIs
+- No telemetry or analytics; network requests go to Steam, GOG, Epic, GamerPower and CheapShark
 - Full details in [SECURITY.md](SECURITY.md)
 
-**APIs DealDrop talks to:**
-
-| Endpoint | Purpose | Auth |
-|---|---|---|
-| `store.steampowered.com/api/featured`, `/featuredcategories` | Free Steam games, sale & free-weekend detection | None |
-| `store.steampowered.com/search/results?specials=1` | Steam sales list | None |
-| `api.steampowered.com/IWishlistService/GetWishlist` | Steam wishlist (app ids) | None (profile must be public) |
-| `api.steampowered.com/IStoreBrowseService/GetItems` | Names & prices for many apps in one request | None |
-| `steamcommunity.com/profiles/<id>?xml=1` | Profile name & avatar | None |
-| `steamcommunity.com/openid/login`, `/profiles/{id}/?xml=1` | Steam sign-in, profile fallback, privacy check | Entered on Steam's own page |
-| `catalog.gog.com/v1/catalog` | GOG sales | None |
-| `auth.gog.com`, `embed.gog.com/user/wishlist.json`, `api.gog.com/products` | GOG sign-in, wishlist, prices | Entered on GOG's own page |
-| `store-site-backend-static.ak.epicgames.com/freeGamesPromotions` | Free Epic games | None |
-| `store.epicgames.com/graphql` | Epic sales | None |
-| `account-public-service-prod03.ol.epicgames.com`, `launcher.store.epicgames.com/graphql` | Epic sign-in & wishlist | Entered on Epic's own page |
-| `www.gamerpower.com/api/giveaways` | PC giveaway aggregation | None |
-| `www.cheapshark.com/api/1.0` | Hot deals, cheapest store for a wishlist game | None |
 
 ---
 
