@@ -8,7 +8,6 @@
   const stressAccount = 'PreviewAccount' + 'Y'.repeat(90)
   const accountFlag = flags.get('accounts') || ''
   const signedStores = new Set(stress || accountFlag === '1' ? ['steam', 'gog', 'epic'] : accountFlag.split(',').filter(store => ['steam', 'gog', 'epic'].includes(store)))
-  const signedIn = signedStores.size > 0
   const empty = flags.get('empty') === '1'
   const lastChecked = Date.now() - (flags.get('stale') === '1' ? 3 * 60 * 60 * 1000 : 5 * 60 * 1000)
   let settings = {
@@ -27,6 +26,11 @@
     id, title, shop, url: url || `https://store.steampowered.com/app/${appId}`, image: null,
     cut, price, regular, appId,
   })
+  const wishlistItems = [
+    { store: 'steam', id: 'steam-440', appId: '440', name: 'Team Fortress 2', image: null, url: 'https://store.steampowered.com/app/440', priceInfo: { discount: 50, final: 4.99, initial: 9.99, formatted: '$4.99' }, cheapest: { store: 'GOG', price: 3.99, url: 'https://www.gog.com/game/classic_quest' } },
+    { store: 'gog', id: 'gog-123456', appId: null, name: 'Classic Quest', image: null, url: 'https://www.gog.com/game/classic_quest', priceInfo: { discount: 0, final: 9.99, initial: 9.99, formatted: '$9.99' }, cheapest: null },
+    { store: 'epic', id: 'epic-123', appId: null, name: 'Skyward Bound', image: null, url: 'https://store.epicgames.com/', priceInfo: { discount: 20, final: 7.99, initial: 9.99, formatted: '$7.99' }, cheapest: null },
+  ]
   const sample = {
     freeGames: empty ? [] : [
       { id: 'epic-sample-free', title: 'The Long Way Home', source: 'epic', url: 'https://store.epicgames.com/', image: null, appId: null, endDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), type: 'giveaway' },
@@ -74,16 +78,13 @@
       deal('deal-125', 'Hollow Harbor', 'Epic Games', 75, 7.49, 29.99, '125', 'https://store.epicgames.com/p/hollow-harbor'),
     ],
     dealsSource: 'CheapShark', dealsError: null,
-    wishlist: empty || !signedIn ? [] : [
-      { store: 'steam', id: 'steam-440', appId: '440', name: 'Team Fortress 2', image: null, url: 'https://store.steampowered.com/app/440', priceInfo: { discount: 50, final: 4.99, initial: 9.99, formatted: '$4.99' }, cheapest: { store: 'GOG', price: 3.99, url: 'https://www.gog.com/game/classic_quest' } },
-      { store: 'gog', id: 'gog-123456', appId: null, name: 'Classic Quest', image: null, url: 'https://www.gog.com/game/classic_quest', priceInfo: { discount: 0, final: 9.99, initial: 9.99, formatted: '$9.99' }, cheapest: null },
-      { store: 'epic', id: 'epic-123', appId: null, name: 'Skyward Bound', image: null, url: 'https://store.epicgames.com/', priceInfo: { discount: 20, final: 7.99, initial: 9.99, formatted: '$7.99' }, cheapest: null },
-    ].filter(item => signedStores.has(item.store)),
+    wishlist: empty ? [] : wishlistItems.filter(item => signedStores.has(item.store)),
     wishlistPrivate: false,
     wishlistErrors: signedStores.has('gog') && flags.get('errors') === '1' ? { gog: 'Could not refresh wishlist' } : {},
     sourceErrors: flags.get('errors') === '1' ? ['Epic sales: HTTP 500', 'GOG giveaways: unavailable'] : [],
     lastChecked,
   }
+  const syncWishlist = () => { sample.wishlist = empty ? [] : wishlistItems.filter(item => signedStores.has(item.store)) }
   if (stress) {
     sample.freeGames.unshift({ id: 'stress-free', title: stressTitle, source: 'steam', url: 'https://store.steampowered.com/app/999001', image: null, appId: '999001', endDate: null, type: 'free' })
     sample.freeWeekends.unshift({ id: 'stress-weekend', title: stressTitle, source: 'steam', url: 'https://store.steampowered.com/app/999002', image: null, appId: '999002', endDate: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(), type: 'weekend' })
@@ -114,10 +115,10 @@
       case 'check_now': sample.lastChecked = Date.now(); return clone(sample)
       case 'get_accounts': return clone(accounts)
       case 'launchers': return launchers()
-      case 'steam_login': accounts.steam = { name: 'Preview Steam', avatar: null, profileUrl: 'https://steamcommunity.com/' }; return clone(accounts)
-      case 'gog_login': accounts.gog = { name: 'Preview GOG', avatar: null, profileUrl: 'https://www.gog.com/u/' }; return clone(accounts)
-      case 'epic_login': accounts.epic = { name: 'Preview Epic', avatar: null, profileUrl: 'https://www.epicgames.com/account/personal' }; return clone(accounts)
-      case 'logout': accounts[args.store] = null; return clone(accounts)
+      case 'steam_login': accounts.steam = { name: 'Preview Steam', avatar: null, profileUrl: 'https://steamcommunity.com/' }; signedStores.add('steam'); syncWishlist(); return clone(accounts)
+      case 'gog_login': accounts.gog = { name: 'Preview GOG', avatar: null, profileUrl: 'https://www.gog.com/u/' }; signedStores.add('gog'); syncWishlist(); return clone(accounts)
+      case 'epic_login': accounts.epic = { name: 'Preview Epic', avatar: null, profileUrl: 'https://www.epicgames.com/account/personal' }; signedStores.add('epic'); syncWishlist(); return clone(accounts)
+      case 'logout': accounts[args.store] = null; signedStores.delete(args.store); syncWishlist(); return clone(accounts)
       case 'wishlist_game_deals': return { appId: args.appId, gameName: args.name, steam: { onSale: true, discount: 50, final: 4.99, initial: 9.99, formatted: '$4.99' }, cheapest: { store: 'GOG', price: 3.99, url: 'https://www.gog.com/game/classic_quest', savingsPercent: 60, retailPrice: 9.99 }, checkedAt: Date.now() }
       case 'open_url':
       case 'open_in_app': console.info(`[preview] ${cmd}`, args); return true
