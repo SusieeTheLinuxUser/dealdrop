@@ -184,10 +184,10 @@ function makeWishlistSaleRow (w) {
   const p   = w.priceInfo
   const row = document.createElement('div')
   row.className = 'deal-row'
-  row.setAttribute('role', 'button')
-  row.tabIndex = 0
-  row.dataset.keyboardAction = 'activate'
-  row.innerHTML = `
+  const main = document.createElement('button')
+  main.type = 'button'
+  main.className = 'deal-row-main'
+  main.innerHTML = `
     <div>
       <div class="deal-name">${escHtml(w.name)}</div>
       <div class="deal-store">${storeTag(w.store)}${w.cheapest ? `<span class="cheapest-tag">↘ ${escHtml(w.cheapest.store)} ${fmt$(w.cheapest.price)}</span>` : ''}</div>
@@ -197,8 +197,8 @@ function makeWishlistSaleRow (w) {
     <span class="deal-price">${escHtml(p.formatted ?? fmt$(p.final))}</span>`
   const btn = tmpl(`<button class="deal-open" title="${w.cheapest ? 'Open cheapest offer' : 'Open store page'}">↗</button>`)
   btn.addEventListener('click', e => { e.stopPropagation(); openBrowser(bestUrl(w)) })
-  row.appendChild(btn)
-  row.addEventListener('click', () => openBrowser(bestUrl(w)))
+  main.addEventListener('click', () => openBrowser(bestUrl(w)))
+  row.append(main, btn)
   return row
 }
 
@@ -207,9 +207,9 @@ function makeWishlistRow (w) {
   const onSale = (p?.discount ?? 0) >= 20
   const row    = document.createElement('div')
   row.className = 'wishlist-row' + (onSale ? ' on-sale' : '')
-  row.setAttribute('role', 'button')
-  row.tabIndex = 0
-  row.dataset.keyboardAction = 'activate'
+  const main = document.createElement('button')
+  main.type = 'button'
+  main.className = 'wishlist-main'
 
   const thumb = document.createElement('img')
   thumb.className = 'wishlist-thumb'
@@ -219,7 +219,6 @@ function makeWishlistRow (w) {
   thumb.style.visibility = w.image ? '' : 'hidden'
 
   const info  = document.createElement('div')
-  info.style.cssText = 'min-width:0;flex:1'
   const priceStr = p?.formatted
     ? (onSale
         ? `<span style="color:var(--amber)">-${p.discount}% · ${escHtml(p.formatted)}</span>`
@@ -228,8 +227,9 @@ function makeWishlistRow (w) {
   const cheap = w.cheapest ? ` <span class="cheapest-tag">${ARROW_DOWN} cheaper at ${escHtml(w.cheapest.store)}: ${fmt$(w.cheapest.price)}</span>` : ''
   info.innerHTML = `<div class="wishlist-name" title="${escHtml(w.name)}">${storeTag(w.store)}${escHtml(w.name)}</div><div class="wishlist-sub">${priceStr}${cheap}</div>`
 
-  row.append(thumb, info, makeIconBtns(w))
-  row.addEventListener('click', () => w.store === 'steam' ? selectWishlistGame(w) : openBrowser(bestUrl(w)))
+  main.append(thumb, info)
+  main.addEventListener('click', () => w.store === 'steam' ? selectWishlistGame(w) : openBrowser(bestUrl(w)))
+  row.append(main, makeIconBtns(w))
   return row
 }
 
@@ -393,10 +393,10 @@ function renderDeals () {
 function makeDealRow (d) {
   const row = document.createElement('div')
   row.className = 'deal-row'
-  row.setAttribute('role', 'button')
-  row.tabIndex = 0
-  row.dataset.keyboardAction = 'activate'
-  row.innerHTML = `
+  const main = document.createElement('button')
+  main.type = 'button'
+  main.className = 'deal-row-main'
+  main.innerHTML = `
     <div>
       <div class="deal-name">${escHtml(d.title)}</div>
       <div class="deal-store">${escHtml(d.shop)}</div>
@@ -406,8 +406,8 @@ function makeDealRow (d) {
     <span class="deal-price">${fmt$(d.price)}</span>`
   const btn = tmpl(`<button class="deal-open" title="Open store page">↗</button>`)
   btn.addEventListener('click', e => { e.stopPropagation(); openBrowser(d.url) })
-  row.appendChild(btn)
-  row.addEventListener('click', () => openBrowser(d.url))
+  main.addEventListener('click', () => openBrowser(d.url))
+  row.append(main, btn)
   return row
 }
 

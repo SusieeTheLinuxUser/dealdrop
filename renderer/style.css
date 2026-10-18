@@ -92,9 +92,11 @@ html,body{background:transparent} /* window is transparent; #app paints the colo
 
 /* ── wishlist list ── */
 .wishlist-list{display:flex;flex-direction:column;gap:5px}
-.wishlist-row{display:grid;grid-template-columns:40px 1fr auto;align-items:center;gap:12px;padding:9px 12px;background:var(--bg1);border:1px solid var(--border);border-radius:var(--r);transition:border-color .15s}
+.wishlist-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;padding:9px 12px;background:var(--bg1);border:1px solid var(--border);border-radius:var(--r);transition:border-color .15s}
 .wishlist-row:hover{border-color:var(--bord2)}
 .wishlist-row.on-sale{border-color:rgba(244,169,57,0.25);background:rgba(244,169,57,0.04)}
+.wishlist-main{display:grid;grid-template-columns:40px minmax(0,1fr);align-items:center;gap:12px;min-width:0;padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.wishlist-main>div{min-width:0}
 .wishlist-thumb{width:40px;height:28px;border-radius:var(--rs);object-fit:cover;background:var(--bg3)}
 .wishlist-name{font-size:13px;font-weight:500;color:var(--text0);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .wishlist-sub{font-size:11px;color:var(--text2);font-family:var(--mono);margin-top:1px}
@@ -116,8 +118,9 @@ html,body{background:transparent} /* window is transparent; #app paints the colo
 
 /* ── deals list ── */
 .deals-list{display:flex;flex-direction:column;gap:5px}
-.deal-row{display:grid;grid-template-columns:1fr auto auto auto auto;align-items:center;gap:12px;padding:10px 14px;background:var(--bg1);border:1px solid var(--border);border-radius:var(--r);transition:border-color .15s}
+.deal-row{display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--bg1);border:1px solid var(--border);border-radius:var(--r);transition:border-color .15s}
 .deal-row:hover{border-color:var(--bord2)}
+.deal-row-main{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;align-items:center;gap:12px;flex:1;min-width:0;padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
 .deal-name{font-size:13px;font-weight:500;color:var(--text0)}
 .deal-store{font-size:11px;color:var(--text2);font-family:var(--mono);margin-top:1px}
 .deal-orig{font-size:12px;color:var(--text2);text-decoration:line-through;font-family:var(--mono)}
