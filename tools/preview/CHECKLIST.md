@@ -19,6 +19,7 @@ Start the local server as described in [README.md](README.md), then use `http://
 | Refresh all reloads | `?onboarded=1` — click Refresh all and observe the busy state. |
 | Updated label counts and resets | `?onboarded=1&stale=1` — check 3-hour label, refresh, then check reset. |
 | Steam free-to-keep game/DLC with Steam tag | `?onboarded=1` — Free now; inspect the Squad Weapon Skins DLC row. |
+| Free game and weekend end dates/order | `?onboarded=1` — Free now; verify dated items sort by soonest end, show an Ends in chip, and undated items appear last. |
 | Failed source keeps earlier rows | Needs a real build (requires a prior successful poll followed by a real source failure). |
 | Error banner and Copy error | `?onboarded=1&errors=1` — inspect banner and copy action. |
 | Launcher installed detection | Needs a real build (reads OS launcher registration/install state). |
@@ -31,4 +32,5 @@ Start the local server as described in [README.md](README.md), then use `http://
 | Store sign-in windows | Needs a real build (requires store OAuth windows/accounts). |
 | Account name/avatar display | `?onboarded=1&accounts=1` — inspect sidebar account rows. |
 | Wishlist sync and Steam privacy behavior | Needs a real build (requires real account data and Steam privacy state). |
+| Wishlist search, sort, sale-only filter, and clear state | `?onboarded=1&accounts=1` — Wishlist; try store tabs, search for no match, clear it, and compare discount/price/name plus On sale only. |
 | Live sale theme activation | `?onboarded=1&sale=winter` — inspect sale banner, theme, and effects. |
