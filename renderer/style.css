@@ -185,7 +185,7 @@ html,body{background:transparent} /* window is transparent; #app paints the colo
 .interval-btn{padding:7px 16px;border-radius:var(--r);cursor:pointer;font-size:12px;font-family:var(--mono);background:var(--bg3);color:var(--text1);border:1px solid var(--border);transition:all .12s}
 .interval-btn.active{background:var(--acc);color:#0a1a10;font-weight:600;border-color:var(--acc)}
 .api-key-group{display:flex;gap:8px}
-.api-key-group input{flex:1;padding:9px 12px;font-size:13px;font-family:var(--mono);background:var(--bg1);border:1px solid var(--bord2);border-radius:var(--r);color:var(--text0);outline:none}
+.api-key-group input{flex:1;padding:9px 12px;font-size:13px;font-family:var(--mono);background:var(--bg1);border:1px solid var(--bord2);border-radius:var(--r);color:var(--text0)}
 .api-key-group input:focus{border-color:var(--acc)}
 .api-key-group button,.action-btn{padding:9px 18px;font-size:13px;background:var(--bg3);border:1px solid var(--bord2);border-radius:var(--r);color:var(--text0);cursor:pointer;font-family:var(--sans);transition:background .12s}
 .api-key-group button:hover,.action-btn:hover{background:var(--bg4)}
