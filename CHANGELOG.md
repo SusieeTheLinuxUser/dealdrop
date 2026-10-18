@@ -7,7 +7,12 @@ All notable changes to DealDrop are documented in this file.
 - New: Steam games that are 100% off to keep now show up with the free games
 - New: keyboard shortcuts (press ?), search, sort and minimum-discount filters on deal lists, "Updated N min ago" label
 - New: wishlist search, sort and "on sale" filter; free games show when they end
+- New: Wishlist shows Steam/GOG/Epic sign-in buttons when no store is connected
+- New: your sort and filter choices and the last open page are remembered; "12 of 40" result counts
+- Improved: loading placeholders instead of a blank list, smoother page changes, full titles on hover
+- Improved: layout uses big windows well; animations respect "reduce motion"
 - Improved: the error box sits right under your accounts, so Copy error is always in view
+- Security: sign-in tokens are kept out of error messages; a sign-out during a refresh can't bring the old account back
 - Improved: a store that fails keeps its last good results instead of emptying the list
 - Improved: no burst of notifications on first run
 - Improved: keyboard and screen-reader support, stronger text contrast in every theme

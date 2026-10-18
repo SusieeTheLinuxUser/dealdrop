@@ -1,0 +1,16 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>DealDrop preview</title>
+<script>
+fetch('../../renderer/index.html').then(response => {
+  if (!response.ok) throw new Error('Renderer page could not be loaded')
+  return response.text()
+}).then(html => {
+  html = html.replace(/<head>/i, '<head><base href="../../renderer/"><script src="../tools/preview/mock-tauri.js"><\/script>')
+  document.open()
+  document.write(html)
+  document.close()
+}).catch(error => {
+  document.body.textContent = error.message
+})
+</script>

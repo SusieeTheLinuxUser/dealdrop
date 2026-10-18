@@ -15,8 +15,9 @@ const fn opt(key: &'static str, label: &'static str, scheme: &'static str) -> Op
 
 const STEAM: [Opt; 1] = [opt("native", "Steam app", "steam")];
 const EPIC: [Opt; 1] = [opt("native", "Epic app", "com.epicgames.launcher")];
-// Heroic only knows games in the user's library (it offers to install them); Lutris resolves the
-// store slug on lutris.net. Both are best-effort for games the user doesn't own yet.
+// Heroic launches `heroic://launch/gog/<id>` when that id is installed; otherwise, if a window is
+// open, it asks whether to install it (an id missing from the library still reaches that dialog,
+// with a blank title), and it does not open a store page. Lutris resolves slugs on lutris.net.
 const GOG: [Opt; 3] = [opt("native", "GOG Galaxy", "goggalaxy"), opt("heroic", "Heroic", "heroic"), opt("lutris", "Lutris", "lutris")];
 
 /// Order = what "Auto" prefers.
@@ -74,6 +75,13 @@ fn choice(o: &Opt) -> Choice { Choice { key: o.key, label: o.label } }
 
 /// `pref`: "auto" | an option key | "browser".
 pub fn resolve(store: &str, pref: &str) -> StoreLaunchers {
+    resolve_with(store, pref, has_scheme)
+}
+
+fn resolve_with<F>(store: &str, pref: &str, has_scheme: F) -> StoreLaunchers
+where
+    F: Fn(&str) -> bool,
+{
     let installed: Vec<&Opt> = options(store).iter().filter(|o| has_scheme(o.scheme)).collect();
     let chosen = match pref {
         "browser" => None,
@@ -115,6 +123,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn resolve_preferences_use_option_order_without_checking_the_os() {
+        let installed = |scheme: &str| matches!(scheme, "goggalaxy" | "heroic" | "lutris");
+
+        let auto = resolve_with("gog", "auto", installed);
+        assert_eq!(auto.options.iter().map(|o| o.key).collect::<Vec<_>>(), ["native", "heroic", "lutris"]);
+        assert_eq!(auto.chosen.as_ref().map(|o| o.key), Some("native"));
+
+        let forced = resolve_with("gog", "heroic", installed);
+        assert_eq!(forced.chosen.as_ref().map(|o| o.key), Some("heroic"));
+
+        let browser = resolve_with("gog", "browser", installed);
+        assert_eq!(browser.chosen.as_ref().map(|o| o.key), None);
+        assert_eq!(browser.options.len(), 3);
+    }
+
+    #[test]
     fn deep_links() {
         let gog = Url::parse("https://www.gog.com/en/game/the_witcher_3_wild_hunt").unwrap();
         assert_eq!(link("gog", "native", &gog, Some("gog-1207664643")).unwrap(), "goggalaxy://openGameView/1207664643");
@@ -134,5 +158,13 @@ mod tests {
         assert!(link("steam", "native", &evil, None).is_none());
         let odd = Url::parse("https://www.gog.com/en/game/a%20b;c").unwrap();
         assert!(link("gog", "lutris", &odd, None).is_none());
+    }
+
+    #[test]
+    fn gog_ids_and_slugs_reject_untrusted_characters() {
+        assert_eq!(numeric(Some("gog-1207664643")), Some("1207664643"));
+        assert_eq!(numeric(Some("gog-12/3")), None);
+        assert_eq!(slug("the_witcher-3/"), Some("the_witcher-3"));
+        assert_eq!(slug("bad%2fslug"), None);
     }
 }

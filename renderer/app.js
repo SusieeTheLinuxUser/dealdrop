@@ -12,8 +12,57 @@ const SALES = [
   { name: 'Autumn Sale', start: '2027-10-07', end: '2027-10-14', icon: '🍂', est: true },
 ]
 
+const DEFAULT_SETTINGS = {
+  notifyMajorSale: true, notifyFreeGame: true, notifyFreeWeekend: true,
+  notifyWishlistSale: true, notifyBigDeal: false, checkInterval: 60,
+  theme: 'midnight', baseTheme: 'midnight', lastSaleTheme: '', rounded: false, effects: true,
+  launcherGog: 'auto', launcherEpic: 'auto', onboarded: false,
+}
+
+const UI_PREFS_KEY = 'dealdrop-ui'
+const UI_PREFS_DEFAULTS = {
+  version: 1, page: 'free',
+  lists: { deals: { sort: 'discount', minDiscount: 0 }, storesales: { sort: 'discount', minDiscount: 0 }, wishlist: { sort: 'discount', onSaleOnly: false } },
+}
+
+function mergeUiPrefs (saved) {
+  const prefs = JSON.parse(JSON.stringify(UI_PREFS_DEFAULTS))
+  if (saved?.version !== prefs.version) return prefs
+  if (['wishlist', 'free', 'storesales', 'deals', 'sales', 'settings'].includes(saved.page)) prefs.page = saved.page
+  for (const key of Object.keys(prefs.lists)) {
+    const value = saved.lists?.[key]
+    if (['discount', 'price', 'name'].includes(value?.sort)) prefs.lists[key].sort = value.sort
+    if (key !== 'wishlist' && [0, 50, 75, 90].includes(value?.minDiscount)) prefs.lists[key].minDiscount = value.minDiscount
+    if (key === 'wishlist' && typeof value?.onSaleOnly === 'boolean') prefs.lists[key].onSaleOnly = value.onSaleOnly
+  }
+  return prefs
+}
+
+function readUiPrefs () {
+  try { return mergeUiPrefs(JSON.parse(localStorage.getItem(UI_PREFS_KEY) || 'null')) } catch { return mergeUiPrefs(null) }
+}
+
+const initialUiPrefs = readUiPrefs()
+
+function persistUiPrefs () {
+  const { deals, storesales, wishlist } = state.listFilters
+  try {
+    localStorage.setItem(UI_PREFS_KEY, JSON.stringify({ version: 1, page: state.page, lists: {
+      deals: { sort: deals.sort, minDiscount: deals.minDiscount },
+      storesales: { sort: storesales.sort, minDiscount: storesales.minDiscount },
+      wishlist: { sort: wishlist.sort, onSaleOnly: wishlist.onSaleOnly },
+    } }))
+  } catch {}
+}
+
+function clearUiPrefs () {
+  try { localStorage.removeItem(UI_PREFS_KEY) } catch {}
+}
+
 const state = {
-  page:         'free',
+  page:         initialUiPrefs.page,
+  onboardingOpen: false,
+  onboardingThemePicked: false,
   freeGames:    [],
   freeWeekends: [],
   deals:        [],
@@ -26,17 +75,137 @@ const state = {
   wishlistTab:  'all',
   wishlistErrors: {},
   wishlist:     [],
-  settings:     {
-    notifyMajorSale: true, notifyFreeGame: true, notifyFreeWeekend: true,
-    notifyWishlistSale: true, notifyBigDeal: false, checkInterval: 60,
-    theme: 'midnight', baseTheme: 'midnight', lastSaleTheme: '', rounded: false, effects: true, launcherGog: 'auto', launcherEpic: 'auto',
-  },
+  settings:     { ...DEFAULT_SETTINGS },
   accounts:     { steam: null, gog: null, epic: null },
   sourceErrors: [],
   fetchError:   null,
+  dataLoaded:   false,
   lastChecked:  null,
   selectedWishlistDeal: null,
   wishlistPrivate: false,
+  refreshing: false,
+  listFilters: {
+    deals: { query: '', ...initialUiPrefs.lists.deals }, storesales: { query: '', ...initialUiPrefs.lists.storesales },
+    wishlist: { query: '', ...initialUiPrefs.lists.wishlist },
+  },
+}
+let shortcutsDialog = null
+let refreshAgeInterval = null
+
+function filteredSorted (items, key, fields = {}) {
+  const { query, sort, onSaleOnly, minDiscount = 0 } = state.listFilters[key]
+  const value = (item, field, defaultField) => fields[field] ? fields[field](item) : item[defaultField]
+  const q = query.trim().toLocaleLowerCase()
+  const discount = item => Number(value(item, 'discount', 'cut')) || 0
+  const price = item => {
+    const amount = Number(value(item, 'price', 'price'))
+    return Number.isFinite(amount) ? amount : Infinity
+  }
+  return items.filter(item => {
+    const title = String(value(item, 'title', 'title') ?? '')
+    return (!q || title.toLocaleLowerCase().includes(q)) && discount(item) >= Math.max(minDiscount, onSaleOnly ? 1 : 0)
+  }).sort((a, b) => {
+    if (sort === 'price') return price(a) - price(b)
+    if (sort === 'name') return String(value(a, 'title', 'title') ?? '').localeCompare(String(value(b, 'title', 'title') ?? ''))
+    return discount(b) - discount(a)
+  })
+}
+
+function announceStatus (message) {
+  const status = document.getElementById('app-status')
+  if (status) status.textContent = message
+}
+
+function renderSkeletons (container, kind) {
+  container.replaceChildren()
+  for (let i = 0; i < 3; i++) {
+    const item = document.createElement('div')
+    item.className = kind === 'card' ? 'skeleton-card' : 'skeleton-row'
+    if (kind === 'card') item.append(document.createElement('span'), document.createElement('span'), document.createElement('span'))
+    else item.append(document.createElement('span'), document.createElement('span'))
+    item.classList.add('skeleton')
+    container.appendChild(item)
+  }
+  const label = document.createElement('span')
+  label.className = 'sr-only'; label.textContent = 'Loading…'
+  container.appendChild(label)
+}
+
+function currentListItems (key) {
+  if (key === 'deals') return state.deals
+  if (key === 'storesales') return state.sales[state.salesTab] ?? []
+  return state.wishlistTab === 'all' ? state.wishlist : state.wishlist.filter(item => item.store === state.wishlistTab)
+}
+
+function announceListResults (key) {
+  const fields = key === 'wishlist' ? { title: item => item.name, price: item => item.priceInfo?.final ?? Infinity, discount: item => item.priceInfo?.discount ?? 0 } : {}
+  const count = filteredSorted(currentListItems(key), key, fields).length
+  announceStatus(`${count} ${key === 'wishlist' ? 'wishlist games' : 'deals'} shown`)
+}
+
+function updateResultCount (key, visible, total) {
+  const count = document.getElementById(`${key}-result-count`)
+  if (!count) return
+  const filters = state.listFilters[key]
+  const active = state.dataLoaded && (!!filters.query.trim() || !!filters.minDiscount || !!filters.onSaleOnly)
+  count.hidden = !active
+  count.textContent = `${visible} of ${total}`
+}
+
+function syncMinDiscount (key, controlId) {
+  const minDiscount = state.listFilters[key].minDiscount || 0
+  document.querySelectorAll(`#${controlId} [data-min-discount]`).forEach(button => {
+    button.setAttribute('aria-pressed', String(Number(button.dataset.minDiscount) === minDiscount))
+  })
+}
+
+function bindListControls (key, inputId, sortId, render, { saleOnlyId, minDiscountId } = {}) {
+  const input = document.getElementById(inputId)
+  const sort = document.getElementById(sortId)
+  let timer
+  const update = () => { render(); persistUiPrefs(); announceListResults(key) }
+  input.addEventListener('input', () => {
+    state.listFilters[key].query = input.value
+    clearTimeout(timer); timer = setTimeout(update, 180)
+  })
+  sort.addEventListener('change', () => { state.listFilters[key].sort = sort.value; update() })
+  if (saleOnlyId) {
+    const toggle = document.getElementById(saleOnlyId)
+    toggle.addEventListener('click', () => {
+      state.listFilters[key].onSaleOnly = !state.listFilters[key].onSaleOnly
+      toggle.setAttribute('aria-pressed', String(state.listFilters[key].onSaleOnly))
+      update()
+    })
+  }
+  if (minDiscountId) {
+    const controls = document.getElementById(minDiscountId)
+    syncMinDiscount(key, minDiscountId)
+    controls.addEventListener('click', e => {
+      const button = e.target.closest('[data-min-discount]')
+      if (!button) return
+      state.listFilters[key].minDiscount = Number(button.dataset.minDiscount)
+      syncMinDiscount(key, minDiscountId)
+      update()
+    })
+  }
+}
+
+function showFilterEmpty (emptyEl, key, inputId, minDiscountId, render, message, { saleOnlyId } = {}) {
+  const copy = emptyEl.querySelector('#wishlist-empty-msg') || document.createElement('p')
+  copy.textContent = message
+  const clear = document.createElement('button')
+  clear.type = 'button'; clear.className = 'clear-filter'; clear.textContent = 'Clear filters'
+  clear.addEventListener('click', () => {
+    state.listFilters[key].query = ''
+    if ('minDiscount' in state.listFilters[key]) state.listFilters[key].minDiscount = 0
+    if ('onSaleOnly' in state.listFilters[key]) state.listFilters[key].onSaleOnly = false
+    document.getElementById(inputId).value = ''
+    if (minDiscountId) syncMinDiscount(key, minDiscountId)
+    if (saleOnlyId) document.getElementById(saleOnlyId).setAttribute('aria-pressed', 'false')
+    render()
+    persistUiPrefs(); announceListResults(key)
+  })
+  emptyEl.replaceChildren(copy, clear)
 }
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
@@ -45,6 +214,9 @@ const fmt$ = n => {
   const num = Number(n) || 0
   return num === 0 ? 'Free' : '$' + num.toFixed(2)
 }
+
+const salePriceDescription = (regular, price, discount, formatted) =>
+  `Was ${fmt$(regular)}, now ${formatted || fmt$(price)}, ${discount}% off`
 
 function timeLeft (dateStr) {
   if (!dateStr) return ''
@@ -55,6 +227,23 @@ function timeLeft (dateStr) {
   if (d > 0) return `${d}d left`
   if (h > 0) return `${h}h left`
   return 'ending soon'
+}
+
+function endsFirst (items) {
+  return [...items].sort((a, b) => {
+    const aEnd = Date.parse(a.endDate || '')
+    const bEnd = Date.parse(b.endDate || '')
+    const aTime = Number.isFinite(aEnd) ? aEnd : Infinity
+    const bTime = Number.isFinite(bEnd) ? bEnd : Infinity
+    return aTime - bTime
+  })
+}
+
+function endDateLabel (dateStr) {
+  const remaining = timeLeft(dateStr)
+  if (remaining === 'ended') return 'Ended'
+  if (remaining === 'ending soon') return 'Ends soon'
+  return `Ends in ${remaining.replace(/ left$/, '')}`
 }
 
 function fmtChecked (ts) {
@@ -68,6 +257,11 @@ function fmtChecked (ts) {
 
 const srcIcon = src => ({ steam: '🎮', epic: '🕹️', gog: '⚔️' }[src] ?? '🎮')
 const STORES = { steam: 'Steam', gog: 'GOG', epic: 'Epic' }
+function storeKeyFor (store) {
+  const value = String(store ?? '').toLowerCase()
+  return ['steam', 'gog', 'epic'].find(key => value.includes(key)) ?? value
+}
+const gameStoreName = store => ({steam:'Steam', gog:'GOG', epic:'Epic Games'}[String(store ?? '').toLowerCase()] ?? String(store ?? 'Store'))
 const hasAccount = () => Object.values(state.accounts).some(Boolean)
 const onSaleItems = () => state.wishlist.filter(w => (w.priceInfo?.discount ?? 0) >= 20)
 
@@ -94,23 +288,119 @@ const openBrowser = url   => window.api.openUrl(url)
 const openSteam   = appId => window.api.openInApp('steam', `https://store.steampowered.com/app/${appId}`)
 const launcherOf  = store => state.launchers[store]?.chosen ?? null
 
+function closeShortcutsDialog () {
+  if (!shortcutsDialog) return
+  const { overlay, returnFocus } = shortcutsDialog
+  shortcutsDialog = null
+  overlay.remove()
+  returnFocus?.focus?.()
+}
+
+function openShortcutsDialog () {
+  if (shortcutsDialog) return
+  const returnFocus = document.activeElement
+  const overlay = document.createElement('div'); overlay.className = 'shortcut-backdrop'
+  const dialog = document.createElement('section')
+  dialog.className = 'shortcut-dialog'; dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true')
+  dialog.setAttribute('aria-labelledby', 'shortcut-dialog-title')
+  const title = document.createElement('h2'); title.id = 'shortcut-dialog-title'; title.textContent = 'Keyboard shortcuts'
+  const list = document.createElement('dl'); list.className = 'shortcut-list'
+  ;[
+    ['R', 'Refresh all'], ['/','Focus search on this page'],
+    ['1–5', 'Open Wishlist, Free now, Store sales, Hot deals, or Calendar'],
+    [',', 'Open Settings'], ['?', 'Show this help'],
+  ].forEach(([key, description]) => {
+    const term = document.createElement('dt'), code = document.createElement('kbd'), detail = document.createElement('dd')
+    code.textContent = key; term.appendChild(code); detail.textContent = description; list.append(term, detail)
+  })
+  const close = document.createElement('button'); close.type = 'button'; close.className = 'shortcut-close'; close.textContent = 'Close'
+  close.addEventListener('click', closeShortcutsDialog)
+  dialog.append(title, list, close); overlay.appendChild(dialog); document.body.appendChild(overlay)
+  shortcutsDialog = { overlay, returnFocus }
+  close.focus()
+}
+
+function handleShortcutKeydown (e) {
+  if (shortcutsDialog) {
+    if (e.key === 'Escape') { e.preventDefault(); closeShortcutsDialog(); return }
+    if (e.key === 'Tab') { e.preventDefault(); shortcutsDialog.overlay.querySelector('button').focus() }
+    return
+  }
+  if (e.ctrlKey || e.metaKey || e.altKey) return
+  if (e.target.isContentEditable || e.target.closest?.('input, textarea, select, [contenteditable="true"]')) return
+  if (document.querySelector('.onboarding-backdrop, .tour-backdrop')) return
+  const key = e.key.length === 1 ? e.key.toLowerCase() : e.key
+  if (key === '?') { e.preventDefault(); openShortcutsDialog(); return }
+  if (key === 'r') { e.preventDefault(); loadData(true); return }
+  if (key === '/') {
+    const id = { deals: 'deals-search', storesales: 'sales-search', wishlist: 'wishlist-search' }[state.page]
+    const search = id && document.getElementById(id)
+    if (search?.getClientRects().length) { e.preventDefault(); search.focus() }
+    return
+  }
+  if (key === ',') { e.preventDefault(); navigate('settings'); return }
+  const pages = ['wishlist', 'free', 'storesales', 'deals', 'sales']
+  if (/^[1-5]$/.test(key)) { e.preventDefault(); navigate(pages[Number(key) - 1]) }
+}
+
+function updateRefreshAge () {
+  const label = document.getElementById('refresh-age')
+  if (!label) return
+  const timestamp = Number(state.lastChecked)
+  if (!Number.isFinite(timestamp) || timestamp <= 0) { label.textContent = 'Never'; return }
+  const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60_000))
+  label.textContent = minutes === 0 ? 'Updated just now' : `Updated ${minutes} min ago`
+}
+
+function updateLastCheckedLabels () {
+  updateRefreshAge()
+  const label = document.getElementById('lc-' + state.page)
+  if (label && state.lastChecked) label.textContent = fmtChecked(state.lastChecked)
+}
+
+function stopRefreshAgeTimer () {
+  if (refreshAgeInterval !== null) clearInterval(refreshAgeInterval)
+  refreshAgeInterval = null
+}
+
+function startRefreshAgeTimer () {
+  updateLastCheckedLabels()
+  if (refreshAgeInterval !== null) return
+  refreshAgeInterval = setInterval(updateLastCheckedLabels, 30_000)
+  window.addEventListener('pagehide', stopRefreshAgeTimer, { once: true })
+}
+
 // ─── Shared action buttons ────────────────────────────────────────────────────
 
 // Buttons: "<Store> app" only when that launcher is installed (the backend falls back
 // to the browser anyway), plus Browser.
-function makeCardActions (store, url, id) {
+function makeCardActions (store, url, id, title) {
   const wrap     = document.createElement('div')
   wrap.className = 'card-actions'
   const ch = launcherOf(store)
   if (ch) {
-    const appBtn = tmpl(`<button class="card-btn steam-btn" title="Open in ${ch.label}">${ch.label}</button>`)
+    const appBtn = document.createElement('button')
+    appBtn.type = 'button'; appBtn.className = 'card-btn steam-btn'; appBtn.title = `Open in ${ch.label}`; appBtn.textContent = ch.label
+    appBtn.setAttribute('aria-label', `Open ${title} in ${ch.label}`)
     appBtn.addEventListener('click', e => { e.stopPropagation(); window.api.openInApp(store, url, id) })
     wrap.append(appBtn)
   }
-  const webBtn = tmpl(`<button class="card-btn" title="Open in browser">🌐 Browser</button>`)
+  const webBtn = document.createElement('button')
+  webBtn.type = 'button'; webBtn.className = 'card-btn'; webBtn.title = 'Open in browser'; webBtn.textContent = '🌐 Browser'
+  webBtn.setAttribute('aria-label', `Open ${title} in your browser`)
   webBtn.addEventListener('click', e => { e.stopPropagation(); openBrowser(url) })
   wrap.append(webBtn)
   return wrap
+}
+
+function makeCardOpenButton (store, url, title, description = '') {
+  const button = document.createElement('button')
+  button.type = 'button'; button.className = 'game-card-open'
+  const key = storeKeyFor(store)
+  const label = ['steam', 'gog', 'epic'].includes(key) ? `Open ${title} on ${gameStoreName(key)}` : `Open ${title} in your browser`
+  button.setAttribute('aria-label', description ? `${label}. ${description}` : label)
+  button.addEventListener('click', () => openBrowser(url))
+  return button
 }
 
 // ─── Wishlist page ────────────────────────────────────────────────────────────
@@ -118,19 +408,33 @@ function makeCardActions (store, url, id) {
 function renderWishlist () {
   const $ = id => document.getElementById(id)
   const loginPrompt = $('wishlist-login-prompt'), onSaleWrap = $('wishlist-on-sale')
+  const loginActions = $('wishlist-signin-actions'), accountHint = $('wishlist-account-hint')
   const allWrap = $('wishlist-all-section'), emptyEl = $('empty-wishlist')
   const panel = $('wishlist-deal-panel'), tabs = $('wishlist-tabs'), errs = $('wishlist-errors')
+  const controls = $('wishlist-controls'), search = $('wishlist-search'), sort = $('wishlist-sort')
+  const saleOnly = $('wishlist-sale-only'), filters = state.listFilters.wishlist
 
+  emptyEl.classList.toggle('loading-state', !state.dataLoaded)
   updateBadges()
   if ($('lc-wishlist')) $('lc-wishlist').textContent = fmtChecked(state.lastChecked)
   const hide = (...els) => els.forEach(e => { if (e) e.style.display = 'none' })
 
   if (!hasAccount()) {
     loginPrompt.style.display = 'flex'
-    hide(onSaleWrap, allWrap, emptyEl, panel, tabs, errs)
+    loginActions.replaceChildren(...Object.keys(STORES).map(store => {
+      const button = document.createElement('button')
+      button.type = 'button'; button.className = 'action-btn wishlist-signin-btn'; button.textContent = 'Sign in to ' + STORES[store]
+      button.addEventListener('click', () => signInStore(store, button))
+      return button
+    }))
+    accountHint.style.display = 'none'
+    hide(onSaleWrap, allWrap, emptyEl, panel, tabs, errs, controls)
     return
   }
   hide(loginPrompt)
+  const missingStores = Object.keys(STORES).filter(store => !state.accounts[store])
+  accountHint.textContent = missingStores.length ? 'Sign in to ' + missingStores.map(store => STORES[store]).join(' and ') + ' to include their wishlists.' : ''
+  accountHint.style.display = missingStores.length ? 'block' : 'none'
 
   // Per-store failures (e.g. Epic rejecting the token) shown instead of silently empty
   const failed = Object.entries(state.wishlistErrors).filter(([s]) => state.accounts[s])
@@ -142,23 +446,45 @@ function renderWishlist () {
   const stores = Object.keys(STORES).filter(s => state.accounts[s])
   if (!stores.includes(state.wishlistTab)) state.wishlistTab = 'all'
   tabs.style.display = stores.length > 1 ? 'flex' : 'none'
-  tabs.innerHTML = ''
-  ;['all', ...stores].forEach(s => {
-    const n = s === 'all' ? state.wishlist.length : state.wishlist.filter(w => w.store === s).length
-    const b = document.createElement('button')
-    b.className = 'tab' + (state.wishlistTab === s ? ' active' : '')
-    b.textContent = `${s === 'all' ? 'All' : STORES[s]} (${n})`
-    b.addEventListener('click', () => { state.wishlistTab = s; renderWishlist() })
-    tabs.appendChild(b)
-  })
+  renderTabList(tabs, ['all', ...stores].map(s => ({
+    key: s, text: `${s === 'all' ? 'All' : STORES[s]} (${s === 'all' ? state.wishlist.length : state.wishlist.filter(w => w.store === s).length})`,
+  })), state.wishlistTab, 'Wishlist stores', s => { state.wishlistTab = s; renderWishlist() })
 
   const items = state.wishlistTab === 'all' ? state.wishlist : state.wishlist.filter(w => w.store === state.wishlistTab)
+  const visibleCount = filteredSorted(items, 'wishlist', {
+    title: item => item.name, price: item => item.priceInfo?.final ?? Infinity, discount: item => item.priceInfo?.discount ?? 0,
+  }).length
+  updateResultCount('wishlist', visibleCount, items.length)
+  emptyEl.querySelector('.clear-filter')?.remove()
+  controls.style.display = items.length ? 'flex' : 'none'
+  search.value = filters.query
+  sort.value = filters.sort
+  saleOnly.setAttribute('aria-pressed', String(filters.onSaleOnly))
   if (!items.length) {
     hide(onSaleWrap, allWrap, panel)
+    if (!state.dataLoaded) {
+      hide(onSaleWrap, panel, emptyEl)
+      allWrap.style.display = 'block'
+      renderSkeletons($('list-wishlist-all'), 'row')
+      return
+    }
     const steamOnly = state.wishlistTab === 'steam' || (state.wishlistTab === 'all' && state.accounts.steam && !state.accounts.gog && !state.accounts.epic)
     $('wishlist-empty-msg').textContent = steamOnly && state.wishlistPrivate
       ? 'Your Steam wishlist is set to Private. Make it Public in Steam → Privacy Settings.'
-      : failed.length ? 'Wishlist could not be loaded (see above).' : 'Wishlist is empty.'
+      : failed.length ? 'Wishlist could not be loaded. See “Something went wrong” in the sidebar, then choose Copy error.'
+      : state.wishlist.length ? 'No games in this store wishlist.' : 'Wishlist is empty.'
+    emptyEl.style.display = 'flex'
+    return
+  }
+  const visibleItems = filteredSorted(items, 'wishlist', {
+    title: item => item.name,
+    price: item => item.priceInfo?.final ?? Infinity,
+    discount: item => item.priceInfo?.discount ?? 0,
+  })
+  if (!visibleItems.length) {
+    hide(onSaleWrap, allWrap, panel)
+    $('wishlist-empty-msg').textContent = 'No wishlist games match.'
+    showFilterEmpty(emptyEl, 'wishlist', 'wishlist-search', null, renderWishlist, 'No wishlist games match.', { saleOnlyId: 'wishlist-sale-only' })
     emptyEl.style.display = 'flex'
     return
   }
@@ -166,36 +492,70 @@ function renderWishlist () {
 
   const listSale = $('list-wishlist-sale'), listAll = $('list-wishlist-all')
   listSale.innerHTML = ''; listAll.innerHTML = ''
-  const onSale = items.filter(w => (w.priceInfo?.discount ?? 0) >= 20)
+  const onSale = visibleItems.filter(w => (w.priceInfo?.discount ?? 0) >= 20)
   onSaleWrap.style.display = onSale.length ? 'block' : 'none'
   onSale.forEach(w => listSale.appendChild(makeWishlistSaleRow(w)))
   allWrap.style.display = 'block'
-  items.forEach(w => listAll.appendChild(makeWishlistRow(w)))
-  panel.style.display = state.selectedWishlistDeal ? 'block' : 'none'
+  visibleItems.forEach(w => listAll.appendChild(makeWishlistRow(w)))
+  panel.style.display = state.selectedWishlistDeal && visibleItems.some(w => w.store === 'steam' && String(w.appId) === String(state.selectedWishlistDeal.appId)) ? 'block' : 'none'
   renderWishlistDealPanel()
 }
 
-const storeTag = s => `<span class="store-tag ${s}">${STORES[s] ?? s}</span>`
+const storeTag = s => `<span class="store-tag ${escHtml(s)}">${escHtml(STORES[s] ?? s)}</span>`
 
 // Where "open" should go: the cheapest known offer if another store beats this one
 const bestUrl = w => w.cheapest?.url ?? w.url
+
+function renderTabList (container, choices, selected, label, onSelect) {
+  container.setAttribute('role', 'tablist')
+  container.setAttribute('aria-label', label)
+  container.replaceChildren()
+  const activate = key => {
+    onSelect(key)
+    ;[...container.querySelectorAll('[role="tab"]')].find(tab => tab.dataset.tabKey === key)?.focus()
+  }
+  choices.forEach(({key, text}) => {
+    const tab = document.createElement('button')
+    tab.type = 'button'; tab.className = 'tab' + (key === selected ? ' active' : ''); tab.setAttribute('role', 'tab')
+    tab.dataset.tabKey = key; tab.textContent = text
+    tab.setAttribute('aria-selected', String(key === selected)); tab.tabIndex = key === selected ? 0 : -1
+    tab.addEventListener('click', () => activate(key))
+    tab.addEventListener('keydown', e => {
+      const index = choices.findIndex(choice => choice.key === key)
+      let next = index
+      if (e.key === 'ArrowRight') next = (index + 1) % choices.length
+      else if (e.key === 'ArrowLeft') next = (index - 1 + choices.length) % choices.length
+      else if (e.key === 'Home') next = 0
+      else if (e.key === 'End') next = choices.length - 1
+      else return
+      e.preventDefault(); activate(choices[next].key)
+    })
+    container.appendChild(tab)
+  })
+}
 
 function makeWishlistSaleRow (w) {
   const p   = w.priceInfo
   const row = document.createElement('div')
   row.className = 'deal-row'
-  row.innerHTML = `
+  const main = document.createElement('button')
+  main.type = 'button'
+  main.className = 'deal-row-main wishlist-sale-main'
+  main.innerHTML = `
     <div>
       <div class="deal-name">${escHtml(w.name)}</div>
       <div class="deal-store">${storeTag(w.store)}${w.cheapest ? `<span class="cheapest-tag">↘ ${escHtml(w.cheapest.store)} ${fmt$(w.cheapest.price)}</span>` : ''}</div>
     </div>
-    <span class="deal-orig">${fmt$(p.initial)}</span>
-    <span class="deal-cut">-${p.discount}%</span>
-    <span class="deal-price">${escHtml(p.formatted ?? fmt$(p.final))}</span>`
+    <span class="sr-only">${escHtml(salePriceDescription(p.initial, p.final, p.discount, p.formatted))}</span>
+    <span class="deal-orig" aria-hidden="true">${fmt$(p.initial)}</span>
+    <span class="deal-price" aria-hidden="true">${escHtml(p.formatted ?? fmt$(p.final))}</span>
+    <span class="deal-cut" aria-hidden="true">-${escHtml(p.discount)}%</span>`
+  main.querySelector('.deal-name').setAttribute('title', w.name)
   const btn = tmpl(`<button class="deal-open" title="${w.cheapest ? 'Open cheapest offer' : 'Open store page'}">↗</button>`)
+  btn.setAttribute('aria-label', `Open ${w.name} at ${w.cheapest?.store || gameStoreName(w.store)}`)
   btn.addEventListener('click', e => { e.stopPropagation(); openBrowser(bestUrl(w)) })
-  row.appendChild(btn)
-  row.addEventListener('click', () => openBrowser(bestUrl(w)))
+  main.addEventListener('click', () => openBrowser(bestUrl(w)))
+  row.append(main, btn)
   return row
 }
 
@@ -204,6 +564,9 @@ function makeWishlistRow (w) {
   const onSale = (p?.discount ?? 0) >= 20
   const row    = document.createElement('div')
   row.className = 'wishlist-row' + (onSale ? ' on-sale' : '')
+  const main = document.createElement('button')
+  main.type = 'button'
+  main.className = 'wishlist-main'
 
   const thumb = document.createElement('img')
   thumb.className = 'wishlist-thumb'
@@ -213,17 +576,18 @@ function makeWishlistRow (w) {
   thumb.style.visibility = w.image ? '' : 'hidden'
 
   const info  = document.createElement('div')
-  info.style.cssText = 'min-width:0;flex:1'
   const priceStr = p?.formatted
     ? (onSale
-        ? `<span style="color:var(--amber)">-${p.discount}% · ${escHtml(p.formatted)}</span>`
+        ? `<span class="sr-only">${escHtml(salePriceDescription(p.initial, p.final, p.discount, p.formatted))}</span><span aria-hidden="true" style="color:var(--amber)">-${escHtml(p.discount)}% · ${escHtml(p.formatted)}</span>`
         : `<span style="color:var(--text2)">${escHtml(p.formatted)}</span>`)
     : ''
   const cheap = w.cheapest ? ` <span class="cheapest-tag">${ARROW_DOWN} cheaper at ${escHtml(w.cheapest.store)}: ${fmt$(w.cheapest.price)}</span>` : ''
-  info.innerHTML = `<div class="wishlist-name" title="${escHtml(w.name)}">${storeTag(w.store)}${escHtml(w.name)}</div><div class="wishlist-sub">${priceStr}${cheap}</div>`
+  info.innerHTML = `<div class="wishlist-name">${storeTag(w.store)}${escHtml(w.name)}</div><div class="wishlist-sub">${priceStr}${cheap}</div>`
+  info.querySelector('.wishlist-name').setAttribute('title', w.name)
 
-  row.append(thumb, info, makeIconBtns(w))
-  row.addEventListener('click', () => w.store === 'steam' ? selectWishlistGame(w) : openBrowser(bestUrl(w)))
+  main.append(thumb, info)
+  main.addEventListener('click', () => w.store === 'steam' ? selectWishlistGame(w) : openBrowser(bestUrl(w)))
+  row.append(main, makeIconBtns(w))
   return row
 }
 
@@ -231,12 +595,16 @@ function makeIconBtns (w) {
   const wrap     = document.createElement('div')
   wrap.className = 'wishlist-actions'
   const ch = launcherOf(w.store)
+  const storeName = gameStoreName(w.store)
   if (ch) {
-    const appBtn = tmpl(`<button class="icon-btn" title="Open in ${ch.label}">${LOGO_PATH[w.store] ? logo(w.store) : ch.label[0]}</button>`)
+    const appBtn = tmpl(`<button class="icon-btn" title="Open in launcher">${LOGO_PATH[w.store] ? logo(w.store) : escHtml(ch.label[0])}</button>`)
+    appBtn.title = `Open in ${ch.label}`
+    appBtn.setAttribute('aria-label', `Open ${w.name} in ${ch.label}`)
     appBtn.addEventListener('click', e => { e.stopPropagation(); window.api.openInApp(w.store, w.url, w.id) })
     wrap.append(appBtn)
   }
   const webBtn = tmpl(`<button class="icon-btn" title="${w.cheapest ? `Open cheapest offer (${escHtml(w.cheapest.store)})` : 'Open in browser'}">${w.cheapest ? ARROW_DOWN : '↗'}</button>`)
+  webBtn.setAttribute('aria-label', `Open ${w.name} at ${w.cheapest?.store || storeName} in browser`)
   webBtn.addEventListener('click', e => { e.stopPropagation(); openBrowser(bestUrl(w)) })
   wrap.append(webBtn)
   return wrap
@@ -260,7 +628,8 @@ function renderWishlistDealPanel () {
   const d = state.selectedWishlistDeal
   if (!panel || !d) return
 
-  panel.querySelector('#wishlist-deal-title').textContent = d.gameName ?? `App ${d.appId}`
+  const gameName = d.gameName ?? `App ${d.appId}`
+  panel.querySelector('#wishlist-deal-title').textContent = gameName
   panel.querySelector('#wishlist-deal-updated').textContent = d.loading ? 'Loading…' : fmtChecked(d.checkedAt)
 
   const steamPrice = panel.querySelector('#wishlist-steam-price')
@@ -281,6 +650,7 @@ function renderWishlistDealPanel () {
   const cheapestPrice = panel.querySelector('#wishlist-cheapest-price')
   const cheapestSub = panel.querySelector('#wishlist-cheapest-sub')
   const cheapestBtn = panel.querySelector('#wishlist-open-cheapest')
+  cheapestBtn.setAttribute('aria-label', `Open ${gameName} at ${d.cheapest?.store ?? 'the cheapest store'}`)
   if (d.loading) {
     cheapestPrice.textContent = 'Loading…'
     cheapestSub.textContent = 'Searching external stores…'
@@ -296,7 +666,9 @@ function renderWishlistDealPanel () {
     cheapestBtn.style.display = 'none'
     cheapestBtn.onclick = null
   }
-  panel.querySelector('#wishlist-open-steam').onclick = () => openSteam(d.appId)
+  const steamBtn = panel.querySelector('#wishlist-open-steam')
+  steamBtn.setAttribute('aria-label', `Open ${gameName} on Steam`)
+  steamBtn.onclick = () => openSteam(d.appId)
 }
 
 // ─── Free games page ──────────────────────────────────────────────────────────
@@ -308,21 +680,29 @@ function renderFreeGames () {
   const emptyEl   = document.getElementById('empty-free')
   const tsEl      = document.getElementById('lc-free')
 
+  emptyEl.classList.toggle('loading-state', !state.dataLoaded)
   updateBadges()
   gridFree.innerHTML = ''
   gridWknd.innerHTML = ''
   if (tsEl) tsEl.textContent = fmtChecked(state.lastChecked)
 
   if (!state.freeGames.length && !state.freeWeekends.length) {
+    if (!state.dataLoaded) {
+      renderSkeletons(gridFree, 'card')
+      emptyEl.style.display = 'none'
+      return
+    }
+    const mins = Number(state.settings.checkInterval) || 60
+    document.getElementById('free-empty-copy').textContent = `No free games right now. We check every ${mins < 60 ? mins + ' minutes' : mins / 60 + ' hour' + (mins === 60 ? '' : 's')}.`
     emptyEl.style.display = 'flex'
     return
   }
   emptyEl.style.display = 'none'
-  state.freeGames.forEach(g => gridFree.appendChild(makeFreeCard(g, 'tag-free', 'FREE')))
+  endsFirst(state.freeGames).forEach(g => gridFree.appendChild(makeFreeCard(g, 'tag-free', 'FREE')))
 
   if (state.freeWeekends.length) {
     lblWknd.style.display = 'block'
-    state.freeWeekends.forEach(g => gridWknd.appendChild(makeFreeCard(g, 'tag-weekend', 'WEEKEND')))
+    endsFirst(state.freeWeekends).forEach(g => gridWknd.appendChild(makeFreeCard(g, 'tag-weekend', 'WEEKEND')))
   } else {
     lblWknd.style.display = 'none'
   }
@@ -333,11 +713,11 @@ function renderFreeGames () {
 function updateBadges () {
   const onSale = onSaleItems().length
   const wb = document.getElementById('badge-wishlist')
-  if (wb) { wb.textContent = onSale; wb.classList.toggle('visible', onSale > 0) }
+  if (wb) { wb.querySelector('.badge-count').textContent = onSale; wb.classList.toggle('visible', onSale > 0) }
 
   const total = state.freeGames.length + state.freeWeekends.length
   const fb = document.getElementById('badge-free')
-  if (fb) { fb.textContent = total; fb.classList.toggle('visible', total > 0) }
+  if (fb) { fb.querySelector('.badge-count').textContent = total; fb.classList.toggle('visible', total > 0) }
 }
 
 function makeFreeCard (g, tagClass, tagText) {
@@ -345,20 +725,23 @@ function makeFreeCard (g, tagClass, tagText) {
   card.className = 'game-card'
   const srcClass = ['steam','epic','gog'].includes(g.source) ? g.source : 'other'
   card.innerHTML = `
+    <div class="game-card-content" aria-hidden="true">
     <div class="game-thumb">
       ${g.image
         ? `<img src="${escHtml(g.image)}" alt="" data-fb="${srcIcon(g.source)}">`
         : `<span class="fallback">${srcIcon(g.source)}</span>`}
-      <span class="src-badge ${srcClass}">${escHtml(g.source ?? 'other').toUpperCase()}</span>
+      <span class="src-badge ${srcClass}">${escHtml(gameStoreName(g.source).toUpperCase())}</span>
     </div>
     <div class="game-info">
-      <div class="game-title" title="${escHtml(g.title)}">${escHtml(g.title)}</div>
+    <div class="game-title">${escHtml(g.title)}</div>
       <div class="price-row">
         <span class="${tagClass}">${tagText}</span>
-        ${g.endDate ? `<span class="time-left">${timeLeft(g.endDate)}</span>` : ''}
+        ${g.endDate ? `<span class="time-left">${escHtml(endDateLabel(g.endDate))}</span>` : ''}
       </div>
-    </div>`
-  card.appendChild(makeCardActions(g.source, g.url, g.appId))
+    </div></div>`
+  card.appendChild(makeCardOpenButton(g.source, g.url, g.title))
+  card.appendChild(makeCardActions(g.source, g.url, g.appId, g.title))
+  card.querySelector('.game-title').setAttribute('title', g.title)
   return card
 }
 
@@ -369,7 +752,9 @@ function renderDeals () {
   const notice  = document.getElementById('info-notice')
   const emptyEl = document.getElementById('empty-deals')
   const tsEl    = document.getElementById('lc-deals')
+  document.getElementById('deals-sort').value = state.listFilters.deals.sort
 
+  emptyEl.classList.toggle('loading-state', !state.dataLoaded)
   list.innerHTML = ''
   if (tsEl) tsEl.textContent = fmtChecked(state.lastChecked)
 
@@ -380,25 +765,38 @@ function renderDeals () {
     ? `<div>${escHtml(state.dealsError)}</div>`
     : `Source: ${escHtml(state.dealsSource)}`
 
-  emptyEl.style.display = state.deals.length ? 'none' : 'flex'
-  state.deals.forEach(d => list.appendChild(makeDealRow(d)))
+  const items = filteredSorted(state.deals, 'deals')
+  syncMinDiscount('deals', 'deals-discount-filters')
+  emptyEl.style.display = items.length ? 'none' : 'flex'
+  if (!items.length && !state.dataLoaded) {
+    renderSkeletons(list, 'row')
+    emptyEl.style.display = 'none'
+  } else if (!items.length && (state.listFilters.deals.query.trim() || state.listFilters.deals.minDiscount)) {
+    showFilterEmpty(emptyEl, 'deals', 'deals-search', 'deals-discount-filters', renderDeals, 'No deals match.')
+  } else if (!items.length) {
+    emptyEl.replaceChildren(Object.assign(document.createElement('p'), { textContent: 'No deals could be loaded right now.' }))
+  }
+  items.forEach(d => list.appendChild(makeDealRow(d)))
+  updateResultCount('deals', items.length, state.deals.length)
 }
 
 function makeDealRow (d) {
   const row = document.createElement('div')
   row.className = 'deal-row'
-  row.innerHTML = `
-    <div>
-      <div class="deal-name">${escHtml(d.title)}</div>
-      <div class="deal-store">${escHtml(d.shop)}</div>
-    </div>
-    <span class="deal-orig">${fmt$(d.regular)}</span>
-    <span class="deal-cut">-${d.cut}%</span>
-    <span class="deal-price">${fmt$(d.price)}</span>`
+  const content = document.createElement('div')
+  const shopClass = ['steam', 'gog', 'epic'].includes(storeKeyFor(d.shop)) ? storeKeyFor(d.shop) : 'other'
+  content.className = 'deal-row-content'; content.setAttribute('aria-hidden', 'true')
+  content.innerHTML = `<div class="deal-title-line"><div class="deal-name">${escHtml(d.title)}</div><span class="deal-shop-badge ${shopClass}">${escHtml(d.shop)}</span></div>
+    <div class="deal-price-line"><span class="deal-orig">${fmt$(d.regular)}</span><span class="deal-price">${fmt$(d.price)}</span><span class="deal-cut">-${escHtml(d.cut)}%</span></div>`
+  content.querySelector('.deal-name').setAttribute('title', d.title)
+  const main = document.createElement('button')
+  main.type = 'button'; main.className = 'deal-row-main'
+  main.setAttribute('aria-label', `Open ${d.title} on ${d.shop}. ${salePriceDescription(d.regular, d.price, d.cut)}`)
+  main.addEventListener('click', () => openBrowser(d.url))
   const btn = tmpl(`<button class="deal-open" title="Open store page">↗</button>`)
+  btn.setAttribute('aria-label', `Open ${d.title} on ${d.shop}`)
   btn.addEventListener('click', e => { e.stopPropagation(); openBrowser(d.url) })
-  row.appendChild(btn)
-  row.addEventListener('click', () => openBrowser(d.url))
+  row.append(content, main, btn)
   return row
 }
 
@@ -408,41 +806,53 @@ function renderStoreSales () {
   const tabs = document.getElementById('sales-tabs')
   const grid = document.getElementById('grid-storesales')
   const emptyEl = document.getElementById('empty-storesales')
+  document.getElementById('sales-sort').value = state.listFilters.storesales.sort
   document.getElementById('lc-storesales').textContent = fmtChecked(state.lastChecked)
 
-  tabs.innerHTML = ''
-  Object.keys(STORES).forEach(s => {
-    const b = document.createElement('button')
-    b.className = 'tab' + (state.salesTab === s ? ' active' : '')
-    b.textContent = `${STORES[s]} (${state.sales[s]?.length ?? 0})`
-    b.addEventListener('click', () => { state.salesTab = s; renderStoreSales() })
-    tabs.appendChild(b)
-  })
+  emptyEl.classList.toggle('loading-state', !state.dataLoaded)
+  renderTabList(tabs, Object.keys(STORES).map(s => ({key:s, text:`${STORES[s]} (${state.sales[s]?.length ?? 0})`})),
+    state.salesTab, 'Stores', s => { state.salesTab = s; renderStoreSales() })
 
   grid.innerHTML = ''
   const list = state.sales[state.salesTab] ?? []
-  emptyEl.style.display = list.length ? 'none' : 'flex'
-  list.forEach(d => grid.appendChild(makeSaleCard(d)))
+  const items = filteredSorted(list, 'storesales')
+  updateResultCount('storesales', items.length, list.length)
+  syncMinDiscount('storesales', 'sales-discount-filters')
+  emptyEl.style.display = items.length ? 'none' : 'flex'
+  if (!items.length && !state.dataLoaded) {
+    renderSkeletons(grid, 'card')
+    emptyEl.style.display = 'none'
+  } else if (!items.length && (state.listFilters.storesales.query.trim() || state.listFilters.storesales.minDiscount)) {
+    showFilterEmpty(emptyEl, 'storesales', 'sales-search', 'sales-discount-filters', renderStoreSales, 'No store sales match.')
+  } else if (!items.length) {
+    emptyEl.replaceChildren(Object.assign(document.createElement('p'), { textContent: 'No discounts loaded for this store right now.' }))
+  }
+  items.forEach(d => grid.appendChild(makeSaleCard(d)))
 }
 
 function makeSaleCard (d) {
-  const src = d.shop.toLowerCase()
+  const src = storeKeyFor(d.shop)
+  const srcClass = ['steam','epic','gog'].includes(src) ? src : 'other'
   const card = document.createElement('div')
   card.className = 'game-card'
   card.innerHTML = `
+    <div class="game-card-content" aria-hidden="true">
     <div class="game-thumb">
       ${d.image ? `<img src="${escHtml(d.image)}" alt="" data-fb="${srcIcon(src)}">` : `<span class="fallback">${srcIcon(src)}</span>`}
-      <span class="src-badge ${escHtml(src)}">${escHtml(d.shop)}</span>
+      <span class="src-badge ${srcClass}">${escHtml(gameStoreName(src).toUpperCase())}</span>
     </div>
     <div class="game-info">
-      <div class="game-title" title="${escHtml(d.title)}">${escHtml(d.title)}</div>
+      <div class="game-title">${escHtml(d.title)}</div>
       <div class="price-row">
-        <span class="tag-sale">-${d.cut}%</span>
-        <span class="price-was">${fmt$(d.regular)}</span>
-        <span class="price-now">${fmt$(d.price)}</span>
+        <span class="sr-only">${escHtml(salePriceDescription(d.regular, d.price, d.cut))}</span>
+        <span class="price-was" aria-hidden="true">${fmt$(d.regular)}</span>
+        <span class="price-now" aria-hidden="true">${fmt$(d.price)}</span>
+        <span class="tag-sale" aria-hidden="true">-${escHtml(d.cut)}%</span>
       </div>
-    </div>`
-  card.appendChild(makeCardActions(src, d.url, d.appId ?? d.id))
+    </div></div>`
+  card.appendChild(makeCardOpenButton(src, d.url, d.title, salePriceDescription(d.regular, d.price, d.cut)))
+  card.appendChild(makeCardActions(src, d.url, d.appId ?? d.id, d.title))
+  card.querySelector('.game-title').setAttribute('title', d.title)
   return card
 }
 
@@ -467,7 +877,10 @@ function renderSalesCalendar () {
   if (next) {
     const days = Math.ceil((new Date(next.start) - now) / 86400000)
     banner.style.cursor = 'pointer'
-    banner.onclick = () => openSale(next)
+    banner.setAttribute('role', 'button')
+    banner.tabIndex = 0
+    banner.dataset.keyboardAction = 'activate'
+    banner.dataset.openSaleIndex = String(SALES.indexOf(next))
     banner.innerHTML = `
       <div class="nsb-icon">${next.icon}</div>
       <div class="nsb-info">
@@ -476,9 +889,15 @@ function renderSalesCalendar () {
       </div>
       <div class="nsb-countdown">
         <div class="nsb-val">${days}</div>
-        <div class="nsb-lbl">days away</div>
+        <div class="nsb-lbl">${days === 1 ? 'day' : 'days'} away</div>
       </div>`
+    banner.querySelector('.nsb-title').setAttribute('title', next.name)
   } else {
+    banner.style.cursor = ''
+    banner.removeAttribute('role')
+    banner.removeAttribute('tabindex')
+    delete banner.dataset.keyboardAction
+    delete banner.dataset.openSaleIndex
     banner.innerHTML = `<div class="nsb-icon">✅</div><div class="nsb-info"><div class="nsb-title">No upcoming sales found</div></div>`
   }
 
@@ -491,8 +910,11 @@ function renderSalesCalendar () {
     const isNext = s === next
     const item   = document.createElement('div')
     item.className = 'timeline-item clickable' + (isPast ? ' past' : '') + (isNext ? ' next' : '')
-    item.title = 'Open on Steam'
-    item.addEventListener('click', () => openSale(s))
+    item.setAttribute('role', 'button')
+    item.tabIndex = 0
+    item.dataset.keyboardAction = 'activate'
+    item.dataset.openSaleIndex = String(SALES.indexOf(s))
+    item.setAttribute('title', `Open ${s.name} on Steam`)
     item.innerHTML = `
       <div class="tl-dot"></div>
       <span class="tl-name">
@@ -501,6 +923,7 @@ function renderSalesCalendar () {
         ${s.est  ? '<span style="font-size:10px;color:var(--text2);margin-left:4px">(est.)</span>'      : ''}
       </span>
       <span class="tl-date">${fmtDate(start)} – ${fmtDate(end)}</span>`
+    item.querySelector('.tl-name').setAttribute('title', s.name)
     timeline.appendChild(item)
   })
 }
@@ -537,6 +960,19 @@ function applyTheme () {
   if (fxKey !== applyTheme.fxKey) { applyTheme.fxKey = fxKey; startFx(SALE_THEMES[s.theme]) }
 }
 
+const LOOK_TOGGLES = [
+  { key: 'rounded', label: 'Rounded window', sub: 'Round the corners of the app window' },
+  { key: 'effects', label: 'Seasonal effects', sub: 'Falling leaves, snow & more during Steam sale themes' },
+]
+const NOTIFICATION_TOGGLES = [
+  { key: 'notifyMajorSale', label: 'Steam major sale started', sub: 'Summer, Winter, Autumn & Spring sales' },
+  { key: 'notifyFreeGame', label: 'Free game available', sub: 'Epic, Steam, GOG & GamerPower giveaways', gamerpower: true },
+  { key: 'notifyFreeWeekend', label: 'Free weekend started', sub: 'Temporary Steam free-to-play promotions' },
+  { key: 'notifyWishlistSale', label: 'Wishlist game on sale', sub: 'Steam, GOG & Epic wishlist games at 20% or more off' },
+  { key: 'notifyBigDeal', label: 'Deal over 75% off', sub: 'Hot deals list (CheapShark)' },
+]
+window.dealDropOnboarding = { state, baseThemes: BASE_THEMES, lookToggles: LOOK_TOGGLES, notificationToggles: NOTIFICATION_TOGGLES, applyTheme, setAccounts, loadData, renderSettings, closeShortcutsDialog }
+
 // A sale starting switches to its theme once. If the user picks something else, lastSaleTheme
 // stays set, so a restart doesn't switch back. When the sale ends its theme is dropped.
 function syncSaleTheme () {
@@ -544,7 +980,11 @@ function syncSaleTheme () {
   const key = state.liveSale?.key ?? ''
   let dirty = false
   if (key && SALE_THEMES[key]) {
-    if (s.lastSaleTheme !== key) { s.lastSaleTheme = key; s.theme = key; dirty = true }
+    if (s.lastSaleTheme !== key) {
+      s.lastSaleTheme = key
+      if (!state.onboardingOpen || !state.onboardingThemePicked) s.theme = key
+      dirty = true
+    }
   } else {
     if (SALE_THEMES[s.theme]) { s.theme = BASE_THEMES[s.baseTheme] ? s.baseTheme : 'midnight'; dirty = true }
     if (s.lastSaleTheme) { s.lastSaleTheme = ''; dirty = true }
@@ -621,19 +1061,28 @@ function toggleRows (con, rows, after) {
   rows.forEach(r => {
     const row = document.createElement('div')
     row.className = 'setting-row'
-    row.innerHTML = `
-      <div>
-        <div class="setting-label">${r.label}</div>
-        <div class="setting-sub">${r.sub}</div>
-      </div>
-      <button class="toggle ${s[r.key] ? 'on' : ''}" data-key="${r.key}"></button>`
-    row.querySelector('.toggle').addEventListener('click', e => {
+    const copy = document.createElement('div')
+    const label = document.createElement('div'); label.className = 'setting-label'; label.textContent = r.label
+    const sub = document.createElement('div'); sub.className = 'setting-sub'
+    if (r.gamerpower) {
+      sub.appendChild(document.createTextNode('Epic, Steam, GOG & '))
+      const link = document.createElement('a'); link.href = '#'; link.dataset.href = 'https://www.gamerpower.com'; link.textContent = 'GamerPower'
+      sub.append(link, document.createTextNode(' giveaways'))
+    } else sub.textContent = r.sub
+    copy.append(label, sub)
+    const toggle = document.createElement('button')
+    toggle.type = 'button'; toggle.className = 'toggle' + (s[r.key] ? ' on' : ''); toggle.dataset.key = r.key
+    toggle.setAttribute('aria-label', r.label)
+    toggle.setAttribute('aria-pressed', String(Boolean(s[r.key])))
+    toggle.addEventListener('click', e => {
       const btn = e.currentTarget
       btn.classList.toggle('on')
       s[r.key] = btn.classList.contains('on')
+      btn.setAttribute('aria-pressed', String(s[r.key]))
       window.api.saveSettings(s)
       after?.()
     })
+    row.append(copy, toggle)
     con.appendChild(row)
   })
 }
@@ -643,11 +1092,17 @@ function renderLauncherPrefs () {
   const con = document.getElementById('launcher-prefs')
   con.innerHTML = ''
   ;[['gog', 'launcherGog', 'GOG'], ['epic', 'launcherEpic', 'Epic Games']].forEach(([store, key, name]) => {
+    const shortName = name === 'Epic Games' ? 'Epic' : name
     const row = document.createElement('div')
-    row.className = 'setting-row'
-    row.innerHTML = `<div><div class="setting-label">Open ${name} games in</div>
-      <div class="setting-sub">${state.launchers[store]?.options.length ? 'Detected: ' + state.launchers[store].options.map(o => o.label).join(', ') : 'No launcher detected — opens in the browser'}</div></div><div class="theme-grid" style="margin:0"></div>`
-    const grid = row.querySelector('.theme-grid')
+    row.className = 'setting-row launcher-pref-row'
+    const copy = document.createElement('div')
+    const label = document.createElement('div'); label.className = 'setting-label'; label.textContent = `Open ${shortName} games in`
+    const sub = document.createElement('div'); sub.className = 'setting-sub'
+    const detected = state.launchers[store]?.options ?? []
+    sub.textContent = detected.length ? 'Detected: ' + detected.map(o => o.label).join(', ') : 'No launcher detected — opens in the browser'
+    copy.append(label, sub)
+    const grid = document.createElement('div'); grid.className = 'theme-grid launcher-pref-grid'
+    row.append(copy, grid)
     const choices = [{ key: 'auto', label: 'Auto' }, ...(state.launchers[store]?.options ?? []), { key: 'browser', label: 'Browser' }]
     choices.forEach(c => {
       const b = document.createElement('button')
@@ -668,19 +1123,9 @@ function renderLauncherPrefs () {
 function renderSettings () {
   const s = state.settings
   renderThemeGrid()
-  toggleRows(document.getElementById('look-settings'), [
-    { key: 'rounded', label: 'Rounded window',  sub: 'Round the corners of the app window' },
-    { key: 'effects', label: 'Seasonal effects', sub: 'Falling leaves, snow & more during Steam sale themes' },
-  ], applyTheme)
+  toggleRows(document.getElementById('look-settings'), LOOK_TOGGLES, applyTheme)
 
-  renderLauncherPrefs()
-  toggleRows(document.getElementById('notif-settings'), [
-    { key: 'notifyMajorSale',    label: 'Steam major sale started',   sub: 'Summer, Winter, Autumn & Spring sales' },
-    { key: 'notifyFreeGame',     label: 'Free game available',         sub: 'Epic, Steam, GOG & GamerPower giveaways' },
-    { key: 'notifyFreeWeekend',  label: 'Free weekend started',        sub: 'Temporary Steam free-to-play promotions' },
-    { key: 'notifyWishlistSale', label: 'Wishlist game on sale',       sub: 'Steam, GOG & Epic wishlists, drops of ≥20%' },
-    { key: 'notifyBigDeal',      label: 'Deal over 75% off',           sub: 'Hot deals list (CheapShark)' },
-  ])
+  toggleRows(document.getElementById('notif-settings'), NOTIFICATION_TOGGLES)
 
   const ig = document.getElementById('interval-group')
   ig.innerHTML = ''
@@ -696,14 +1141,116 @@ function renderSettings () {
     })
     ig.appendChild(b)
   })
+  renderLauncherPrefs()
+  renderSettingsAccounts()
+  renderAbout()
+  const reset = document.getElementById('btn-reset-settings')
+  reset.textContent = resetSettingsArmed ? 'Really reset?' : 'Reset settings to defaults'
+  reset.setAttribute('aria-label', resetSettingsArmed ? 'Confirm reset settings to defaults' : 'Reset settings to defaults')
+}
+
+function renderSettingsAccounts () {
+  const con = document.getElementById('settings-accounts')
+  con.replaceChildren()
+  Object.keys(STORES).forEach(store => {
+    const row = document.createElement('div'); row.className = 'setting-row settings-account-row'
+    const account = state.accounts[store]
+    const status = document.createElement('span'); status.className = 'setting-label'
+    const name = gameStoreName(store)
+    status.textContent = account ? `${name} — signed in as ${account.name || name + ' user'}` : `${name} — not signed in`
+    row.appendChild(status)
+    if (account) {
+      const signOut = document.createElement('button'); signOut.type = 'button'; signOut.className = 'acct-out'; signOut.textContent = 'Sign out'
+      signOut.addEventListener('click', async () => {
+        if (signOut.disabled) return
+        signOut.disabled = true
+        try {
+          setAccounts(await window.api.logout(store))
+          state.wishlist = state.wishlist.filter(item => item.store !== store)
+          updateBadges()
+          renderErrors()
+          navigate(state.page)
+        } finally { signOut.disabled = false }
+      })
+      row.appendChild(signOut)
+    }
+    con.appendChild(row)
+  })
+}
+
+function renderAbout () {
+  const projectLinks = document.getElementById('about-project-links')
+  const sources = document.getElementById('about-sources')
+  projectLinks.replaceChildren()
+  ;[['GitHub repository', REPO], ['Report an issue', REPO + '/issues']].forEach(([label, url], i) => {
+    if (i) projectLinks.appendChild(document.createTextNode(' · '))
+    const link = document.createElement('a'); link.href = '#'; link.dataset.href = url; link.textContent = label; projectLinks.appendChild(link)
+  })
+  sources.replaceChildren()
+  const credits = [
+    ['Steam', 'https://store.steampowered.com/'], ['GOG', 'https://www.gog.com/'],
+    ['Epic Games', 'https://store.epicgames.com/'], ['GamerPower', 'https://www.gamerpower.com'],
+    ['CheapShark', 'https://www.cheapshark.com'],
+  ]
+  credits.forEach(([name, url]) => {
+    const item = document.createElement('li'), link = document.createElement('a')
+    link.href = '#'; link.dataset.href = url; link.textContent = name; item.appendChild(link); sources.appendChild(item)
+  })
+  const fonts = document.createElement('li'); fonts.textContent = 'DM Sans and DM Mono — SIL Open Font License (OFL)'; sources.appendChild(fonts)
+}
+
+let resetSettingsArmed = false
+let resetSettingsTimer = null
+function clearResetSettingsConfirmation () {
+  clearTimeout(resetSettingsTimer)
+  resetSettingsTimer = null
+  if (!resetSettingsArmed) return
+  resetSettingsArmed = false
+  const button = document.getElementById('btn-reset-settings')
+  if (button) {
+    button.textContent = 'Reset settings to defaults'
+    button.setAttribute('aria-label', 'Reset settings to defaults')
+  }
+}
+function resetSettings () {
+  const settings = state.settings
+  Object.assign(settings, DEFAULT_SETTINGS, {
+    launcherGog: settings.launcherGog, launcherEpic: settings.launcherEpic, onboarded: settings.onboarded,
+    lastSaleTheme: SALE_THEMES[state.liveSale?.key] ? state.liveSale.key : '',
+  })
+  state.listFilters = {
+    deals: { query: '', sort: 'discount', minDiscount: 0 }, storesales: { query: '', sort: 'discount', minDiscount: 0 },
+    wishlist: { query: '', sort: 'discount', onSaleOnly: false },
+  }
+  clearUiPrefs()
 }
 
 // ─── Navigation ───────────────────────────────────────────────────────────────
 
-function navigate (page) {
+function navigate (page, persist = true) {
+  if (state.page === 'settings' && page !== 'settings') clearResetSettingsConfirmation()
+  const changed = state.page !== page
   state.page = page
-  document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page))
-  document.querySelectorAll('.page').forEach(el => el.classList.toggle('active', el.id === 'page-' + page))
+  if (persist) persistUiPrefs()
+  if (changed) {
+    const main = document.querySelector('.main-content')
+    if (main) main.scrollTo({ top: 0, behavior: 'auto' })
+  }
+  document.querySelectorAll('.nav-item').forEach(el => {
+    const active = el.dataset.page === page
+    el.classList.toggle('active', active)
+    if (active) el.setAttribute('aria-current', 'page')
+    else el.removeAttribute('aria-current')
+  })
+  document.querySelectorAll('.page').forEach(el => {
+    const active = el.id === 'page-' + page
+    el.classList.toggle('active', active)
+    if (active && changed) {
+      el.classList.remove('page-enter')
+      void el.offsetWidth
+      el.classList.add('page-enter')
+    }
+  })
   switch (page) {
     case 'wishlist':  renderWishlist();      break
     case 'free':      renderFreeGames();     break
@@ -748,46 +1295,57 @@ function renderAccounts () {
       navigate(state.page)
     })
     const inBtn = row.querySelector('.acct-btn')
-    inBtn?.addEventListener('click', async () => {
-      inBtn.disabled = true; inBtn.textContent = 'Opening…'
-      try {
-        setAccounts(await window.api.login(s))
-        await loadData()
-      } catch (e) {
-        if (String(e) !== 'Cancelled') alert(`${STORES[s]} sign-in failed: ${e}`)
-      } finally {
-        renderAccounts()
-      }
-    })
+    inBtn?.addEventListener('click', () => signInStore(s, inBtn))
     con.appendChild(row)
   })
+}
+
+async function signInStore (store, button) {
+  button.disabled = true; button.textContent = 'Opening…'
+  try {
+    setAccounts(await window.api.login(store))
+    await loadData()
+  } catch (e) {
+    if (String(e) !== 'Cancelled') alert(`${STORES[store]} sign-in failed: ${e}`)
+  } finally {
+    if (button.isConnected) { button.disabled = false; button.textContent = button.classList.contains('wishlist-signin-btn') ? 'Sign in to ' + STORES[store] : 'Sign in' }
+  }
 }
 
 function setAccounts (acc) {
   state.accounts = { steam: acc?.steam ?? null, gog: acc?.gog ?? null, epic: acc?.epic ?? null }
   renderAccounts()
   if (state.page === 'wishlist') renderWishlist()
+  if (state.page === 'settings') renderSettingsAccounts()
 }
 
 // ─── Data loading ─────────────────────────────────────────────────────────────
 
 async function loadData (force = false) {
-  const btn = document.getElementById('btn-check-now')
-  if (btn) { btn.disabled = true; btn.textContent = 'Refreshing…' }
+  if (state.refreshing) return
+  state.refreshing = true
+  if (force) announceStatus('Refreshing…')
+  const buttons = [[document.getElementById('btn-check-now'), 'Refresh all'], [document.getElementById('btn-check-settings'), 'Refresh all']]
+  buttons.forEach(([btn]) => { if (btn) { btn.disabled = true; btn.setAttribute('aria-busy', 'true') } })
+  buttons.forEach(([btn]) => { if (btn) btn.textContent = 'Refreshing…' })
   try {
     if (force) state.launchers = await window.api.launchers().catch(() => state.launchers)
     state.fetchError = null
     applyData(await (force ? window.api.checkNow() : window.api.fetchData()))
+    if (force) announceStatus('Updated')
   } catch (e) {
     console.error('[fetchData]', e)
     state.fetchError = `Couldn't update: ${String(e).slice(0, 90)}`
     renderErrors()
+    if (force) announceStatus('Update failed')
+    if (!state.dataLoaded) { state.dataLoaded = true; navigate(state.page) }
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Refresh all' }
+    state.refreshing = false
+    buttons.forEach(([btn, label]) => { if (btn) { btn.disabled = false; btn.textContent = label; btn.removeAttribute('aria-busy') } })
   }
 }
 
-// Red box above "Refresh all": only shown when something is wrong. It says so without details;
+// Red box below accounts: only shown when something is wrong. It says so without details;
 // "Copy error" puts the details on the clipboard for a bug report.
 let lastErrorText = ''
 function renderErrors () {
@@ -815,10 +1373,12 @@ async function copyError () {
     document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove()
   }
   if (btn) { btn.textContent = 'Copied ✓'; setTimeout(() => { btn.textContent = 'Copy error' }, 1500) }
+  announceStatus('Copied')
 }
 
 function applyData (data) {
   data = data || {}
+  state.dataLoaded = true
   // pick up profile changes made during the poll (e.g. a GOG avatar fetched for an older sign-in)
   window.api.getAccounts().then(a => { if (JSON.stringify(a) !== JSON.stringify(state.accounts)) setAccounts(a) })
   state.freeGames    = data.freeGames    ?? []
@@ -837,6 +1397,7 @@ function applyData (data) {
     state.selectedWishlistDeal = null
   }
   state.lastChecked  = data.lastChecked  ?? Date.now()
+  updateRefreshAge()
   renderErrors()
   updateBadges()
   // Re-render the visible page — but never the settings page, so a background
@@ -870,11 +1431,51 @@ async function init () {
   document.getElementById('sidebar-errors')?.addEventListener('click', e => { if (e.target.closest('#btn-copy-error')) copyError() })
   document.getElementById('btn-check-now')?.addEventListener('click',      () => loadData(true))
   document.getElementById('btn-check-settings')?.addEventListener('click', () => loadData(true))
+  document.getElementById('btn-show-onboarding')?.addEventListener('click', () => startOnboarding())
+  document.getElementById('btn-reset-settings')?.addEventListener('click', async e => {
+    const btn = e.currentTarget
+    if (!resetSettingsArmed) {
+      resetSettingsArmed = true
+      btn.textContent = 'Really reset?'
+      btn.setAttribute('aria-label', 'Confirm reset settings to defaults')
+      clearTimeout(resetSettingsTimer)
+      resetSettingsTimer = setTimeout(() => {
+        resetSettingsArmed = false
+        resetSettingsTimer = null
+        btn.textContent = 'Reset settings to defaults'
+        btn.setAttribute('aria-label', 'Reset settings to defaults')
+      }, 4000)
+      return
+    }
+    clearTimeout(resetSettingsTimer); resetSettingsArmed = false; btn.disabled = true
+    resetSettings()
+    try {
+      await window.api.saveSettings(state.settings)
+      applyTheme(); navigate('free', false)
+    } finally { btn.disabled = false }
+  })
+  bindListControls('deals', 'deals-search', 'deals-sort', renderDeals, { minDiscountId: 'deals-discount-filters' })
+  bindListControls('storesales', 'sales-search', 'sales-sort', renderStoreSales, { minDiscountId: 'sales-discount-filters' })
+  bindListControls('wishlist', 'wishlist-search', 'wishlist-sort', renderWishlist, { saleOnlyId: 'wishlist-sale-only' })
 
   // ── Links (only hard-coded official URLs carry data-href) ───────────────
   document.addEventListener('click', e => {
     const a = e.target.closest('a[data-href]')
     if (a) { e.preventDefault(); window.api.openUrl(a.dataset.href) }
+  })
+  document.addEventListener('keydown', handleShortcutKeydown)
+  document.addEventListener('click', e => {
+    const target = e.target.closest?.('[data-open-sale-index]')
+    const sale = target && SALES[Number(target.dataset.openSaleIndex)]
+    if (sale) openSale(sale)
+  })
+  document.addEventListener('keydown', e => {
+    const target = e.target
+    if (e.key !== 'Enter' && e.key !== ' ') return
+    const row = target.closest?.('[data-keyboard-action="activate"]')
+    if (!row || (target !== row && target.closest?.('button, a, input, select, textarea'))) return
+    e.preventDefault()
+    row.click()
   })
   document.getElementById('btn-github')?.addEventListener('click', () => openBrowser(REPO))
   document.getElementById('btn-feedback')?.addEventListener('click', () => openBrowser(REPO + '/issues'))
@@ -883,7 +1484,10 @@ async function init () {
     e.preventDefault()
     window.__TAURI__.window.getCurrentWindow().startResizeDragging(el.dataset.dir)
   }))
-  window.__TAURI__.app.getVersion().then(v => { document.getElementById('app-version').textContent = 'DealDrop v' + v }).catch(() => {})
+  window.__TAURI__.app.getVersion().then(v => {
+    document.getElementById('app-version').textContent = 'DealDrop v' + v
+    document.getElementById('about-version').textContent = 'DealDrop v' + v
+  }).catch(() => {})
 
   // ── Load initial state ────────────────────────────────────────────────────
   Object.assign(state.settings, await window.api.getSettings())
@@ -896,14 +1500,11 @@ async function init () {
 
   // Render calendar (no API call needed) then kick off initial data fetch
   renderSalesCalendar()
-  navigate('free')
+  navigate(state.page)
+  startRefreshAgeTimer()
   loadData()
 
-  // Refresh "updated X ago" text every 30s
-  setInterval(() => {
-    const tsEl = document.getElementById('lc-' + state.page)
-    if (tsEl && state.lastChecked) tsEl.textContent = fmtChecked(state.lastChecked)
-  }, 30_000)
+  if (!state.settings.onboarded) startOnboarding()
 }
 
 document.addEventListener('DOMContentLoaded', init)

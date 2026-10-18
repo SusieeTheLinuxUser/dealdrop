@@ -14,6 +14,7 @@ It polls store APIs, shows free games / store sales / hot deals / wishlists, and
 | `.github/workflows/release.yml` | Manual dispatch → builds Windows .msi + macOS .dmg and attaches them to an existing release |
 | `renderer/api.js` | `window.api` → Tauri `invoke` bridge (the only place the UI touches the backend) |
 | `renderer/app.js` | All UI rendering. `renderer/index.html`, `renderer/style.css` |
+| `tools/preview/` | Dev-only browser preview harness with a local mock Tauri bridge; never bundled |
 
 ## Commands
 
@@ -52,8 +53,8 @@ Platform code: launcher detection (`has_scheme` in `launchers.rs`) is per-OS via
 
 ## UI notes
 
-- **Errors:** every source that fails lands in `Snapshot.source_errors` (full text, built by `failure()` in `main.rs`) and the sidebar shows only a red "Something went wrong" box with a **Copy error** button (`renderErrors` / `copyError` in `app.js`). Never print raw error text in the sidebar; healthy state shows nothing.
-- **Window:** it has no OS frame, so edges/corners are our own `.rz` handles calling `startResizeDragging` (permission `core:window:allow-start-resize-dragging`); corners are bigger than edges so they win. Min size is 520×380; below the content's size the main area scrolls **vertically only**. Never add horizontal scrolling: shrink the sidebar (`clamp()` width) instead.
+- **Errors:** every source that fails lands in `Snapshot.source_errors` (full text, built by `failure()` in `main.rs`) and the sidebar shows only a red "Something went wrong" box with a **Copy error** button (`renderErrors` / `copyError` in `app.js`), below accounts and above navigation. Never print raw error text in the sidebar; healthy state shows nothing.
+- **Window:** it has no OS frame, so edges/corners are our own `.rz` handles calling `startResizeDragging` (permission `core:window:allow-start-resize-dragging`); corners are bigger than edges so they win. Min size is 570×420; below the content's size the main area scrolls **vertically only**. Never add horizontal scrolling: shrink the sidebar (`clamp()` width) instead.
 - **Accounts:** sidebar rows show the store avatar (Steam, GOG) or the store logo (`logo()` / `LOGO_PATH` in `app.js`, simple-icons, CC0); clicking the name/avatar opens `Acct.profile_url` through `open_in_app` (Steam client if installed, else browser). Epic has no public profile page, so it links to the account page.
 - The titlebar logo is `renderer/logo.png` (a copy of `src-tauri/icons/64x64.png`, same art as the tray icon); keep them in sync if the icon changes.
 
@@ -62,7 +63,7 @@ Platform code: launcher detection (`has_scheme` in `launchers.rs`) is per-OS via
 `src-tauri/src/launchers.rs` is the single table of launchers per store (`options()`), their URL schemes, and the deep links (`link()`, unit-tested). `has_scheme()` asks the OS which are installed (`xdg-mime` / Windows registry / macOS app bundles); "Auto" prefers `native`, then Heroic, then Lutris, then the browser, and the user can force one (or the browser) in Settings → Launchers (`launcherGog` / `launcherEpic`).
 
 - **GOG native Linux client (expected ~2027):** assumed to keep the `goggalaxy://` scheme. If it uses another, change the `native` row in `GOG` and the `("gog", "native")` arm in `link()` — nothing else needs touching.
-- Heroic only knows games in the user's library (`heroic://launch/gog/<productId>` launches or offers to install); Lutris gets `lutris:<slug>`. Both are best-effort for unowned games. Heroic isn't offered for Epic: it needs Epic's internal app name, which public APIs don't expose.
+- Heroic launches `heroic://launch/gog/<id>` when that id is installed; otherwise, if a window is open, it asks whether to install it (an id missing from the library still reaches that dialog, with a blank title), and it does not open a store page. Lutris gets `lutris:<slug>`. Heroic isn't offered for Epic: it needs Epic's internal app name, which public APIs don't expose.
 
 ## Rules
 
@@ -72,6 +73,7 @@ Platform code: launcher detection (`has_scheme` in `launchers.rs`) is per-OS via
 - **Security-sensitive destinations** (API-key, sign-in and account pages) use only the service's canonical official domain, hard-coded in the source. Never build such a URL from remotely fetched content, and never put it in a plain-text message that could be mistyped (typosquatted sites have served malware this way).
 - No secrets in the repo. The app has no API keys; sign-in tokens live only in the user's config file.
 - Hot deals come from CheapShark only (IsThereAnyDeal was removed: its key setup kept failing for users). Avatars: Steam (public profile XML) and GOG (`userData.json`); Epic has no public avatar API.
+- GamerPower attribution in the UI must remain an active link to [GamerPower](https://www.gamerpower.com). CheapShark offer links must use its redirect URLs, and requests need a descriptive User-Agent.
 - **Secrets never go in URLs.** Send tokens/keys in headers, and strip URLs from `reqwest` errors that could carry one (`e.without_url()`). Deep links (`launchers::link`) only accept the store's own domain and plain slugs. Escape every remote string put into `innerHTML` (including attribute values).
 - **Rounded window = transparent window.** `main.rs` builds the window `.transparent(true)`; `html`/`body` stay transparent and `#app` paints the background (and gets the radius when `data-round="on"`). Don't give `body` a background colour: with a transparent `<html>` it spreads over the whole canvas and squares the corners off again. macOS needs `macos-private-api` (enabled in `Cargo.toml` / `tauri.conf.json`).
 - **Fonts are bundled** (`renderer/fonts/`, DM Sans + DM Mono, OFL licences alongside). Never link a font CDN: the CSP is `font-src 'self'` and the webview must not contact third parties. Latin subset only.
@@ -92,4 +94,5 @@ See [TODO.md](TODO.md) (e.g. the KDE minimize animation flying to the pointer in
 
 - Windows and macOS builds are CI-built only (not yet run by the maintainer on those OSes); their `has_scheme` detection and the unsigned-install flow are untested.
 - GOG/Epic wishlist sign-in works for the maintainer's accounts but follows the launchers' unofficial OAuth flows; if one breaks, the UI shows the error above the wishlist.
-- The Epic launcher deep link on Linux, and sale themes during a live sale have not been seen end to end.
+- Epic's `store/p/<slug>` deep link versus documented `store/product/<slug>` route is unverified. [Heroic issue #3342](https://github.com/Heroic-Games-Launcher/HeroicGamesLauncher/issues/3342) reports `/p/` works in the official Windows client; Linux without the official launcher falls back to the browser. See [TESTING.md](TESTING.md) for manual checks.
+- Sale themes during a live sale have not been seen end to end.
