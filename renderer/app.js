@@ -170,7 +170,7 @@ function renderWishlist () {
     const steamOnly = state.wishlistTab === 'steam' || (state.wishlistTab === 'all' && state.accounts.steam && !state.accounts.gog && !state.accounts.epic)
     $('wishlist-empty-msg').textContent = steamOnly && state.wishlistPrivate
       ? 'Your Steam wishlist is set to Private. Make it Public in Steam → Privacy Settings.'
-      : failed.length ? 'Wishlist could not be loaded (see above).' : 'Wishlist is empty.'
+      : failed.length ? 'Wishlist could not be loaded. See “Something went wrong” in the sidebar, then choose Copy error.' : 'Wishlist is empty.'
     emptyEl.style.display = 'flex'
     return
   }
@@ -516,7 +516,7 @@ function renderSalesCalendar () {
       </div>
       <div class="nsb-countdown">
         <div class="nsb-val">${days}</div>
-        <div class="nsb-lbl">days away</div>
+        <div class="nsb-lbl">${days === 1 ? 'day' : 'days'} away</div>
       </div>`
   } else {
     banner.style.cursor = ''
@@ -708,9 +708,10 @@ function renderLauncherPrefs () {
   const con = document.getElementById('launcher-prefs')
   con.innerHTML = ''
   ;[['gog', 'launcherGog', 'GOG'], ['epic', 'launcherEpic', 'Epic Games']].forEach(([store, key, name]) => {
+    const shortName = name === 'Epic Games' ? 'Epic' : name
     const row = document.createElement('div')
     row.className = 'setting-row'
-    row.innerHTML = `<div><div class="setting-label">Open ${name} games in</div>
+    row.innerHTML = `<div><div class="setting-label">Open ${shortName} games in</div>
       <div class="setting-sub">${state.launchers[store]?.options.length ? 'Detected: ' + state.launchers[store].options.map(o => o.label).join(', ') : 'No launcher detected — opens in the browser'}</div></div><div class="theme-grid" style="margin:0"></div>`
     const grid = row.querySelector('.theme-grid')
     const choices = [{ key: 'auto', label: 'Auto' }, ...(state.launchers[store]?.options ?? []), { key: 'browser', label: 'Browser' }]
@@ -830,7 +831,7 @@ function setAccounts (acc) {
 async function loadData (force = false) {
   if (state.refreshing) return
   state.refreshing = true
-  const buttons = [[document.getElementById('btn-check-now'), 'Refresh all'], [document.getElementById('btn-check-settings'), 'Refresh all now']]
+  const buttons = [[document.getElementById('btn-check-now'), 'Refresh all'], [document.getElementById('btn-check-settings'), 'Refresh all']]
   buttons.forEach(([btn]) => { if (btn) { btn.disabled = true; btn.setAttribute('aria-busy', 'true') } })
   buttons.forEach(([btn]) => { if (btn) btn.textContent = 'Refreshing…' })
   try {
