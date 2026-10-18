@@ -325,7 +325,7 @@ pub async fn epic_sales() -> R<Vec<Deal>> {
                 app_id: None,
             })
         }).collect();
-    deals.sort_by(|a, b| b.cut.cmp(&a.cut));
+    deals.sort_by_key(|deal| std::cmp::Reverse(deal.cut));
     Ok(deals)
 }
 

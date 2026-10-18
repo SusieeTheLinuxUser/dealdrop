@@ -74,6 +74,13 @@ fn choice(o: &Opt) -> Choice { Choice { key: o.key, label: o.label } }
 
 /// `pref`: "auto" | an option key | "browser".
 pub fn resolve(store: &str, pref: &str) -> StoreLaunchers {
+    resolve_with(store, pref, has_scheme)
+}
+
+fn resolve_with<F>(store: &str, pref: &str, has_scheme: F) -> StoreLaunchers
+where
+    F: Fn(&str) -> bool,
+{
     let installed: Vec<&Opt> = options(store).iter().filter(|o| has_scheme(o.scheme)).collect();
     let chosen = match pref {
         "browser" => None,
@@ -113,6 +120,22 @@ pub fn link(store: &str, key: &str, url: &Url, id: Option<&str>) -> Option<Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resolve_preferences_use_option_order_without_checking_the_os() {
+        let installed = |scheme| matches!(scheme, "goggalaxy" | "heroic" | "lutris");
+
+        let auto = resolve_with("gog", "auto", installed);
+        assert_eq!(auto.options.iter().map(|o| o.key).collect::<Vec<_>>(), ["native", "heroic", "lutris"]);
+        assert_eq!(auto.chosen.as_ref().map(|o| o.key), Some("native"));
+
+        let forced = resolve_with("gog", "heroic", installed);
+        assert_eq!(forced.chosen.as_ref().map(|o| o.key), Some("heroic"));
+
+        let browser = resolve_with("gog", "browser", installed);
+        assert_eq!(browser.chosen.as_ref().map(|o| o.key), None);
+        assert_eq!(browser.options.len(), 3);
+    }
 
     #[test]
     fn deep_links() {
