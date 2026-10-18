@@ -435,7 +435,7 @@ function makeWishlistSaleRow (w) {
     </div>
     <span class="sr-only">${escHtml(salePriceDescription(p.initial, p.final, p.discount, p.formatted))}</span>
     <span class="deal-orig" aria-hidden="true">${fmt$(p.initial)}</span>
-    <span class="deal-cut" aria-hidden="true">-${p.discount}%</span>
+    <span class="deal-cut" aria-hidden="true">-${escHtml(p.discount)}%</span>
     <span class="deal-price" aria-hidden="true">${escHtml(p.formatted ?? fmt$(p.final))}</span>`
   const btn = tmpl(`<button class="deal-open" title="${w.cheapest ? 'Open cheapest offer' : 'Open store page'}">↗</button>`)
   btn.setAttribute('aria-label', `Open ${w.name} at ${w.cheapest?.store || gameStoreName(w.store)}`)
@@ -672,7 +672,7 @@ function makeDealRow (d) {
     </div>
     <span class="sr-only">${escHtml(salePriceDescription(d.regular, d.price, d.cut))}</span>
     <span class="deal-orig" aria-hidden="true">${fmt$(d.regular)}</span>
-    <span class="deal-cut" aria-hidden="true">-${d.cut}%</span>
+    <span class="deal-cut" aria-hidden="true">-${escHtml(d.cut)}%</span>
     <span class="deal-price" aria-hidden="true">${fmt$(d.price)}</span>`
   const btn = tmpl(`<button class="deal-open" title="Open store page">↗</button>`)
   btn.setAttribute('aria-label', `Open ${d.title} on ${d.shop}`)
@@ -722,7 +722,7 @@ function makeSaleCard (d) {
       <div class="game-title" title="${escHtml(d.title)}">${escHtml(d.title)}</div>
       <div class="price-row">
         <span class="sr-only">${escHtml(salePriceDescription(d.regular, d.price, d.cut))}</span>
-        <span class="tag-sale" aria-hidden="true">-${d.cut}%</span>
+        <span class="tag-sale" aria-hidden="true">-${escHtml(d.cut)}%</span>
         <span class="price-was" aria-hidden="true">${fmt$(d.regular)}</span>
         <span class="price-now" aria-hidden="true">${fmt$(d.price)}</span>
       </div>
