@@ -730,13 +730,19 @@ pub async fn attach_cheapest(items: &mut [WishItem]) {
     let stores = cheapshark_stores().await;
     let mut found: Vec<GameMatch> = vec![];
 
-    let steam_idx: Vec<usize> = (0..items.len()).filter(|&i| items[i].app_id.is_some() && items[i].price_info.is_some()).collect();
+    // CheapShark prices are USD, so only USD-priced items are compared (GOG may use the account's currency).
+    let usd = |w: &WishItem| w.price_info.as_ref().is_some_and(|p| p.currency.as_deref() == Some("USD"));
+    // ponytail: at most 250 Steam games (10 requests), discounted first; huge wishlists got CheapShark 429s.
+    // Rotate or cache per app id if users want "cheaper elsewhere" on every item of a 1000+ wishlist.
+    let mut steam_idx: Vec<usize> = (0..items.len()).filter(|&i| items[i].app_id.is_some() && usd(&items[i])).collect();
+    steam_idx.sort_by_key(|&i| std::cmp::Reverse(items[i].price_info.as_ref().map_or(0, |p| p.discount)));
+    steam_idx.truncate(250);
     for chunk in steam_idx.chunks(25) {
         let ids: Vec<&str> = chunk.iter().filter_map(|&i| items[i].app_id.as_deref()).collect();
         let Ok(v) = get_json(&format!("https://www.cheapshark.com/api/1.0/games?steamAppID={}", ids.join(","))).await else { continue };
         found.extend(cheapshark_matches(items, chunk, &v));
     }
-    let other_idx: Vec<usize> = (0..items.len()).filter(|&i| items[i].app_id.is_none() && items[i].price_info.is_some()).take(30).collect();
+    let other_idx: Vec<usize> = (0..items.len()).filter(|&i| items[i].app_id.is_none() && usd(&items[i])).take(30).collect();
     let lookups = futures::future::join_all(other_idx.iter().map(|&i| {
         let url = format!("https://www.cheapshark.com/api/1.0/games?title={}&exact=1&limit=1", urlenc(&items[i].name));
         async move { (i, get_json(&url).await.ok()) }

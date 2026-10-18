@@ -3,6 +3,7 @@
 All notable changes to DealDrop are documented in this file.
 
 ## [Unreleased]
+- Fixed: very large Steam wishlists no longer trip CheapShark's rate limit; GOG wishlist prices in other currencies show their currency and are no longer compared with US-dollar prices.
 - Wishlist games on sale at their all-time low (CheapShark) show a "Lowest ever" badge; USD prices only.
 - Settings can choose wishlist sale and big-deal notification thresholds.
 - Hide games by title across free games, hot deals, store sales, and notifications; manage hidden titles in Settings.

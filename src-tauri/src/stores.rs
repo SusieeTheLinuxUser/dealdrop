@@ -220,7 +220,11 @@ fn parse_gog_wishlist_products(products: &Value, prices: &Value) -> Vec<WishItem
                 Some(Price {
                     discount: if base > 0.0 { ((1.0 - fin / base) * 100.0).round() as u32 } else { 0 },
                     fin, initial: base,
-                    formatted: Some(if fin == 0.0 { "Free".into() } else { format!("${fin:.2}") }),
+                    formatted: Some(match currency.as_deref() {
+                        _ if fin == 0.0 => "Free".into(),
+                        None | Some("USD") => format!("${fin:.2}"),
+                        Some(code) => format!("{fin:.2} {code}"),
+                    }),
                     currency,
                 })
             });
@@ -464,6 +468,12 @@ mod unit {
         assert!(v[1].price_info.is_none());
         assert_eq!(v[1].name, "Unpriced");
         assert!(super::parse_gog_wishlist_products(&json!({}), &json!(null)).is_empty());
+        let eur = json!({"_embedded": {"items": [{"_embedded": {
+            "product": {"id": 1454315831},
+            "prices": [{"basePrice": "1000 EUR", "finalPrice": "500 EUR"}]
+        }}]}});
+        let p = super::parse_gog_wishlist_products(&products, &eur)[0].price_info.clone().unwrap();
+        assert_eq!(p.formatted.as_deref(), Some("5.00 EUR"));
     }
 
     #[test]
