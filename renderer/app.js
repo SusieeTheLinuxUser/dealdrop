@@ -813,6 +813,17 @@ function renderAbout () {
 
 let resetSettingsArmed = false
 let resetSettingsTimer = null
+function clearResetSettingsConfirmation () {
+  clearTimeout(resetSettingsTimer)
+  resetSettingsTimer = null
+  if (!resetSettingsArmed) return
+  resetSettingsArmed = false
+  const button = document.getElementById('btn-reset-settings')
+  if (button) {
+    button.textContent = 'Reset appearance & notifications to defaults'
+    button.setAttribute('aria-label', 'Reset appearance and notifications to defaults')
+  }
+}
 function resetSettings () {
   const settings = state.settings
   Object.assign(settings, DEFAULT_SETTINGS, {
@@ -823,6 +834,7 @@ function resetSettings () {
 // ─── Navigation ───────────────────────────────────────────────────────────────
 
 function navigate (page) {
+  if (state.page === 'settings' && page !== 'settings') clearResetSettingsConfirmation()
   state.page = page
   document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page))
   document.querySelectorAll('.page').forEach(el => el.classList.toggle('active', el.id === 'page-' + page))
@@ -1007,6 +1019,7 @@ async function init () {
       clearTimeout(resetSettingsTimer)
       resetSettingsTimer = setTimeout(() => {
         resetSettingsArmed = false
+        resetSettingsTimer = null
         btn.textContent = 'Reset appearance & notifications to defaults'
         btn.setAttribute('aria-label', 'Reset appearance and notifications to defaults')
       }, 4000)
