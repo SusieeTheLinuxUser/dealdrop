@@ -28,7 +28,6 @@
 .onboarding-pref select{max-width:100%;background:var(--bg1);color:var(--text1);border:1px solid var(--border);padding:5px}
 .onboarding-summary{padding:12px;border-radius:var(--r);background:var(--bg1);color:var(--text0)}.onboarding-error{min-height:1em;color:var(--acc);font-size:12px}
 .onboarding-dialog :focus-visible{outline:2px solid var(--acc);outline-offset:2px}
-@media(prefers-reduced-motion:reduce){.onboarding-dialog *{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
 .tour-active{display:none!important}
 .onboarding-backdrop.touring{background:transparent;pointer-events:none}
 .tour-backdrop{position:fixed;inset:0;z-index:100;pointer-events:auto;background:transparent}
@@ -40,4 +39,3 @@
 .tour-card-side{left:calc(clamp(150px,26vw,208px) + 12px);right:12px;top:50%;bottom:auto;transform:translateY(-50%);width:min(360px,calc(100vw - clamp(150px,26vw,208px) - 36px))}
 .tour-count{color:var(--text2);font-size:12px}.tour-card h2{margin:6px 0;color:var(--text0);font-size:17px}.tour-copy{margin:0;line-height:1.45}
 .tour-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:14px}.tour-backdrop :focus-visible{outline:2px solid var(--acc);outline-offset:2px}
-@media(prefers-reduced-motion:reduce){.tour-backdrop *{scroll-behavior:auto!important;transition:none!important;animation:none!important}}

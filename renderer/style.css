@@ -302,3 +302,5 @@ html[data-theme="winter"]{--bg0:#08121c;--bg1:#0d1b2a;--bg2:#14283c;--bg3:#1c365
 .app-logo{border-radius:4px;display:block}
 .arrow-down{vertical-align:-1px}
 .icon-btn .logo{display:block}
+
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
