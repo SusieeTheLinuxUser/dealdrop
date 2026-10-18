@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DealDrop</title>
+  <link rel="stylesheet" href="../../renderer/style.css" />
+  <link rel="stylesheet" href="../../renderer/onboarding.css" />
+</head>
+<body>
+<canvas id="fx"></canvas>
+<div class="rz" data-dir="North"></div><div class="rz" data-dir="South"></div><div class="rz" data-dir="West"></div><div class="rz" data-dir="East"></div>
+<div class="rz" data-dir="NorthWest"></div><div class="rz" data-dir="NorthEast"></div><div class="rz" data-dir="SouthWest"></div><div class="rz" data-dir="SouthEast"></div>
+<div id="app">
+
+  <!-- Titlebar -->
+  <div class="titlebar" data-tauri-drag-region>
+    <div class="tb-left" data-tauri-drag-region>
+      <div class="titlebar-drag">
+        <img class="app-logo" src="../../renderer/logo.png" width="18" height="18" alt="" />
+        <span class="app-name">DealDrop</span>
+      </div>
+      <button class="tb-link" id="btn-github" title="DealDrop on GitHub">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      </button>
+    </div>
+    <div class="titlebar-controls">
+      <button class="tb-btn" id="btn-min" aria-label="Minimize window">
+        <svg width="10" height="2" viewBox="0 0 10 2"><rect width="10" height="2" rx="1" fill="currentColor"/></svg>
+      </button>
+      <button class="tb-btn tb-close" id="btn-close" aria-label="Close window">
+        <svg width="10" height="10" viewBox="0 0 10 10"><line x1="1" y1="1" x2="9" y2="9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="9" y1="1" x2="1" y2="9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="layout">
+
+    <!-- Sidebar -->
+    <nav class="sidebar">
+
+      <!-- Store accounts (rendered by app.js) -->
+      <div class="accounts" id="accounts"></div>
+
+      <!-- Nav -->
+      <div class="nav-items">
+        <button class="nav-item" data-page="wishlist">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="m9 12 2 2 4-4"/></svg>
+          Wishlist
+          <span class="badge" id="badge-wishlist"></span>
+        </button>
+        <button class="nav-item active" data-page="free">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 12V22H4V12"/><path d="M22 7H2v5h20V7z"/><path d="M12 22V7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>
+          Free now
+          <span class="badge" id="badge-free"></span>
+        </button>
+        <button class="nav-item" data-page="storesales">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+          Store sales
+        </button>
+        <button class="nav-item" data-page="deals">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+          Hot deals
+        </button>
+        <button class="nav-item" data-page="sales">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          Calendar
+        </button>
+        <button class="nav-item" data-page="settings">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          Settings
+        </button>
+      </div>
+
+      <div class="sidebar-errors" id="sidebar-errors" style="display:none"></div>
+      <div class="sidebar-footer">
+        <button class="check-now-btn" id="btn-check-now" title="Re-check free games, sales, hot deals and your wishlists right now">Refresh all</button>
+        <button class="feedback-btn" id="btn-feedback">Feedback / report a bug</button>
+        <div class="ver" id="app-version"></div>
+      </div>
+    </nav>
+
+    <!-- Main content -->
+    <main class="main-content">
+
+      <!-- WISHLIST -->
+      <section class="page" id="page-wishlist">
+        <div class="page-header">
+          <h1>Wishlist</h1>
+          <span class="last-checked" id="lc-wishlist"></span>
+        </div>
+        <div class="tabs" id="wishlist-tabs" style="display:none"></div>
+        <div id="wishlist-errors" class="info-notice" style="display:none"></div>
+        <div id="wishlist-login-prompt" class="login-prompt" style="display:none">
+          <span style="font-size:32px">🎯</span>
+          <p>Sign in to Steam, GOG or Epic Games (left sidebar) to sync your wishlists and get notified when games go on sale.</p>
+        </div>
+        <div id="wishlist-on-sale" style="display:none">
+          <div class="section-label">On sale now</div>
+          <div class="deals-list" id="list-wishlist-sale"></div>
+        </div>
+        <div id="wishlist-deal-panel" class="wishlist-deal-panel" style="display:none">
+          <div class="wishlist-deal-head">
+            <div>
+              <div class="section-label" style="margin-bottom:4px">Selected game deal info</div>
+              <h3 id="wishlist-deal-title">Game</h3>
+            </div>
+            <span id="wishlist-deal-updated" class="last-checked"></span>
+          </div>
+          <div class="wishlist-deal-grid">
+            <div class="wishlist-deal-card">
+              <div class="wishlist-deal-card-title">Steam</div>
+              <div id="wishlist-steam-price" class="wishlist-deal-price">-</div>
+              <div id="wishlist-steam-sub" class="wishlist-deal-sub">No Steam price data yet.</div>
+            </div>
+            <div class="wishlist-deal-card">
+              <div class="wishlist-deal-card-title">Cheapest found</div>
+              <div id="wishlist-cheapest-price" class="wishlist-deal-price">-</div>
+              <div id="wishlist-cheapest-sub" class="wishlist-deal-sub">Click a Steam wishlist game to compare prices in other stores.</div>
+            </div>
+          </div>
+          <div class="wishlist-deal-actions">
+            <button class="action-btn" id="wishlist-open-cheapest" style="display:none">Open cheapest offer</button>
+            <button class="action-btn" id="wishlist-open-steam">Open Steam page</button>
+          </div>
+        </div>
+        <div id="wishlist-all-section" style="display:none">
+          <div class="section-label" style="margin-top:20px">Full wishlist</div>
+          <div class="wishlist-list" id="list-wishlist-all"></div>
+        </div>
+        <div class="empty-state" id="empty-wishlist" style="display:none">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
+          <p id="wishlist-empty-msg">Wishlist is empty, or set to Private in Steam privacy settings.</p>
+        </div>
+      </section>
+
+      <!-- FREE NOW -->
+      <section class="page active" id="page-free">
+        <div class="page-header">
+          <h1>Free now</h1>
+          <span class="last-checked" id="lc-free"></span>
+        </div>
+        <div class="section-label">Free to keep</div>
+        <div class="game-grid" id="grid-free"></div>
+        <div class="section-label" id="label-weekends" style="display:none">Free weekends</div>
+        <div class="game-grid" id="grid-weekends"></div>
+        <div class="empty-state" id="empty-free" style="display:none">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 12V22H4V12"/><path d="M22 7H2v5h20V7z"/></svg>
+          <p id="free-empty-copy">No free games right now. We check every hour.</p>
+        </div>
+      </section>
+
+      <!-- STORE SALES -->
+      <section class="page" id="page-storesales">
+        <div class="page-header">
+          <h1>Store sales</h1>
+          <span class="last-checked" id="lc-storesales"></span>
+        </div>
+        <div class="tabs" id="sales-tabs"></div>
+        <div class="list-controls">
+          <input type="search" id="sales-search" placeholder="Search titles" aria-label="Search store sale titles" />
+          <select id="sales-sort" aria-label="Sort store sales"><option value="discount">Biggest discount</option><option value="price">Lowest price</option><option value="name">Name</option></select>
+        </div>
+        <div class="game-grid" id="grid-storesales"></div>
+        <div class="empty-state" id="empty-storesales" style="display:none">
+          <p>No discounts loaded for this store right now.</p>
+        </div>
+      </section>
+
+      <!-- HOT DEALS -->
+      <section class="page" id="page-deals">
+        <div class="page-header">
+          <h1>Hot deals</h1>
+          <span class="last-checked" id="lc-deals"></span>
+        </div>
+        <div class="info-notice" id="info-notice" style="display:none"></div>
+        <div class="list-controls">
+          <input type="search" id="deals-search" placeholder="Search titles" aria-label="Search hot deal titles" />
+          <select id="deals-sort" aria-label="Sort hot deals"><option value="discount">Biggest discount</option><option value="price">Lowest price</option><option value="name">Name</option></select>
+        </div>
+        <div class="deals-list" id="list-deals"></div>
+        <div class="empty-state" id="empty-deals" style="display:none">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/></svg>
+          <p>No deals could be loaded right now.</p>
+        </div>
+      </section>
+
+      <!-- SALES CALENDAR -->
+      <section class="page" id="page-sales">
+        <div class="page-header"><h1>Calendar</h1></div>
+        <div class="next-sale-banner" id="next-sale-banner"></div>
+        <div class="section-label">Steam seasonal sales</div>
+        <div class="sale-timeline" id="sale-timeline"></div>
+      </section>
+
+      <!-- SETTINGS -->
+      <section class="page" id="page-settings">
+        <div class="page-header"><h1>Settings</h1></div>
+        <section class="settings-section">
+          <h2 class="section-label settings-section-heading">Appearance</h2>
+          <div class="theme-grid" id="theme-grid"></div>
+          <div class="settings-group" id="look-settings"></div>
+        </section>
+        <section class="settings-section">
+          <h2 class="section-label settings-section-heading">Notifications</h2>
+          <div class="settings-group" id="notif-settings"></div>
+          <button class="settings-reset" id="btn-reset-settings" type="button" aria-label="Reset appearance and notifications to defaults">Reset appearance &amp; notifications to defaults</button>
+        </section>
+        <section class="settings-section">
+          <h2 class="section-label settings-section-heading">Check interval</h2>
+          <div class="interval-group" id="interval-group"></div>
+          <button class="action-btn" id="btn-check-settings">Refresh all</button>
+        </section>
+        <section class="settings-section">
+          <h2 class="section-label settings-section-heading">Launchers</h2>
+          <div class="settings-group" id="launcher-prefs"></div>
+        </section>
+        <section class="settings-section">
+          <h2 class="section-label settings-section-heading">Accounts</h2>
+          <div class="settings-group" id="settings-accounts"></div>
+        </section>
+        <section class="settings-section settings-about">
+          <h2 class="section-label settings-section-heading">About</h2>
+          <p id="about-version" class="settings-about-version">DealDrop version loading…</p>
+          <p id="about-project-links" class="settings-about-links"></p>
+          <h3>Credits &amp; data sources</h3>
+          <ul id="about-sources" class="settings-about-sources"></ul>
+          <p class="settings-about-trademark">Trademarks belong to their owners; DealDrop is not affiliated with Valve, GOG, Epic, or any store.</p>
+          <button class="action-btn" id="btn-show-onboarding">Show welcome tour again</button>
+        </section>
+      </section>
+
+    </main>
+  </div>
+</div>
+<script src="mock-tauri.js"></script>
+<script src="../../renderer/api.js"></script>
+<script src="../../renderer/app.js"></script>
+<script src="../../renderer/onboarding.js"></script>
+</body>
+</html>

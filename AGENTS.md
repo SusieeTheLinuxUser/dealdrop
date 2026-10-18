@@ -14,6 +14,7 @@ It polls store APIs, shows free games / store sales / hot deals / wishlists, and
 | `.github/workflows/release.yml` | Manual dispatch → builds Windows .msi + macOS .dmg and attaches them to an existing release |
 | `renderer/api.js` | `window.api` → Tauri `invoke` bridge (the only place the UI touches the backend) |
 | `renderer/app.js` | All UI rendering. `renderer/index.html`, `renderer/style.css` |
+| `tools/preview/` | Dev-only browser preview harness with a local mock Tauri bridge; never bundled |
 
 ## Commands
 
