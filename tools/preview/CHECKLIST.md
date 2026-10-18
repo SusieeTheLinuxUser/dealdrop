@@ -35,4 +35,5 @@ Start the local server as described in [README.md](README.md), then use `http://
 | Wishlist sync and Steam privacy behavior | Needs a real build (requires real account data and Steam privacy state). |
 | Wishlist search, sort, sale-only filter, and clear state | `?onboarded=1&accounts=1` — Wishlist; try store tabs, search for no match, clear it, and compare discount/price/name plus On sale only. |
 | Minimum discount chips and Clear filters | `?onboarded=1` — Hot deals and Store sales; try Any, 50%+, 75%+, 90%+, then clear a no-match filter. |
+| Stress layout at narrow widths | `?stress=1&onboarded=1` — inspect every page at 570×420 and 520px wide; check long titles/account name, $1234.56, tabs, and toolbar wrapping for overflow or clipping. |
 | Live sale theme activation | `?onboarded=1&sale=winter` — inspect sale banner, theme, and effects. |
