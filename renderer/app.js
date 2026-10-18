@@ -286,8 +286,7 @@ function tmpl (html) {
 const REPO       = 'https://github.com/SusieeTheLinuxUser/dealdrop'
 const openBrowser = url   => window.api.openUrl(url)
 const openSteam   = appId => window.api.openInApp('steam', `https://store.steampowered.com/app/${appId}`)
-// Heroic and Lutris open an install dialog, not a store page, so GOG cards only get GOG Galaxy (else just Browser).
-const launcherOf  = store => { const ch = state.launchers[store]?.chosen ?? null; return store === 'gog' && ch?.key !== 'native' ? null : ch }
+const launcherOf  = store => state.launchers[store]?.chosen ?? null
 
 function closeShortcutsDialog () {
   if (!shortcutsDialog) return
@@ -1090,7 +1089,7 @@ function toggleRows (con, rows, after) {
   })
 }
 
-// "Open GOG/Epic games in": Auto prefers the store's own client, then Heroic, then Lutris
+// "Open GOG/Epic games in": Auto prefers the store's own client.
 function renderLauncherPrefs () {
   const con = document.getElementById('launcher-prefs')
   con.innerHTML = ''

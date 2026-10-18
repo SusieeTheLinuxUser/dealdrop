@@ -40,7 +40,7 @@ struct Settings {
     last_sale_theme: String,
     rounded: bool,
     effects: bool,
-    /// Where GOG / Epic links open: "auto" | "native" | "heroic" | "lutris" | "browser"
+    /// Where GOG / Epic links open: "auto" | "native" | "browser"; old GOG preferences fall back to the first available option.
     launcher_gog: String,
     launcher_epic: String,
     /// The first-run tour has been completed or skipped.

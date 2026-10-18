@@ -60,10 +60,9 @@ Platform code: launcher detection (`has_scheme` in `launchers.rs`) is per-OS via
 
 ## Launchers
 
-`src-tauri/src/launchers.rs` is the single table of launchers per store (`options()`), their URL schemes, and the deep links (`link()`, unit-tested). `has_scheme()` asks the OS which are installed (`xdg-mime` / Windows registry / macOS app bundles); "Auto" prefers `native`, then Heroic, then Lutris, then the browser, and the user can force one (or the browser) in Settings → Launchers (`launcherGog` / `launcherEpic`).
+`src-tauri/src/launchers.rs` is the single table of launchers per store (`options()`), their URL schemes, and the deep links (`link()`, unit-tested). `has_scheme()` asks the OS which are installed (`xdg-mime` / Windows registry / macOS app bundles); "Auto" prefers `native`, then the browser, and the user can force one (or the browser) in Settings → Launchers (`launcherGog` / `launcherEpic`). GOG offers only GOG Galaxy; saved Heroic/Lutris preferences fall back to the first installed option.
 
 - **GOG native Linux client (expected ~2027):** assumed to keep the `goggalaxy://` scheme. If it uses another, change the `native` row in `GOG` and the `("gog", "native")` arm in `link()` — nothing else needs touching.
-- Heroic launches `heroic://launch/gog/<id>` when that id is installed; otherwise, if a window is open, it asks whether to install it (an id missing from the library still reaches that dialog, with a blank title), and it does not open a store page. Lutris gets `lutris:<slug>`. Heroic isn't offered for Epic: it needs Epic's internal app name, which public APIs don't expose.
 
 ## Rules
 

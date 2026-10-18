@@ -98,7 +98,7 @@
   const emitters = new Set()
   const launcherOptions = {
     steam: [{ key: 'native', label: 'Steam' }],
-    gog: [{ key: 'native', label: 'GOG Galaxy' }, { key: 'heroic', label: 'Heroic' }],
+    gog: [{ key: 'native', label: 'GOG Galaxy' }],
     epic: [{ key: 'native', label: 'Epic Games' }, { key: 'heroic', label: 'Heroic' }],
   }
   const launchers = () => Object.fromEntries(Object.entries(launcherOptions).map(([store, options]) => {

@@ -1,13 +1,8 @@
 # TODO / known issues
 
-## Next up (from the maintainer's v0.8.0 test, 2026-10-18)
+## Next up
 
-- [ ] **Release v0.8.0** (all three platforms, see AGENTS.md → Releasing): bump the version in the four places, date the CHANGELOG `[Unreleased]` section, push `dev` and fast-forward `main`, run `scripts/release-linux.sh`, wait for the maintainer to OK the AppImage, then run `gh workflow run release.yml -f tag=v0.8.0` and check for all three assets.
-- [ ] **Clean up branches:** delete the leftover agent branches `t3/project-status-review*` and the stale `.claude/worktrees/*` checkouts. Keep only `dev` and `main`.
-- [ ] **Remove Heroic/Lutris from the GOG launcher choices:** they open an install dialog, not a store page. GOG cards now show only Browser unless GOG Galaxy is installed (`launcherOf` in `app.js`), so the Heroic/Lutris option in Settings → Launchers does nothing. Drop those rows from `GOG` in `launchers.rs` (plus `link()`, the tests and the AGENTS/README mentions) and from `tools/preview/mock-tauri.js`.
-- [ ] **Hot deals for GOG/Epic in the launcher:** Steam deals now open in the Steam app. GOG and Epic deals still use CheapShark's redirect in the browser, because CheapShark gives no GOG id or Epic slug. That needs a title lookup.
-
-Done in this pass: themed dropdowns (sort menus and the onboarding launcher picker), "Show me around" replaces Finish on the last onboarding step, GOG store cards show a full-width Browser button, Steam hot deals open in the Steam app.
+- [ ] **Hot deals for GOG/Epic in the launcher:** Steam deals open in the Steam app. GOG and Epic deals still use CheapShark's redirect in the browser, because CheapShark gives no GOG id or Epic slug. That needs a title lookup.
 
 ## Minimize animation on KDE Plasma (Wayland) flies to the pointer
 
@@ -21,7 +16,7 @@ If it still happens with an always-visible panel, file a new bug with 513815 in 
 
 ## Release status
 
-- v0.7.9 has all three assets (AppImage, `.msi`, universal `.dmg`).
+- v0.8.0: Linux AppImage first, then Windows `.msi` and universal macOS `.dmg` from CI.
 - Unverified end to end: sale themes during a live sale; launcher detection on Windows/macOS (desk research says `reg query HKCR\<scheme> /ve` and the app-bundle paths are right, not tested on a real machine). The Epic deep link `store/p/<slug>` is reported valid alongside the documented `store/product/<slug>` (not tested on Epic's launcher).
 
 ## Windows window frame (unverified, needs a real Windows machine)

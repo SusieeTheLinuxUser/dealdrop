@@ -1,6 +1,6 @@
 //! Which desktop app opens a store page. Data-driven so a new launcher is one row + one match arm
 //! (e.g. GOG's native Linux client once it ships: if it uses another URL scheme, edit the
-//! `native` row for "gog" below — Auto already prefers `native` over Heroic/Lutris).
+//! `native` row for "gog" below).
 
 use serde::Serialize;
 use url::Url;
@@ -15,10 +15,7 @@ const fn opt(key: &'static str, label: &'static str, scheme: &'static str) -> Op
 
 const STEAM: [Opt; 1] = [opt("native", "Steam app", "steam")];
 const EPIC: [Opt; 1] = [opt("native", "Epic app", "com.epicgames.launcher")];
-// Heroic launches `heroic://launch/gog/<id>` when that id is installed; otherwise, if a window is
-// open, it asks whether to install it (an id missing from the library still reaches that dialog,
-// with a blank title), and it does not open a store page. Lutris resolves slugs on lutris.net.
-const GOG: [Opt; 3] = [opt("native", "GOG Galaxy", "goggalaxy"), opt("heroic", "Heroic", "heroic"), opt("lutris", "Lutris", "lutris")];
+const GOG: [Opt; 1] = [opt("native", "GOG Galaxy", "goggalaxy")];
 
 /// Order = what "Auto" prefers.
 pub fn options(store: &str) -> &'static [Opt] {
@@ -55,7 +52,6 @@ fn has_scheme(scheme: &str) -> bool {
         "steam" => "Steam.app",
         "com.epicgames.launcher" => "Epic Games Launcher.app",
         "goggalaxy" => "GOG Galaxy.app",
-        "heroic" => "Heroic.app",
         _ => return false,
     };
     let home = std::env::var("HOME").unwrap_or_default();
@@ -112,8 +108,6 @@ pub fn link(store: &str, key: &str, url: &Url, id: Option<&str>) -> Option<Strin
         }),
         ("epic", _) => url.path().split_once("/p/").and_then(|(_, s)| slug(s)).map(|s| format!("com.epicgames.launcher://store/p/{s}")),
         ("gog", "native") => numeric(id).map(|i| format!("goggalaxy://openGameView/{i}")),
-        ("gog", "heroic") => numeric(id).map(|i| format!("heroic://launch/gog/{i}")),
-        ("gog", "lutris") => url.path().split_once("/game/").and_then(|(_, s)| slug(s)).map(|s| format!("lutris:{}", s.replace('_', "-"))),
         _ => None,
     }
 }
@@ -124,27 +118,26 @@ mod tests {
 
     #[test]
     fn resolve_preferences_use_option_order_without_checking_the_os() {
-        let installed = |scheme: &str| matches!(scheme, "goggalaxy" | "heroic" | "lutris");
+        let installed = |scheme: &str| scheme == "goggalaxy";
 
         let auto = resolve_with("gog", "auto", installed);
-        assert_eq!(auto.options.iter().map(|o| o.key).collect::<Vec<_>>(), ["native", "heroic", "lutris"]);
+        assert_eq!(auto.options.iter().map(|o| o.key).collect::<Vec<_>>(), ["native"]);
         assert_eq!(auto.chosen.as_ref().map(|o| o.key), Some("native"));
 
-        let forced = resolve_with("gog", "heroic", installed);
-        assert_eq!(forced.chosen.as_ref().map(|o| o.key), Some("heroic"));
+        let saved_heroic = resolve_with("gog", "heroic", installed);
+        assert_eq!(saved_heroic.chosen.as_ref().map(|o| o.key), Some("native"));
+        let saved_lutris = resolve_with("gog", "lutris", installed);
+        assert_eq!(saved_lutris.chosen.as_ref().map(|o| o.key), Some("native"));
 
         let browser = resolve_with("gog", "browser", installed);
         assert_eq!(browser.chosen.as_ref().map(|o| o.key), None);
-        assert_eq!(browser.options.len(), 3);
+        assert_eq!(browser.options.len(), 1);
     }
 
     #[test]
     fn deep_links() {
         let gog = Url::parse("https://www.gog.com/en/game/the_witcher_3_wild_hunt").unwrap();
         assert_eq!(link("gog", "native", &gog, Some("gog-1207664643")).unwrap(), "goggalaxy://openGameView/1207664643");
-        assert_eq!(link("gog", "heroic", &gog, Some("1207664643")).unwrap(), "heroic://launch/gog/1207664643");
-        assert_eq!(link("gog", "lutris", &gog, None).unwrap(), "lutris:the-witcher-3-wild-hunt");
-        assert!(link("gog", "heroic", &gog, Some("gp-12")).is_none());
         let epic = Url::parse("https://store.epicgames.com/en-US/p/bad-cheese-4256d9").unwrap();
         assert_eq!(link("epic", "native", &epic, None).unwrap(), "com.epicgames.launcher://store/p/bad-cheese-4256d9");
         let steam = Url::parse("https://store.steampowered.com/app/60/Ricochet/").unwrap();
@@ -156,8 +149,8 @@ mod tests {
         // remote data can't aim a launcher at another site or smuggle odd characters into a slug
         let evil = Url::parse("https://evil.example/app/60/").unwrap();
         assert!(link("steam", "native", &evil, None).is_none());
-        let odd = Url::parse("https://www.gog.com/en/game/a%20b;c").unwrap();
-        assert!(link("gog", "lutris", &odd, None).is_none());
+        let odd = Url::parse("https://store.epicgames.com/en-US/p/a%20b;c").unwrap();
+        assert!(link("epic", "native", &odd, None).is_none());
     }
 
     #[test]

@@ -2,7 +2,7 @@
 
 All notable changes to DealDrop are documented in this file.
 
-## [Unreleased] (v0.8.0 draft)
+## [v0.8.0] - 2026-10-18
 - New: first-run setup guide (theme, notifications, stores) with an optional tour
 - New: Steam games that are 100% off to keep now show up with the free games
 - New: keyboard shortcuts (press ?), search, sort and minimum-discount filters on deal lists, "Updated N min ago" label
@@ -18,7 +18,7 @@ All notable changes to DealDrop are documented in this file.
 - Improved: keyboard and screen-reader support, stronger text contrast in every theme
 - Fixed: Steam sale calendar now uses Steam's published 2026–27 dates
 - Fixed: sale themes, sign-out and reset keep the UI in sync
-- Improved: themed dropdown menus; the guide's last button starts the tour; GOG cards drop the Heroic button (it opened an installer); Steam hot deals open in the Steam app
+- Improved: themed dropdown menus; the guide's last button starts the tour; GOG games open in GOG Galaxy or the browser (Heroic and Lutris opened an install dialog instead of the store page, so they're gone); Steam hot deals open in the Steam app
 - Privacy: fonts are bundled, so the app no longer contacts Google Fonts
 
 ## [v0.7.9] - 2026-10-16
