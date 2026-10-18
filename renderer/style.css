@@ -277,9 +277,9 @@ html[data-round="on"] #app,html[data-round="on"] #fx{border-radius:14px}
 .list-controls select{max-width:100%;min-width:0;padding:8px;background:var(--bg1);border:1px solid var(--border);border-radius:var(--r);color:var(--text1);font:inherit}
 .discount-filters{display:flex;flex:1 0 100%;flex-wrap:wrap;gap:6px;min-width:0}
 .discount-filters button{padding:5px 9px;border:1px solid var(--border);border-radius:var(--pill);background:var(--bg1);color:var(--text1);font:11px var(--sans);cursor:pointer;white-space:nowrap}
-.discount-filters button[aria-pressed="true"]{border-color:var(--acc);background:var(--acc-d);color:var(--acc)}
+.discount-filters button[aria-pressed="true"]{border-color:var(--acc);background:var(--acc-d);color:var(--text0)}
 .list-filter-toggle{padding:8px 10px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg1);color:var(--text1);font:inherit;cursor:pointer;white-space:nowrap}
-.list-filter-toggle[aria-pressed="true"]{border-color:var(--acc);background:var(--acc-d);color:var(--acc)}
+.list-filter-toggle[aria-pressed="true"]{border-color:var(--acc);background:var(--acc-d);color:var(--text0)}
 .clear-filter{padding:7px 12px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg1);color:var(--text1);cursor:pointer}
 .swatch{display:inline-flex}.swatch i{width:12px;height:12px;border-radius:50%;margin-right:-4px;border:1px solid rgba(255,255,255,.2)}
 #fx{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:60}
