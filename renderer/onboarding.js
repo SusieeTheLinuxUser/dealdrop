@@ -12,6 +12,7 @@
   const button = (text, cls, fn) => { const b = document.createElement('button'); b.type = 'button'; b.className = cls; b.textContent = text; b.addEventListener('click', fn); return b }
   function start () {
     if (dialog) return
+    api().state.onboardingOpen = true; api().state.onboardingThemePicked = false
     returnFocus = document.activeElement; step = 0; lastAnnouncedStep = -1
     dialog = document.createElement('div'); dialog.className = 'onboarding-backdrop'
     dialog.innerHTML = '<section class="onboarding-dialog" role="dialog" aria-modal="true" aria-labelledby="onboarding-title"><div class="onboarding-head"><div class="onboarding-dots" aria-hidden="true"></div><span class="onboarding-count"></span></div><span class="onboarding-sr-only" aria-live="polite" aria-atomic="true"></span><div class="onboarding-content"></div><div class="onboarding-error" role="status"></div><div class="onboarding-actions"></div></section>'
@@ -20,6 +21,7 @@
   function finish () {
     if (!dialog) return
     api().state.settings.onboarded = true
+    api().state.onboardingOpen = false
     window.api.saveSettings(api().state.settings)
     document.removeEventListener('keydown', keydown); dialog.remove(); dialog = null
     if (api().state.page === 'settings') api().renderSettings()
@@ -66,7 +68,7 @@
       const themes = document.createElement('div'); themes.className = 'onboarding-themes'
       Object.entries(baseThemes).forEach(([key, theme]) => {
         const selected = settings.theme === key || (!baseThemes[settings.theme] && settings.baseTheme === key)
-        const b = button('', 'onboarding-choice' + (selected ? ' active' : ''), () => { settings.theme = key; settings.baseTheme = key; applyTheme(); render() })
+        const b = button('', 'onboarding-choice' + (selected ? ' active' : ''), () => { api().state.onboardingThemePicked = true; settings.theme = key; settings.baseTheme = key; applyTheme(); render() })
         b.dataset.focusKey = 'theme-' + key; b.setAttribute('aria-pressed', String(selected))
         const swatch = document.createElement('span'); swatch.className = 'onboarding-swatch'; swatch.setAttribute('aria-hidden', 'true')
         theme.sw.forEach((_, i) => { const color = document.createElement('i'); color.className = 'onboarding-swatch-color ' + key + '-' + i; swatch.appendChild(color) })

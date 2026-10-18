@@ -21,6 +21,8 @@ const DEFAULT_SETTINGS = {
 
 const state = {
   page:         'free',
+  onboardingOpen: false,
+  onboardingThemePicked: false,
   freeGames:    [],
   freeWeekends: [],
   deals:        [],
@@ -691,7 +693,11 @@ function syncSaleTheme () {
   const key = state.liveSale?.key ?? ''
   let dirty = false
   if (key && SALE_THEMES[key]) {
-    if (s.lastSaleTheme !== key) { s.lastSaleTheme = key; s.theme = key; dirty = true }
+    if (s.lastSaleTheme !== key) {
+      s.lastSaleTheme = key
+      if (!state.onboardingOpen || !state.onboardingThemePicked) s.theme = key
+      dirty = true
+    }
   } else {
     if (SALE_THEMES[s.theme]) { s.theme = BASE_THEMES[s.baseTheme] ? s.baseTheme : 'midnight'; dirty = true }
     if (s.lastSaleTheme) { s.lastSaleTheme = ''; dirty = true }
