@@ -25,7 +25,7 @@ vm.runInContext([
   between('function storeKeyFor (', '\nconst gameStoreName'),
   between('function escHtml (', '\n// ─── Boot'),
   between('function updateRefreshAge (', '\nfunction updateLastCheckedLabels'),
-  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge, mergeUiPrefs, dealShops, parseClaimed, pruneClaimed, toggleClaimed, claimedLast, normalizeTitle, hiddenTitle }',
+  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge, mergeUiPrefs, dealShops, parseClaimed, pruneClaimed, toggleClaimed, claimedLast, normalizeTitle, hiddenTitle, parseSeen, newIds, mergeSeen }',
 ].join('\n'), context)
 
 const h = context.helpers
@@ -66,6 +66,15 @@ assert.equal(JSON.stringify(h.toggleClaimed(['a', 'b'], 'a')), '["b"]')
 assert.equal(JSON.stringify(h.pruneClaimed(['a', 'gone', 'b'], [{ id: 'b' }, { id: 'a' }, { id: 'c' }])), '["a","b"]')
 assert.equal(JSON.stringify(h.claimedLast([{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }], ['a', 'c']).map(g => g.id)), '["b","d","a","c"]')
 
+assert.equal(JSON.stringify(h.state.seen), '{"deals":null,"storesales":null}') // no localStorage: first run, nothing tagged
+assert.equal(JSON.stringify(h.parseSeen('{"deals":["a",2],"storesales":"x"}')), '{"deals":["a"],"storesales":null}')
+assert.equal(JSON.stringify(h.parseSeen('not json')), '{"deals":null,"storesales":null}')
+assert.equal(h.newIds(['a', 'b'], null).size, 0)
+assert.equal(JSON.stringify([...h.newIds(['a', 'b', 'c'], ['b'])]), '["a","c"]')
+assert.equal(JSON.stringify(h.mergeSeen({ deals: ['old'], storesales: null }, 'deals', ['a', 'b', 'a'])), '{"deals":["a","b"],"storesales":null}')
+const seenBefore = { deals: ['a'], storesales: ['s'] }
+assert.equal(h.mergeSeen(seenBefore, 'storesales', []), seenBefore) // empty list may be a failed load: keep the old set
+
 const items = [
   { title: 'Beta B', price: 8, cut: 50, shop: 'Steam' }, { title: 'Alpha', price: 5, cut: 90, shop: 'GOG' },
   { title: 'Beta A', price: 3, cut: 10, shop: 'Steam' }, { title: 'Gamma', price: 2, cut: 0, shop: 'Fanatical' },
@@ -100,4 +109,4 @@ h.state.lastChecked = Date.now()
 h.updateRefreshAge()
 assert.equal(label.textContent, 'Updated just now')
 
-console.log('Renderer self-check passed (escaping, hidden titles, filters, store filter, UI preference merge, claimed games, next sale, refresh age).')
+console.log('Renderer self-check passed (escaping, hidden titles, filters, store filter, UI preference merge, claimed games, seen deals, next sale, refresh age).')

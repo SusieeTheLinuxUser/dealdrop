@@ -57,7 +57,7 @@ function persistUiPrefs () {
 }
 
 function clearUiPrefs () {
-  try { localStorage.removeItem(UI_PREFS_KEY); localStorage.removeItem(CLAIMED_KEY) } catch {}
+  try { localStorage.removeItem(UI_PREFS_KEY); localStorage.removeItem(CLAIMED_KEY); localStorage.removeItem(SEEN_KEY) } catch {}
 }
 
 // Ids of free-to-keep games the user marked as claimed (UI-only, like the prefs above)
@@ -86,6 +86,28 @@ function saveClaimed () {
   try { localStorage.setItem(CLAIMED_KEY, JSON.stringify(state.claimed)) } catch {}
 }
 
+// Ids already shown on Hot deals / Store sales; anything else gets a "New" tag (UI-only, like claimed)
+const SEEN_KEY = 'dealdrop-seen'
+const SEEN_PAGES = ['deals', 'storesales']
+function parseSeen (raw) {
+  let saved = null
+  try { saved = JSON.parse(raw) } catch {}
+  return Object.fromEntries(SEEN_PAGES.map(p => [p, Array.isArray(saved?.[p]) ? saved[p].filter(id => typeof id === 'string') : null]))
+}
+// No stored set yet (first run) means nothing is new
+function newIds (ids, seen) {
+  if (!seen) return new Set()
+  const old = new Set(seen)
+  return new Set(ids.filter(id => !old.has(id)))
+}
+// The seen set becomes exactly the current ids so it can't grow forever; an empty list may be a failed load, so keep the old set then
+function mergeSeen (seen, page, ids) {
+  return ids.length ? { ...seen, [page]: [...new Set(ids)] } : seen
+}
+function readSeen () {
+  try { return parseSeen(localStorage.getItem(SEEN_KEY)) } catch { return parseSeen(null) }
+}
+
 const state = {
   page:         initialUiPrefs.page,
   onboardingOpen: false,
@@ -93,6 +115,7 @@ const state = {
   freeGames:    [],
   freeWeekends: [],
   claimed:      readClaimed(),
+  seen:         readSeen(),
   deals:        [],
   dealsSource:  '',
   dealsError:   null,
@@ -771,6 +794,20 @@ function updateBadges () {
   const total = state.freeGames.filter(g => !hiddenTitle(g.title) && !state.claimed.includes(g.id)).length + state.freeWeekends.filter(g => !hiddenTitle(g.title)).length
   const fb = document.getElementById('badge-free')
   if (fb) { fb.querySelector('.badge-count').textContent = total; fb.classList.toggle('visible', total > 0) }
+
+  SEEN_PAGES.forEach(page => document.getElementById('badge-' + page)?.classList.toggle('visible', unseen(page).size > 0))
+}
+
+const seenIds = (page, visibleOnly = false) => (page === 'deals' ? state.deals : Object.values(state.sales).flat())
+  .filter(d => !visibleOnly || !hiddenTitle(d.title)).map(d => d.id)
+const unseen = page => newIds(seenIds(page, true), state.seen[page]) // hidden games don't light the dot
+
+// Called when the user leaves the page or hides the window, not on render, so the tags stay while they look
+function markSeen (page) {
+  if (!SEEN_PAGES.includes(page) || !state.dataLoaded) return
+  state.seen = mergeSeen(state.seen, page, seenIds(page))
+  try { localStorage.setItem(SEEN_KEY, JSON.stringify(state.seen)) } catch {}
+  updateBadges()
 }
 
 function makeFreeCard (g, tagClass, tagText, claimable = false) {
@@ -849,7 +886,8 @@ function renderDeals () {
   } else if (!items.length) {
     emptyEl.replaceChildren(Object.assign(document.createElement('p'), { textContent: 'No deals could be loaded right now.' }))
   }
-  items.forEach(d => list.appendChild(makeDealRow(d)))
+  const fresh = unseen('deals')
+  items.forEach(d => list.appendChild(makeDealRow(d, fresh.has(d.id))))
   updateResultCount('deals', items.length, state.deals.length)
 }
 
@@ -865,7 +903,7 @@ function syncDealsShop () {
   select.value = filters.shop
 }
 
-function makeDealRow (d) {
+function makeDealRow (d, isNew = false) {
   const row = document.createElement('div')
   row.className = 'deal-row'
   const content = document.createElement('div')
@@ -873,11 +911,11 @@ function makeDealRow (d) {
   content.className = 'deal-row-content'; content.setAttribute('aria-hidden', 'true')
   const lowestTag = d.lowest != null && d.price <= d.lowest + 0.005 ? '<span class="deal-lowest-tag">Lowest ever</span>' : ''
   content.innerHTML = `<div class="deal-title-line"><div class="deal-name">${escHtml(d.title)}</div><span class="deal-shop-badge ${shopClass}">${escHtml(d.shop)}</span></div>
-    <div class="deal-price-line"><span class="deal-orig">${fmt$(d.regular)}</span><span class="deal-price">${fmt$(d.price)}</span><span class="deal-cut">-${escHtml(d.cut)}%</span>${lowestTag}</div>`
+    <div class="deal-price-line"><span class="deal-orig">${fmt$(d.regular)}</span><span class="deal-price">${fmt$(d.price)}</span><span class="deal-cut">-${escHtml(d.cut)}%</span>${isNew ? '<span class="tag-new">New</span>' : ''}${lowestTag}</div>`
   content.querySelector('.deal-name').setAttribute('title', d.title)
   const main = document.createElement('button')
   main.type = 'button'; main.className = 'deal-row-main'
-  main.setAttribute('aria-label', `Open ${d.title} on ${d.shop}. ${salePriceDescription(d.regular, d.price, d.cut)}${lowestTag ? '. Lowest price ever' : ''}`)
+  main.setAttribute('aria-label', `Open ${d.title} on ${d.shop}. ${salePriceDescription(d.regular, d.price, d.cut)}${lowestTag ? '. Lowest price ever' : ''}${isNew ? '. New' : ''}`)
   // Steam deals use their app id; GOG/Epic are looked up only when clicked and fall back to CheapShark.
   const open = () => {
     const store = storeKeyFor(d.shop)
@@ -923,10 +961,11 @@ function renderStoreSales () {
   } else if (!items.length) {
     emptyEl.replaceChildren(Object.assign(document.createElement('p'), { textContent: 'No discounts loaded for this store right now.' }))
   }
-  items.forEach(d => grid.appendChild(makeSaleCard(d)))
+  const fresh = unseen('storesales')
+  items.forEach(d => grid.appendChild(makeSaleCard(d, fresh.has(d.id))))
 }
 
-function makeSaleCard (d) {
+function makeSaleCard (d, isNew = false) {
   const src = storeKeyFor(d.shop)
   const srcClass = ['steam','epic','gog'].includes(src) ? src : 'other'
   const card = document.createElement('div')
@@ -943,10 +982,10 @@ function makeSaleCard (d) {
         <span class="sr-only">${escHtml(salePriceDescription(d.regular, d.price, d.cut))}</span>
         <span class="price-was" aria-hidden="true">${fmt$(d.regular)}</span>
         <span class="price-now" aria-hidden="true">${fmt$(d.price)}</span>
-        <span class="tag-sale" aria-hidden="true">-${escHtml(d.cut)}%</span>
+        <span class="tag-sale" aria-hidden="true">-${escHtml(d.cut)}%</span>${isNew ? '<span class="tag-new" aria-hidden="true">New</span>' : ''}
       </div>
     </div></div>`
-  card.appendChild(makeCardOpenButton(src, d.url, d.title, salePriceDescription(d.regular, d.price, d.cut)))
+  card.appendChild(makeCardOpenButton(src, d.url, d.title, salePriceDescription(d.regular, d.price, d.cut) + (isNew ? '. New' : '')))
   const actions = makeCardActions(src, d.url, d.appId ?? d.id, d.title)
   actions.appendChild(makeHideButton(d.title))
   card.appendChild(actions)
@@ -1408,6 +1447,7 @@ function resetSettings () {
     wishlist: { query: '', sort: 'discount', onSaleOnly: false },
   }
   state.claimed = []
+  state.seen = parseSeen(null)
   clearUiPrefs()
 }
 
@@ -1416,6 +1456,7 @@ function resetSettings () {
 function navigate (page, persist = true) {
   if (state.page === 'settings' && page !== 'settings') clearResetSettingsConfirmation()
   const changed = state.page !== page
+  if (changed) markSeen(state.page)
   state.page = page
   if (persist) persistUiPrefs()
   if (changed) {
@@ -1590,6 +1631,7 @@ function applyData (data) {
   state.lastChecked  = data.lastChecked  ?? Date.now()
   updateRefreshAge()
   renderErrors()
+  SEEN_PAGES.forEach(page => { if (!state.seen[page]) markSeen(page) }) // first run: record, don't tag
   updateBadges()
   // Re-render the visible page — but never the settings page, so a background
   // poll can't yank toggles/inputs out from under the user
@@ -1612,6 +1654,12 @@ async function init () {
   // Titlebar
   document.getElementById('btn-min').addEventListener('click',   () => window.api.minimize())
   document.getElementById('btn-close').addEventListener('click', () => window.api.close())
+  // Hiding the window counts as leaving the page; re-render so the tags are gone when it comes back
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden || !SEEN_PAGES.includes(state.page)) return
+    markSeen(state.page)
+    if (state.page === 'deals') renderDeals(); else renderStoreSales()
+  })
 
   // Sidebar navigation
   document.querySelectorAll('.nav-item').forEach(el =>
