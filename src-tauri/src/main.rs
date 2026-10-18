@@ -294,6 +294,16 @@ fn keep_or_fail(res: R<Vec<WishItem>>, store: &str, prev: &Snapshot, errors: &mu
     }
 }
 
+/// CheapShark was unavailable: keep each item's last cheaper offer (if still cheaper) and lowest-ever price.
+fn keep_prices(items: &mut [WishItem], prev: &[WishItem]) {
+    for w in items {
+        let Some(p) = prev.iter().find(|p| p.store == w.store && p.id == w.id) else { continue };
+        let fin = w.price_info.as_ref().map(|x| x.fin);
+        w.cheapest = p.cheapest.clone().filter(|c| fin.is_some_and(|fin| c.price + 0.005 < fin));
+        w.lowest = p.lowest;
+    }
+}
+
 /// Last-good rows for one source. `steam-` is also a prefix of `steam-ftk-`, so a featured
 /// restore must not swallow free-to-keep rows. Any other id with that prefix is kept (`steam-fw-` stays).
 fn restore_by_prefix(old: &[Free], prefix: &str) -> Vec<Free> {
@@ -374,7 +384,8 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
         gog: deals_of("GOG sales", gs, &prev.sales.gog),
         epic: deals_of("Epic sales", es, &prev.sales.epic),
     };
-    let (deals, deals_source, deals_error) = hot;
+    let (mut deals, deals_source, deals_error) = hot;
+    if deals_error.is_some() { deals = prev.deals.clone(); } // keep the last good hot deals
 
     let free_games = dedupe_free([ef, sf, sk, gp].concat());
     let free_weekends = dedupe_free(sw);
@@ -445,7 +456,11 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
         wishlist.extend(keep_or_fail(res, "epic", &prev, &mut wishlist_errors));
     }
 
-    attach_cheapest(&mut wishlist).await;
+    if let Err(e) = attach_cheapest(&mut wishlist).await {
+        eprintln!("[wishlist prices] {e}");
+        source_errors.lock().unwrap().push(failure("Wishlist prices", &e));
+        keep_prices(&mut wishlist, &prev.wishlist);
+    }
     if settings.notify_wishlist_sale { notify_wishlist(app, st, &wishlist); }
     if settings.notify_big_deal { notify_big_deals(app, st, &deals); }
 
@@ -893,7 +908,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{civil_from_days, days_from_civil, sale_soon_notice, sale_starting_tomorrow, SALES, clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, normalize_hidden, normalize_title, remember_big_deals, remember_wishlist, restore_by_prefix, safe_https, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, Acct, Deal, Free, Price, Prime, Settings, WishItem};
+    use super::{civil_from_days, days_from_civil, sale_soon_notice, sale_starting_tomorrow, SALES, clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, keep_prices, normalize_hidden, normalize_title, remember_big_deals, remember_wishlist, restore_by_prefix, safe_https, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, Acct, Deal, Free, Price, Prime, Settings, WishItem};
     use std::collections::HashSet;
 
     #[test]
@@ -1021,6 +1036,22 @@ mod tests {
             price_info: off.map(|discount| Price { discount, formatted: Some("$4.99".into()), ..Default::default() }),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn keep_prices_restores_last_good_cheapshark_data() {
+        let cheap = |price| Some(super::Cheapest { store: "GMG".into(), price, url: String::new() });
+        let mut old = vec![wish("1", "A", Some(50)), wish("2", "B", Some(50)), wish("3", "C", Some(0))];
+        old[0].cheapest = cheap(3.0); old[0].lowest = Some(2.5);
+        old[1].cheapest = cheap(3.0);
+        let mut now = vec![wish("1", "A", Some(50)), wish("2", "B", Some(50)), wish("9", "New", Some(10))];
+        now[0].price_info.as_mut().unwrap().fin = 5.0;
+        now[1].price_info.as_mut().unwrap().fin = 2.0; // now cheaper on its own store than the old offer
+        keep_prices(&mut now, &old);
+        assert_eq!(now[0].cheapest.as_ref().map(|c| c.price), Some(3.0));
+        assert_eq!(now[0].lowest, Some(2.5));
+        assert!(now[1].cheapest.is_none());
+        assert!(now[2].cheapest.is_none() && now[2].lowest.is_none());
     }
 
     #[test]

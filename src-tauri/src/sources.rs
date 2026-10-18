@@ -684,10 +684,67 @@ fn parse_gog_sales(body: &str) -> R<Vec<Deal>> {
     }).collect())
 }
 
-// ─── Hot deals: ITAD, with a keyless CheapShark fallback ──────────────────────
+// ─── CheapShark rate-limit cooldown ───────────────────────────────────────────
+
+/// (blocked until, last default backoff), unix seconds. Shared by every CheapShark call,
+/// so one HTTP 429 stops them all instead of letting the poll extend the block.
+static CS_COOLDOWN: std::sync::Mutex<(u64, u64)> = std::sync::Mutex::new((0, 0));
+const CS_BACKOFF: u64 = 15 * 60;
+const CS_MAX_WAIT: u64 = 2 * 60 * 60;
+
+fn unix_secs() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs())
+}
+
+/// After a 429 at `now`: wait Retry-After seconds when sane (capped at 2 h), else the default
+/// backoff (15 min, doubling per repeated 429 up to 2 h). Returns (blocked until, next backoff).
+fn cooldown_after(prev_backoff: u64, retry_after: Option<&str>, now: u64) -> (u64, u64) {
+    let backoff = if prev_backoff == 0 { CS_BACKOFF } else { (prev_backoff * 2).min(CS_MAX_WAIT) };
+    let wait = retry_after.and_then(|h| h.trim().parse::<u64>().ok()).filter(|&s| s > 0).map_or(backoff, |s| s.min(CS_MAX_WAIT));
+    (now + wait, backoff)
+}
+
+/// The error every CheapShark call returns while blocked; `None` once `until` has passed.
+fn blocked_msg(until: u64, now: u64) -> Option<String> {
+    (until > now).then(|| format!(
+        "CheapShark is rate-limiting requests; trying again in {} min ({:02}:{:02} UTC)",
+        (until - now).div_ceil(60), until / 3600 % 24, until / 60 % 60,
+    ))
+}
+
+pub fn cheapshark_blocked() -> Option<String> {
+    blocked_msg(CS_COOLDOWN.lock().unwrap().0, unix_secs())
+}
+
+/// Every CheapShark request goes through here. While blocked it fails without touching the network.
+async fn cheapshark_get(url: &str) -> R<String> {
+    if let Some(e) = cheapshark_blocked() { return Err(e) }
+    let res = client().get(url).send().await.map_err(|e| e.without_url().to_string())?;
+    let status = res.status();
+    let now = unix_secs();
+    if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        let retry_after = res.headers().get(reqwest::header::RETRY_AFTER).and_then(|v| v.to_str().ok());
+        let mut cd = CS_COOLDOWN.lock().unwrap();
+        // Parallel requests that 429 together count as one, not one doubling each
+        if cd.0 <= now { *cd = cooldown_after(cd.1, retry_after, now); }
+        return Err(blocked_msg(cd.0, now).unwrap_or_else(|| "HTTP 429".into()));
+    }
+    if !status.is_success() { return Err(format!("HTTP {}", status.as_u16())) }
+    {
+        let mut cd = CS_COOLDOWN.lock().unwrap();
+        if cd.0 <= now { *cd = (0, 0); } // a reply sent before a sibling's 429 must not lift the block
+    }
+    res.text().await.map_err(|e| e.without_url().to_string())
+}
+
+async fn cheapshark_json(url: &str) -> R<Value> {
+    serde_json::from_str(&cheapshark_get(url).await?).map_err(|e| e.to_string())
+}
+
+// ─── Hot deals: CheapShark ────────────────────────────────────────────────────
 
 async fn cheapshark_stores() -> HashMap<String, String> {
-    let Ok(v) = get_json("https://www.cheapshark.com/api/1.0/stores").await else { return HashMap::new() };
+    let Ok(v) = cheapshark_json("https://www.cheapshark.com/api/1.0/stores").await else { return HashMap::new() };
     parse_cheapshark_stores(&v)
 }
 
@@ -701,7 +758,7 @@ fn parse_cheapshark_stores(v: &Value) -> HashMap<String, String> {
 pub async fn cheapshark_deals() -> R<Vec<Deal>> {
     let (stores, body) = futures::join!(
         cheapshark_stores(),
-        get_text("https://www.cheapshark.com/api/1.0/deals?sortBy=Savings&onSale=1&pageSize=60&lowerPrice=1&metacritic=60&steamRating=70")
+        cheapshark_get("https://www.cheapshark.com/api/1.0/deals?sortBy=Savings&onSale=1&pageSize=60&lowerPrice=1&metacritic=60&steamRating=70")
     );
     let body = body?;
     let mut deals = parse_cheapshark_deals(&body, &stores)?;
@@ -717,7 +774,7 @@ pub async fn cheapshark_deals() -> R<Vec<Deal>> {
 async fn cheapshark_lowest(ids: impl IntoIterator<Item = String>) -> HashMap<String, f64> {
     let ids: Vec<String> = ids.into_iter().collect::<std::collections::HashSet<_>>().into_iter().collect();
     let results = futures::future::join_all(ids.chunks(25).map(|chunk| async move {
-        get_text(&format!("https://www.cheapshark.com/api/1.0/games?ids={}", chunk.join(","))).await.ok()
+        cheapshark_get(&format!("https://www.cheapshark.com/api/1.0/games?ids={}", chunk.join(","))).await.ok()
     })).await;
     results.into_iter().flatten().flat_map(|body| parse_cheapshark_lowest(&body)).collect()
 }
@@ -759,7 +816,8 @@ fn parse_cheapshark_deals(body: &str, stores: &HashMap<String, String>) -> R<Vec
 /// Fill `cheapest` on wishlist items when another store beats the item's own
 /// price (what deals.gg shows: the best current price across stores).
 /// CheapShark batches Steam appids; GOG/Epic items are matched by exact title.
-pub async fn attach_cheapest(items: &mut [WishItem]) {
+/// Err (once, not per batch) when CheapShark rate-limited us, so the poll keeps the last good prices.
+pub async fn attach_cheapest(items: &mut [WishItem]) -> R<()> {
     let stores = cheapshark_stores().await;
     let mut found: Vec<GameMatch> = vec![];
 
@@ -772,13 +830,13 @@ pub async fn attach_cheapest(items: &mut [WishItem]) {
     steam_idx.truncate(250);
     for chunk in steam_idx.chunks(25) {
         let ids: Vec<&str> = chunk.iter().filter_map(|&i| items[i].app_id.as_deref()).collect();
-        let Ok(v) = get_json(&format!("https://www.cheapshark.com/api/1.0/games?steamAppID={}", ids.join(","))).await else { continue };
+        let Ok(v) = cheapshark_json(&format!("https://www.cheapshark.com/api/1.0/games?steamAppID={}", ids.join(","))).await else { continue };
         found.extend(cheapshark_matches(items, chunk, &v));
     }
     let other_idx: Vec<usize> = (0..items.len()).filter(|&i| items[i].app_id.is_none() && usd(&items[i])).take(30).collect();
     let lookups = futures::future::join_all(other_idx.iter().map(|&i| {
         let url = format!("https://www.cheapshark.com/api/1.0/games?title={}&exact=1&limit=1", urlenc(&items[i].name));
-        async move { (i, get_json(&url).await.ok()) }
+        async move { (i, cheapshark_json(&url).await.ok()) }
     })).await;
     for (i, v) in lookups {
         if let Some(v) = v { found.extend(cheapshark_matches(items, &[i], &v)); }
@@ -796,7 +854,7 @@ pub async fn attach_cheapest(items: &mut [WishItem]) {
     let (lowest, details) = futures::join!(
         cheapshark_lowest(games.iter().map(|(_, g)| g.clone())),
         futures::future::join_all(cheaper.iter().map(|(_, _, deal)| async move {
-            get_json(&format!("https://www.cheapshark.com/api/1.0/deals?id={deal}")).await.ok()
+            cheapshark_json(&format!("https://www.cheapshark.com/api/1.0/deals?id={deal}")).await.ok()
         }))
     );
     assign_lowest(items, &games, &lowest);
@@ -806,6 +864,7 @@ pub async fn attach_cheapest(items: &mut [WishItem]) {
             items[i].cheapest = Some(Cheapest { store, price, url: format!("https://www.cheapshark.com/redirect?dealID={deal}") });
         }
     }
+    cheapshark_blocked().map_or(Ok(()), Err)
 }
 
 /// (item index, cheapest price, cheapestDealID, gameID)
@@ -831,7 +890,7 @@ fn assign_lowest(items: &mut [WishItem], games: &[(usize, String)], lowest: &Has
 /// Cheapest third-party price for one Steam game (wishlist detail panel).
 pub async fn cheapest_for_steam_app(app_id: &str) -> R<Option<Value>> {
     let url = format!("https://www.cheapshark.com/api/1.0/deals?steamAppID={}&pageSize=15", urlenc(app_id));
-    let (stores, deals) = futures::join!(cheapshark_stores(), get_json(&url));
+    let (stores, deals) = futures::join!(cheapshark_stores(), cheapshark_json(&url));
     Ok(parse_cheapest_deal(&deals?, &stores))
 }
 
@@ -895,7 +954,7 @@ mod live {
         // STEAM_ID=7656... cargo test wishlist_cheapest_live -- --ignored --nocapture
         let id = std::env::var("STEAM_ID").expect("set STEAM_ID");
         let mut w = steam_wishlist(&id).await.unwrap();
-        attach_cheapest(&mut w).await;
+        attach_cheapest(&mut w).await.unwrap();
         let n = w.iter().filter(|i| i.cheapest.is_some()).count();
         println!("{} items, {} have a cheaper non-Steam offer, {} have a lowest-ever price", w.len(), n, w.iter().filter(|i| i.lowest.is_some()).count());
         for i in w.iter().filter(|i| i.cheapest.is_some()).take(5) {
@@ -1376,5 +1435,27 @@ mod unit {
         assert!(super::parse_cheapshark_lowest("[]").is_empty());
         assert!(super::parse_cheapshark_lowest("not json").is_empty());
         assert!(super::cheapshark_deals_by_game("not json").is_empty());
+    }
+
+    #[test]
+    fn cheapshark_cooldown_rules() {
+        use super::{blocked_msg, cooldown_after};
+        let now = 1_000_000;
+        // Retry-After honoured, capped at 2 h; the default backoff still advances
+        assert_eq!(cooldown_after(0, Some(" 120 "), now), (now + 120, 900));
+        assert_eq!(cooldown_after(0, Some("99999"), now), (now + 7200, 900));
+        // Missing, garbage, zero or HTTP-date headers fall back to 15 min, doubling up to 2 h
+        for h in [None, Some("soon"), Some("0"), Some("-5"), Some("Wed, 21 Oct 2026 07:28:00 GMT")] {
+            assert_eq!(cooldown_after(0, h, now), (now + 900, 900), "{h:?}");
+        }
+        assert_eq!(cooldown_after(900, None, now), (now + 1800, 1800));
+        assert_eq!(cooldown_after(3600, None, now), (now + 7200, 7200));
+        assert_eq!(cooldown_after(7200, None, now), (now + 7200, 7200));
+        // Blocked until the deadline, then not; (0, 0) after a success is never blocked
+        // 1_000_900 s = 11 days 14:01:40 UTC
+        assert_eq!(blocked_msg(now + 900, now).unwrap(), "CheapShark is rate-limiting requests; trying again in 15 min (14:01 UTC)");
+        assert!(blocked_msg(now + 900, now + 899).unwrap().contains("in 1 min"));
+        assert_eq!(blocked_msg(now + 900, now + 900), None);
+        assert_eq!(blocked_msg(0, now), None);
     }
 }
