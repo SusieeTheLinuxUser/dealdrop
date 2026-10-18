@@ -169,6 +169,9 @@
         <div class="list-controls">
           <input type="search" id="sales-search" placeholder="Search titles" aria-label="Search store sale titles" />
           <select id="sales-sort" aria-label="Sort store sales"><option value="discount">Biggest discount</option><option value="price">Lowest price</option><option value="name">Name</option></select>
+          <div class="discount-filters" id="sales-discount-filters" role="group" aria-label="Minimum discount">
+            <button type="button" data-min-discount="0" aria-pressed="true">Any</button><button type="button" data-min-discount="50" aria-pressed="false">50%+</button><button type="button" data-min-discount="75" aria-pressed="false">75%+</button><button type="button" data-min-discount="90" aria-pressed="false">90%+</button>
+          </div>
         </div>
         <div class="game-grid" id="grid-storesales"></div>
         <div class="empty-state" id="empty-storesales" style="display:none">
@@ -186,6 +189,9 @@
         <div class="list-controls">
           <input type="search" id="deals-search" placeholder="Search titles" aria-label="Search hot deal titles" />
           <select id="deals-sort" aria-label="Sort hot deals"><option value="discount">Biggest discount</option><option value="price">Lowest price</option><option value="name">Name</option></select>
+          <div class="discount-filters" id="deals-discount-filters" role="group" aria-label="Minimum discount">
+            <button type="button" data-min-discount="0" aria-pressed="true">Any</button><button type="button" data-min-discount="50" aria-pressed="false">50%+</button><button type="button" data-min-discount="75" aria-pressed="false">75%+</button><button type="button" data-min-discount="90" aria-pressed="false">90%+</button>
+          </div>
         </div>
         <div class="deals-list" id="list-deals"></div>
         <div class="empty-state" id="empty-deals" style="display:none">

@@ -44,7 +44,7 @@ const state = {
   wishlistPrivate: false,
   refreshing: false,
   listFilters: {
-    deals: { query: '', sort: 'discount' }, storesales: { query: '', sort: 'discount' },
+    deals: { query: '', sort: 'discount', minDiscount: 0 }, storesales: { query: '', sort: 'discount', minDiscount: 0 },
     wishlist: { query: '', sort: 'discount', onSaleOnly: false },
   },
 }
@@ -52,7 +52,7 @@ let shortcutsDialog = null
 let refreshAgeInterval = null
 
 function filteredSorted (items, key, fields = {}) {
-  const { query, sort, onSaleOnly } = state.listFilters[key]
+  const { query, sort, onSaleOnly, minDiscount = 0 } = state.listFilters[key]
   const value = (item, field, defaultField) => fields[field] ? fields[field](item) : item[defaultField]
   const q = query.trim().toLocaleLowerCase()
   const discount = item => Number(value(item, 'discount', 'cut')) || 0
@@ -62,7 +62,7 @@ function filteredSorted (items, key, fields = {}) {
   }
   return items.filter(item => {
     const title = String(value(item, 'title', 'title') ?? '')
-    return (!q || title.toLocaleLowerCase().includes(q)) && (!onSaleOnly || discount(item) > 0)
+    return (!q || title.toLocaleLowerCase().includes(q)) && discount(item) >= Math.max(minDiscount, onSaleOnly ? 1 : 0)
   }).sort((a, b) => {
     if (sort === 'price') return price(a) - price(b)
     if (sort === 'name') return String(value(a, 'title', 'title') ?? '').localeCompare(String(value(b, 'title', 'title') ?? ''))
@@ -70,7 +70,14 @@ function filteredSorted (items, key, fields = {}) {
   })
 }
 
-function bindListControls (key, inputId, sortId, render, saleOnlyId) {
+function syncMinDiscount (key, controlId) {
+  const minDiscount = state.listFilters[key].minDiscount || 0
+  document.querySelectorAll(`#${controlId} [data-min-discount]`).forEach(button => {
+    button.setAttribute('aria-pressed', String(Number(button.dataset.minDiscount) === minDiscount))
+  })
+}
+
+function bindListControls (key, inputId, sortId, render, { saleOnlyId, minDiscountId } = {}) {
   const input = document.getElementById(inputId)
   const sort = document.getElementById(sortId)
   let timer
@@ -87,6 +94,30 @@ function bindListControls (key, inputId, sortId, render, saleOnlyId) {
       render()
     })
   }
+  if (minDiscountId) {
+    const controls = document.getElementById(minDiscountId)
+    syncMinDiscount(key, minDiscountId)
+    controls.addEventListener('click', e => {
+      const button = e.target.closest('[data-min-discount]')
+      if (!button) return
+      state.listFilters[key].minDiscount = Number(button.dataset.minDiscount)
+      syncMinDiscount(key, minDiscountId)
+      render()
+    })
+  }
+}
+
+function showFilterEmpty (emptyEl, key, inputId, minDiscountId, render, message) {
+  const copy = document.createElement('p'); copy.textContent = message
+  const clear = document.createElement('button')
+  clear.type = 'button'; clear.className = 'clear-filter'; clear.textContent = 'Clear filters'
+  clear.addEventListener('click', () => {
+    state.listFilters[key].query = ''; state.listFilters[key].minDiscount = 0
+    document.getElementById(inputId).value = ''
+    syncMinDiscount(key, minDiscountId)
+    render()
+  })
+  emptyEl.replaceChildren(copy, clear)
 }
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
@@ -605,12 +636,12 @@ function renderDeals () {
     : `Source: ${escHtml(state.dealsSource)}`
 
   const items = filteredSorted(state.deals, 'deals')
+  syncMinDiscount('deals', 'deals-discount-filters')
   emptyEl.style.display = items.length ? 'none' : 'flex'
-  if (!items.length && state.listFilters.deals.query.trim()) {
-    emptyEl.innerHTML = '<p>No deals match that title.</p><button type="button" class="clear-filter">Clear search</button>'
-    emptyEl.querySelector('button').addEventListener('click', () => { state.listFilters.deals.query = ''; document.getElementById('deals-search').value = ''; renderDeals() })
+  if (!items.length && (state.listFilters.deals.query.trim() || state.listFilters.deals.minDiscount)) {
+    showFilterEmpty(emptyEl, 'deals', 'deals-search', 'deals-discount-filters', renderDeals, 'No deals match.')
   } else if (!items.length) {
-    emptyEl.innerHTML = '<p>No deals could be loaded right now.</p>'
+    emptyEl.replaceChildren(Object.assign(document.createElement('p'), { textContent: 'No deals could be loaded right now.' }))
   }
   items.forEach(d => list.appendChild(makeDealRow(d)))
 }
@@ -652,12 +683,12 @@ function renderStoreSales () {
   grid.innerHTML = ''
   const list = state.sales[state.salesTab] ?? []
   const items = filteredSorted(list, 'storesales')
+  syncMinDiscount('storesales', 'sales-discount-filters')
   emptyEl.style.display = items.length ? 'none' : 'flex'
-  if (!items.length && state.listFilters.storesales.query.trim()) {
-    emptyEl.innerHTML = '<p>No games match that title.</p><button type="button" class="clear-filter">Clear search</button>'
-    emptyEl.querySelector('button').addEventListener('click', () => { state.listFilters.storesales.query = ''; document.getElementById('sales-search').value = ''; renderStoreSales() })
+  if (!items.length && (state.listFilters.storesales.query.trim() || state.listFilters.storesales.minDiscount)) {
+    showFilterEmpty(emptyEl, 'storesales', 'sales-search', 'sales-discount-filters', renderStoreSales, 'No store sales match.')
   } else if (!items.length) {
-    emptyEl.innerHTML = '<p>No discounts loaded for this store right now.</p>'
+    emptyEl.replaceChildren(Object.assign(document.createElement('p'), { textContent: 'No discounts loaded for this store right now.' }))
   }
   items.forEach(d => grid.appendChild(makeSaleCard(d)))
 }
@@ -1253,9 +1284,9 @@ async function init () {
       applyTheme(); renderSettings()
     } finally { btn.disabled = false }
   })
-  bindListControls('deals', 'deals-search', 'deals-sort', renderDeals)
-  bindListControls('storesales', 'sales-search', 'sales-sort', renderStoreSales)
-  bindListControls('wishlist', 'wishlist-search', 'wishlist-sort', renderWishlist, 'wishlist-sale-only')
+  bindListControls('deals', 'deals-search', 'deals-sort', renderDeals, { minDiscountId: 'deals-discount-filters' })
+  bindListControls('storesales', 'sales-search', 'sales-sort', renderStoreSales, { minDiscountId: 'sales-discount-filters' })
+  bindListControls('wishlist', 'wishlist-search', 'wishlist-sort', renderWishlist, { saleOnlyId: 'wishlist-sale-only' })
 
   // ── Links (only hard-coded official URLs carry data-href) ───────────────
   document.addEventListener('click', e => {
