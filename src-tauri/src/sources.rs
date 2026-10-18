@@ -322,7 +322,7 @@ pub async fn steam_free_to_keep() -> R<Vec<Free>> {
         let chunk = &html[*at..end];
         let (Some(t), Some(d), Some(p)) = (title.captures(chunk), disc.captures(chunk), fin.captures(chunk)) else { continue };
         // 100% off a listed original price: drops permanent free-to-play, which has no such pair.
-        if d[1].as_str() != "100" || p[1].as_str() != "0" || orig.captures(chunk).is_none() { continue; }
+        if &d[1] != "100" || &p[1] != "0" || orig.captures(chunk).is_none() { continue; }
         out.push(Free {
             id: format!("steam-ftk-{id}"),
             title: unescape(&t[1]),
