@@ -685,13 +685,17 @@ function toggleRows (con, rows, after) {
   rows.forEach(r => {
     const row = document.createElement('div')
     row.className = 'setting-row'
-    row.innerHTML = `
-      <div>
-        <div class="setting-label">${r.label}</div>
-        <div class="setting-sub">${r.sub}</div>
-      </div>
-      <button class="toggle ${s[r.key] ? 'on' : ''}" data-key="${r.key}"></button>`
-    const toggle = row.querySelector('.toggle')
+    const copy = document.createElement('div')
+    const label = document.createElement('div'); label.className = 'setting-label'; label.textContent = r.label
+    const sub = document.createElement('div'); sub.className = 'setting-sub'
+    if (r.gamerpower) {
+      sub.appendChild(document.createTextNode('Epic, Steam, GOG & '))
+      const link = document.createElement('a'); link.href = '#'; link.dataset.href = 'https://www.gamerpower.com'; link.textContent = 'GamerPower'
+      sub.append(link, document.createTextNode(' giveaways'))
+    } else sub.textContent = r.sub
+    copy.append(label, sub)
+    const toggle = document.createElement('button')
+    toggle.type = 'button'; toggle.className = 'toggle' + (s[r.key] ? ' on' : ''); toggle.dataset.key = r.key
     toggle.setAttribute('aria-label', r.label)
     toggle.setAttribute('aria-pressed', String(Boolean(s[r.key])))
     toggle.addEventListener('click', e => {
@@ -702,6 +706,7 @@ function toggleRows (con, rows, after) {
       window.api.saveSettings(s)
       after?.()
     })
+    row.append(copy, toggle)
     con.appendChild(row)
   })
 }
@@ -744,7 +749,7 @@ function renderSettings () {
   renderThemeGrid()
   toggleRows(document.getElementById('look-settings'), LOOK_TOGGLES, applyTheme)
 
-  toggleRows(document.getElementById('notif-settings'), NOTIFICATION_TOGGLES.map(r => ({ ...r, sub: r.gamerpower ? 'Epic, Steam, GOG & <a data-href="https://www.gamerpower.com" role="link" tabindex="0">GamerPower</a> giveaways' : r.sub })))
+  toggleRows(document.getElementById('notif-settings'), NOTIFICATION_TOGGLES)
 
   const ig = document.getElementById('interval-group')
   ig.innerHTML = ''
