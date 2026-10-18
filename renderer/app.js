@@ -700,7 +700,7 @@ function renderSettings () {
   renderLauncherPrefs()
   toggleRows(document.getElementById('notif-settings'), [
     { key: 'notifyMajorSale',    label: 'Steam major sale started',   sub: 'Summer, Winter, Autumn & Spring sales' },
-    { key: 'notifyFreeGame',     label: 'Free game available',         sub: 'Epic, Steam, GOG & GamerPower giveaways' },
+    { key: 'notifyFreeGame',     label: 'Free game available',         sub: 'Epic, Steam, GOG & <a data-href="https://www.gamerpower.com" role="link" tabindex="0">GamerPower</a> giveaways' },
     { key: 'notifyFreeWeekend',  label: 'Free weekend started',        sub: 'Temporary Steam free-to-play promotions' },
     { key: 'notifyWishlistSale', label: 'Wishlist game on sale',       sub: 'Steam, GOG & Epic wishlists, drops of ≥20%' },
     { key: 'notifyBigDeal',      label: 'Deal over 75% off',           sub: 'Hot deals list (CheapShark)' },
@@ -906,8 +906,14 @@ async function init () {
     if (sale) openSale(sale)
   })
   document.addEventListener('keydown', e => {
-    if (e.key !== 'Enter' && e.key !== ' ') return
     const target = e.target
+    const link = target.closest?.('a[data-href]')
+    if (link && e.key === 'Enter') {
+      e.preventDefault()
+      link.click()
+      return
+    }
+    if (e.key !== 'Enter' && e.key !== ' ') return
     const row = target.closest?.('[data-keyboard-action="activate"]')
     if (!row || (target !== row && target.closest?.('button, a, input, select, textarea'))) return
     e.preventDefault()
