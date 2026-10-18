@@ -6,7 +6,9 @@
   const stress = flags.get('stress') === '1'
   const stressTitle = 'UnbrokenStressTitle' + 'X'.repeat(100)
   const stressAccount = 'PreviewAccount' + 'Y'.repeat(90)
-  const signedIn = flags.get('accounts') === '1' || stress
+  const accountFlag = flags.get('accounts') || ''
+  const signedStores = new Set(stress || accountFlag === '1' ? ['steam', 'gog', 'epic'] : accountFlag.split(',').filter(store => ['steam', 'gog', 'epic'].includes(store)))
+  const signedIn = signedStores.size > 0
   const empty = flags.get('empty') === '1'
   const lastChecked = Date.now() - (flags.get('stale') === '1' ? 3 * 60 * 60 * 1000 : 5 * 60 * 1000)
   let settings = {
@@ -17,9 +19,9 @@
     onboarded: flags.get('onboarded') === '1',
   }
   let accounts = {
-    steam: signedIn ? { name: stress ? stressAccount : 'PlayerOne', avatar: null, profileUrl: 'https://steamcommunity.com/' } : null,
-    gog: signedIn ? { name: stress ? stressAccount : 'PlayerOne', avatar: null, profileUrl: 'https://www.gog.com/u/' } : null,
-    epic: signedIn ? { name: stress ? stressAccount : 'PlayerOne', avatar: null, profileUrl: 'https://www.epicgames.com/account/personal' } : null,
+    steam: signedStores.has('steam') ? { name: stress ? stressAccount : 'PlayerOne', avatar: null, profileUrl: 'https://steamcommunity.com/' } : null,
+    gog: signedStores.has('gog') ? { name: stress ? stressAccount : 'PlayerOne', avatar: null, profileUrl: 'https://www.gog.com/u/' } : null,
+    epic: signedStores.has('epic') ? { name: stress ? stressAccount : 'PlayerOne', avatar: null, profileUrl: 'https://www.epicgames.com/account/personal' } : null,
   }
   const deal = (id, title, shop, cut, price, regular, appId, url) => ({
     id, title, shop, url: url || `https://store.steampowered.com/app/${appId}`, image: null,
@@ -76,9 +78,9 @@
       { store: 'steam', id: 'steam-440', appId: '440', name: 'Team Fortress 2', image: null, url: 'https://store.steampowered.com/app/440', priceInfo: { discount: 50, final: 4.99, initial: 9.99, formatted: '$4.99' }, cheapest: { store: 'GOG', price: 3.99, url: 'https://www.gog.com/game/classic_quest' } },
       { store: 'gog', id: 'gog-123456', appId: null, name: 'Classic Quest', image: null, url: 'https://www.gog.com/game/classic_quest', priceInfo: { discount: 0, final: 9.99, initial: 9.99, formatted: '$9.99' }, cheapest: null },
       { store: 'epic', id: 'epic-123', appId: null, name: 'Skyward Bound', image: null, url: 'https://store.epicgames.com/', priceInfo: { discount: 20, final: 7.99, initial: 9.99, formatted: '$7.99' }, cheapest: null },
-    ],
+    ].filter(item => signedStores.has(item.store)),
     wishlistPrivate: false,
-    wishlistErrors: signedIn && flags.get('errors') === '1' ? { gog: 'Could not refresh wishlist' } : {},
+    wishlistErrors: signedStores.has('gog') && flags.get('errors') === '1' ? { gog: 'Could not refresh wishlist' } : {},
     sourceErrors: flags.get('errors') === '1' ? ['Epic sales: HTTP 500', 'GOG giveaways: unavailable'] : [],
     lastChecked,
   }
