@@ -6,7 +6,7 @@
   const tourStops = [
     { selector: '.nav-items', title: 'Find a page', copy: 'Use these buttons to switch between Wishlist, Free now, Store sales, Hot deals, Calendar and Settings.' },
     { selector: '#btn-check-now', title: 'Refresh all', copy: 'Refresh stores and wishlists whenever you want an update.' },
-    { selector: '.nav-item[data-page="settings"]', title: 'Settings', copy: 'Change your appearance, notifications and launcher preferences here.' },
+    { selector: '.nav-item[data-page="settings"]', title: 'Settings', copy: 'Change your appearance, notifications, check interval and launcher preferences here.' },
     { selector: null, title: 'Stay in the tray', copy: 'Closing this window hides DealDrop in the tray. Choose Quit from the tray menu to exit.' },
   ]
   const button = (text, cls, fn) => { const b = document.createElement('button'); b.type = 'button'; b.className = cls; b.textContent = text; b.addEventListener('click', fn); return b }
@@ -159,7 +159,7 @@
       return
     }
     tourOverlay.classList.remove('tour-note-only'); spotlight.hidden = false; card.classList.remove('tour-card-centered')
-    target.scrollIntoView({block:'nearest', inline:'nearest'})
+    target.scrollIntoView({block:'center', inline:'nearest'})
     const sidebar = target.closest('.sidebar')
     const sidePlacement = sidebar && innerWidth - sidebar.getBoundingClientRect().right >= 280
     card.classList.toggle('tour-card-side', Boolean(sidePlacement))
