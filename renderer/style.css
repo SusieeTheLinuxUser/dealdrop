@@ -50,7 +50,7 @@ html,body{background:transparent} /* window is transparent; #app paints the colo
 
 /* ── main ── */
 .main-content{overflow-y:auto;overflow-x:hidden;min-width:0;background:var(--bg0)}
-.page{display:none;padding:20px 24px 32px}
+.page{display:none;padding:20px max(24px,calc((100% - 1120px)/2)) 32px}
 .page.active{display:block}
 .page-header{display:flex;align-items:baseline;gap:12px;margin-bottom:20px}
 .page-header h1{font-size:18px;font-weight:600;color:var(--text0)}
@@ -58,7 +58,7 @@ html,body{background:transparent} /* window is transparent; #app paints the colo
 .section-label{font-size:10px;font-weight:500;color:var(--text2);letter-spacing:.1em;text-transform:uppercase;font-family:var(--mono);margin-bottom:10px}
 
 /* ── game cards ── */
-.game-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(188px,1fr));gap:10px;margin-bottom:24px}
+.game-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-bottom:24px}
 .game-card{background:var(--bg1);border:1px solid var(--border);border-radius:var(--rlg);overflow:hidden;cursor:pointer;transition:border-color .15s,transform .1s}
 .game-card:hover{border-color:var(--bord2);transform:translateY(-1px)}
 .game-card:active{transform:translateY(0)}
