@@ -132,11 +132,12 @@ html,body{background:transparent} /* window is transparent; #app paints the colo
 .deal-shop-badge.steam{background:#1b2838;color:var(--acc)}
 .deal-shop-badge.epic{background:#2a2a2a;color:#fff}
 .deal-shop-badge.gog{background:#4a2c99;color:#d4b8ff}
-.deal-price-line{display:flex;align-items:center;gap:12px;margin-top:5px}
+.deal-price-line{display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;margin-top:5px;min-width:0}
 .deal-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:500;color:var(--text0)}
 .deal-store{font-size:11px;color:var(--text2);font-family:var(--mono);margin-top:1px}
 .deal-orig{font-size:12px;color:var(--text2);text-decoration:line-through;font-family:var(--mono)}
 .deal-cut{font-size:11px;font-weight:600;font-family:var(--mono);color:#0a1a10;background:var(--amber);padding:2px 7px;border-radius:var(--rs)}
+.deal-lowest-tag{font-size:9px;font-weight:600;font-family:var(--mono);color:var(--acc);background:var(--bg3);padding:2px 6px;border-radius:var(--rs);white-space:nowrap}
 .deal-price{font-size:14px;font-weight:600;font-family:var(--mono);color:var(--text0);min-width:50px;text-align:right}
 .deal-open{position:relative;z-index:2;width:28px;height:28px;border:1px solid var(--border);border-radius:var(--rs);background:var(--bg2);color:var(--text1);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .12s;flex-shrink:0}
 .deal-open:hover{background:var(--acc-d);color:var(--acc);border-color:rgba(102,192,244,.3)}

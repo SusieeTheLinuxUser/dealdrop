@@ -40,6 +40,7 @@ pub struct Deal {
     pub cut: u32,
     pub price: f64,
     pub regular: f64,
+    pub lowest: Option<f64>,
     pub app_id: Option<String>,
 }
 
@@ -441,6 +442,7 @@ fn parse_steam_sales(body: &str) -> R<Vec<Deal>> {
             url: format!("https://store.steampowered.com/app/{id}"),
             image: capsule.captures(chunk).map(|c| c[1].to_string()),
             cut, price, regular,
+            lowest: None,
             app_id: Some(id.clone()),
         });
     }
@@ -615,6 +617,7 @@ fn parse_gog_sales(body: &str) -> R<Vec<Deal>> {
             url: s(&p["storeLink"])?,
             image: s(&p["coverHorizontal"]),
             cut, price, regular,
+            lowest: None,
             app_id: None,
         })
     }).collect())
@@ -635,7 +638,31 @@ pub async fn cheapshark_deals() -> R<Vec<Deal>> {
         cheapshark_stores(),
         get_text("https://www.cheapshark.com/api/1.0/deals?sortBy=Savings&onSale=1&pageSize=60&lowerPrice=1&metacritic=60&steamRating=70")
     );
-    parse_cheapshark_deals(&body?, &stores)
+    let body = body?;
+    let mut deals = parse_cheapshark_deals(&body, &stores)?;
+    let game_by_deal = cheapshark_deals_by_game(&body);
+    let game_ids: Vec<String> = game_by_deal.values().cloned().collect::<std::collections::HashSet<_>>().into_iter().collect();
+    let results = futures::future::join_all(game_ids.chunks(25).map(|chunk| async move {
+        get_text(&format!("https://www.cheapshark.com/api/1.0/games?ids={}", chunk.join(","))).await.ok()
+    })).await;
+    let lowest: HashMap<String, f64> = results.into_iter().flatten()
+        .flat_map(|body| parse_cheapshark_lowest(&body)).collect();
+    for deal in &mut deals {
+        deal.lowest = game_by_deal.get(&deal.id).and_then(|id| lowest.get(id)).copied();
+    }
+    Ok(deals)
+}
+
+fn cheapshark_deals_by_game(body: &str) -> HashMap<String, String> {
+    let Ok(v) = serde_json::from_str::<Value>(body) else { return HashMap::new() };
+    v.as_array().into_iter().flatten().filter_map(|d| Some((s(&d["dealID"])?, s(&d["gameID"])?))).collect()
+}
+
+fn parse_cheapshark_lowest(body: &str) -> HashMap<String, f64> {
+    let Ok(v) = serde_json::from_str::<Value>(body) else { return HashMap::new() };
+    v.as_object().into_iter().flatten().filter_map(|(id, game)| {
+        game["cheapestPriceEver"]["price"].as_str()?.parse().ok().map(|price| (id.clone(), price))
+    }).collect()
 }
 
 fn parse_cheapshark_deals(body: &str, stores: &HashMap<String, String>) -> R<Vec<Deal>> {
@@ -651,6 +678,7 @@ fn parse_cheapshark_deals(body: &str, stores: &HashMap<String, String>) -> R<Vec
             cut: f(&d["savings"]).round() as u32,
             price: f(&d["salePrice"]),
             regular: f(&d["normalPrice"]),
+            lowest: None,
             app_id: s(&d["steamAppID"]).filter(|x| x != "0"),
         })
     }).collect())
@@ -750,7 +778,11 @@ mod live {
     #[tokio::test] #[ignore] async fn epic_sales_live() { show("epic sales", crate::stores::epic_sales().await) }
     #[tokio::test] #[ignore] async fn epic_free_live() { show("epic free", epic_free().await) }
     #[tokio::test] #[ignore] async fn gamerpower_live() { show("gamerpower", gamerpower().await) }
-    #[tokio::test] #[ignore] async fn cheapshark_live() { show("cheapshark", cheapshark_deals().await) }
+    #[tokio::test] #[ignore] async fn cheapshark_live() {
+        let deals = cheapshark_deals().await.expect("CheapShark deals");
+        assert!(deals.iter().any(|deal| deal.lowest.is_some()), "no deals included a lowest-ever price");
+        show("cheapshark", Ok(deals));
+    }
     #[tokio::test] #[ignore] async fn wishlist_cheapest_live() {
         // STEAM_ID=7656... cargo test wishlist_cheapest_live -- --ignored --nocapture
         let id = std::env::var("STEAM_ID").expect("set STEAM_ID");
@@ -921,8 +953,8 @@ mod unit {
     #[test]
     fn cheapshark_parses_deals() {
         let body = r#"[
-            {"dealID":"AbC","title":"Hades","storeID":"1","salePrice":"5.00","normalPrice":"20.00","savings":"75.6","steamAppID":"1145360","thumb":"https://cdn.example/t.jpg"},
-            {"dealID":"XyZ","title":"Loose","storeID":"9","salePrice":"3.00","normalPrice":"3.00","savings":"0","steamAppID":"0"}
+            {"dealID":"AbC","gameID":"10","title":"Hades","storeID":"1","salePrice":"5.00","normalPrice":"20.00","savings":"75.6","steamAppID":"1145360","thumb":"https://cdn.example/t.jpg"},
+            {"dealID":"XyZ","gameID":"11","title":"Loose","storeID":"9","salePrice":"3.00","normalPrice":"3.00","savings":"0","steamAppID":"0"}
         ]"#;
         let stores = std::collections::HashMap::from([("1".into(), "Steam".into())]);
         let v = super::parse_cheapshark_deals(body, &stores).unwrap();
@@ -934,6 +966,7 @@ mod unit {
         assert_eq!(v[0].cut, 76);
         assert_eq!(v[0].price, 5.0);
         assert_eq!(v[0].regular, 20.0);
+        assert_eq!(v[0].lowest, None);
         assert_eq!(v[0].app_id.as_deref(), Some("1145360"));
         assert_eq!(v[0].image.as_deref(), Some("https://cdn.example/t.jpg"));
         assert_eq!(v[1].shop, "store");
@@ -941,6 +974,9 @@ mod unit {
         assert_eq!(v[1].url, "https://www.cheapshark.com/redirect?dealID=XyZ");
         assert!(super::parse_cheapshark_deals("nope", &stores).is_err());
         assert!(super::parse_cheapshark_deals("{}", &stores).unwrap().is_empty());
+        assert_eq!(super::cheapshark_deals_by_game(body).get("AbC").map(String::as_str), Some("10"));
+        let history = r#"{"10":{"cheapestPriceEver":{"price":"4.25"}},"11":{"cheapestPriceEver":{"price":"2.50"}}}"#;
+        assert_eq!(super::parse_cheapshark_lowest(history).get("10"), Some(&4.25));
     }
 
     #[test]

@@ -22,9 +22,9 @@
     gog: signedStores.has('gog') ? { name: stress ? stressAccount : 'PlayerOne', avatar: null, profileUrl: 'https://www.gog.com/u/' } : null,
     epic: signedStores.has('epic') ? { name: stress ? stressAccount : 'PlayerOne', avatar: null, profileUrl: 'https://www.epicgames.com/account/personal' } : null,
   }
-  const deal = (id, title, shop, cut, price, regular, appId, url) => ({
+  const deal = (id, title, shop, cut, price, regular, appId, url, lowest = null) => ({
     id, title, shop, url: url || `https://store.steampowered.com/app/${appId}`, image: null,
-    cut, price, regular, appId,
+    cut, price, regular, lowest, appId,
   })
   const wishlistItems = [
     { store: 'steam', id: 'steam-440', appId: '440', name: 'Team Fortress 2', image: null, url: 'https://store.steampowered.com/app/440', priceInfo: { discount: 50, final: 4.99, initial: 9.99, formatted: '$4.99' }, cheapest: { store: 'GOG', price: 3.99, url: 'https://www.gog.com/game/classic_quest' } },
@@ -70,8 +70,8 @@
     },
     liveSale: flags.get('sale') === 'winter' ? { key: 'winter', name: 'Winter Sale', url: 'https://store.steampowered.com/specials' } : null,
     deals: empty ? [] : [
-      deal('deal-440', 'Team Fortress 2', 'Steam', 20, 7.99, 9.99, '440'),
-      deal('deal-123', 'Skyward Bound', 'GOG', 55, 13.49, 29.99, '123', 'https://www.gog.com/game/skyward_bound'),
+      deal('deal-440', 'Team Fortress 2', 'Steam', 20, 7.99, 9.99, '440', undefined, 7.99),
+      deal('deal-123', 'Skyward Bound', 'GOG', 55, 13.49, 29.99, '123', 'https://www.gog.com/game/skyward_bound', 13.49),
       deal('deal-456', 'Garden Tactics', 'Epic Games', 80, 5.99, 29.99, '456', 'https://store.epicgames.com/p/garden-tactics'),
       deal('deal-789', 'The Long Way Home', 'GOG', 95, 1.49, 29.99, '789', 'https://www.gog.com/game/the_long_way_home'),
       deal('deal-124', 'Starlight Courier', 'Steam', 50, 9.99, 19.99, '124'),

@@ -354,6 +354,7 @@ pub async fn epic_sales() -> R<Vec<Deal>> {
                 url: epic_page(o),
                 image: epic_image(o),
                 cut: p.discount, price: p.fin, regular: p.initial,
+                lowest: None,
                 app_id: None,
             })
         }).collect();

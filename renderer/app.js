@@ -812,12 +812,13 @@ function makeDealRow (d) {
   const content = document.createElement('div')
   const shopClass = ['steam', 'gog', 'epic'].includes(storeKeyFor(d.shop)) ? storeKeyFor(d.shop) : 'other'
   content.className = 'deal-row-content'; content.setAttribute('aria-hidden', 'true')
+  const lowestTag = d.lowest != null && d.price <= d.lowest + 0.005 ? '<span class="deal-lowest-tag">Lowest ever</span>' : ''
   content.innerHTML = `<div class="deal-title-line"><div class="deal-name">${escHtml(d.title)}</div><span class="deal-shop-badge ${shopClass}">${escHtml(d.shop)}</span></div>
-    <div class="deal-price-line"><span class="deal-orig">${fmt$(d.regular)}</span><span class="deal-price">${fmt$(d.price)}</span><span class="deal-cut">-${escHtml(d.cut)}%</span></div>`
+    <div class="deal-price-line"><span class="deal-orig">${fmt$(d.regular)}</span><span class="deal-price">${fmt$(d.price)}</span><span class="deal-cut">-${escHtml(d.cut)}%</span>${lowestTag}</div>`
   content.querySelector('.deal-name').setAttribute('title', d.title)
   const main = document.createElement('button')
   main.type = 'button'; main.className = 'deal-row-main'
-  main.setAttribute('aria-label', `Open ${d.title} on ${d.shop}. ${salePriceDescription(d.regular, d.price, d.cut)}`)
+  main.setAttribute('aria-label', `Open ${d.title} on ${d.shop}. ${salePriceDescription(d.regular, d.price, d.cut)}${lowestTag ? '. Lowest price ever' : ''}`)
   // Steam deals use their app id; GOG/Epic are looked up only when clicked and fall back to CheapShark.
   const open = () => {
     const store = storeKeyFor(d.shop)
