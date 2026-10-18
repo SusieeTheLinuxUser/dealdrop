@@ -217,10 +217,10 @@ html,body{background:transparent} /* window is transparent; #app paints the colo
 .acct-name:hover{text-decoration:underline}
 .acct-ico{cursor:pointer}
 .acct-ico.steam,.acct-ico.gog,.acct-ico.epic{background:#3b3f47;color:#d5d8de}
-.acct-btn{background:var(--bg3);border:1px solid var(--bord2);border-radius:var(--rs);color:var(--text0);font-size:11px;padding:4px 8px;cursor:pointer}
+.acct-btn{background:var(--bg3);border:1px solid var(--bord2);border-radius:var(--rs);color:var(--text0);font-size:11px;padding:4px 8px;cursor:pointer;white-space:nowrap;flex-shrink:0}
 .acct-btn:hover{background:var(--bg4)}.acct-btn:disabled{opacity:.5}
 .acct-out{background:none;border:none;color:var(--text2);font-size:11px;cursor:pointer;padding:0}.acct-out:hover{color:var(--red)}
-.acct-label{color:var(--text1);flex:1}
+.acct-label{color:var(--text1);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* ── tabs / store badges ── */
 .tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
