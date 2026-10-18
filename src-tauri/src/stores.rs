@@ -359,3 +359,14 @@ pub async fn epic_wishlist(access: &str) -> R<Vec<WishItem>> {
     }
     Err(format!("Epic wishlist unavailable ({last})"))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Tokens;
+
+    #[test]
+    fn stale_detects_expired_and_far_future_tokens() {
+        assert!(Tokens { expires_at: 0, ..Tokens::default() }.stale());
+        assert!(!Tokens { expires_at: u64::MAX, ..Tokens::default() }.stale());
+    }
+}
