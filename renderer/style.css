@@ -1,3 +1,7 @@
+/* Bundled fonts (OFL, see fonts/): the webview never contacts a font CDN. Latin subset only; other scripts fall back to the system font. */
+@font-face{font-family:'DM Sans';font-style:normal;font-weight:400 600;font-display:swap;src:url(fonts/dm-sans-latin.woff2) format('woff2')}
+@font-face{font-family:'DM Mono';font-style:normal;font-weight:400;font-display:swap;src:url(fonts/dm-mono-400-latin.woff2) format('woff2')}
+@font-face{font-family:'DM Mono';font-style:normal;font-weight:500;font-display:swap;src:url(fonts/dm-mono-500-latin.woff2) format('woff2')}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 
 :root{
