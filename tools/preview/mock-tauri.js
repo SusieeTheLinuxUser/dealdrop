@@ -24,8 +24,8 @@
   })
   const sample = {
     freeGames: empty ? [] : [
-      { id: 'epic-sample-free', title: 'The Long Way Home', source: 'epic', url: 'https://store.epicgames.com/', image: null, appId: null, endDate: null, type: 'giveaway' },
-      { id: 'steam-440', title: 'Team Fortress 2', source: 'steam', url: 'https://store.steampowered.com/app/440', image: null, appId: '440', endDate: null, type: 'free' },
+      { id: 'epic-sample-free', title: 'The Long Way Home', source: 'epic', url: 'https://store.epicgames.com/', image: null, appId: null, endDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), type: 'giveaway' },
+      { id: 'steam-440', title: 'Team Fortress 2', source: 'steam', url: 'https://store.steampowered.com/app/440', image: null, appId: '440', endDate: new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString(), type: 'free' },
       { id: 'steam-ftk-4841320', title: 'Squad Weapon Skins - Recon Team Pack (DLC)', source: 'steam', url: 'https://store.steampowered.com/app/4841320', image: null, appId: '4841320', endDate: null, type: 'free' },
       { id: 'gog-123456', title: 'Classic Quest', source: 'gog', url: 'https://www.gog.com/game/classic_quest', image: null, appId: null, endDate: null, type: 'giveaway' },
       { id: 'other-demo', title: 'Community Game', source: 'other', url: 'https://example.invalid/game', image: null, appId: null, endDate: null, type: 'giveaway' },
