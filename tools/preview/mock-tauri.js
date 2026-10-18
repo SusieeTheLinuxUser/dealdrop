@@ -31,7 +31,7 @@
       { id: 'other-demo', title: 'Community Game', source: 'other', url: 'https://example.invalid/game', image: null, appId: null, endDate: null, type: 'giveaway' },
     ],
     freeWeekends: empty ? [] : [
-      { id: 'steam-fw-570', title: 'Dota 2 Weekend Trial', source: 'steam', url: 'https://store.steampowered.com/app/570', image: null, appId: '570', endDate: '2027-01-01', type: 'weekend' },
+      { id: 'steam-fw-570', title: 'Dota 2 Weekend Trial', source: 'steam', url: 'https://store.steampowered.com/app/570', image: null, appId: '570', endDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(), type: 'weekend' },
     ],
     sales: empty ? { steam: [], gog: [], epic: [] } : {
       steam: [deal('steam-sale-440', 'Team Fortress 2', 'Steam', 75, 2.49, 9.99, '440')],
