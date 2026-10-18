@@ -27,6 +27,24 @@ impl Tokens {
     }
 }
 
+/// reqwest's Display includes the URL. A redirect can echo a form field into that URL.
+fn net_err(e: reqwest::Error) -> String { e.without_url().to_string() }
+
+/// Drop secrets a server may copy into error_description / errorMessage (clipboard + logs).
+fn redact(mut err: String, secrets: &[&str]) -> String {
+    let mut secrets: Vec<&str> = secrets.iter().copied().filter(|s| s.len() >= 8).collect();
+    secrets.sort_by_key(|s| std::cmp::Reverse(s.len()));
+    for s in secrets { err = err.replace(s, "[redacted]"); }
+    err
+}
+
+fn form_secrets<'a>(pairs: &[(&str, &'a str)]) -> Vec<&'a str> {
+    pairs.iter()
+        .filter(|(k, _)| !matches!(*k, "grant_type" | "redirect_uri" | "client_id" | "token_type"))
+        .map(|(_, v)| *v)
+        .collect()
+}
+
 // ─── Sign-in window ───────────────────────────────────────────────────────────
 
 /// Opens `start` in a window and resolves with the first URL for which
@@ -88,7 +106,7 @@ pub async fn steam_login(app: &AppHandle) -> R<String> {
     form.retain(|(k, _)| k != "openid.mode");
     form.push(("openid.mode".into(), "check_authentication".into()));
     let verdict = client().post("https://steamcommunity.com/openid/login").form(&form)
-        .send().await.map_err(|e| e.to_string())?.text().await.map_err(|e| e.to_string())?;
+        .send().await.map_err(net_err)?.text().await.map_err(net_err)?;
     if !verdict.contains("is_valid:true") {
         return Err("Steam did not confirm the sign-in".into());
     }
@@ -109,10 +127,11 @@ const GOG_REDIRECT: &str = "https://embed.gog.com/on_login_success?origin=client
 async fn gog_token(extra: &[(&str, &str)]) -> R<Tokens> {
     let mut form = vec![("client_id", GOG_ID), ("client_secret", GOG_SECRET)];
     form.extend_from_slice(extra);
+    let secrets = form_secrets(&form);
     let v: Value = client().post("https://auth.gog.com/token").form(&form)
-        .send().await.map_err(|e| e.to_string())?.json().await.map_err(|e| e.to_string())?;
+        .send().await.map_err(|e| redact(net_err(e), &secrets))?.json().await.map_err(|e| redact(net_err(e), &secrets))?;
     if let Some(e) = v["error_description"].as_str().or(v["error"].as_str()) {
-        return Err(format!("GOG: {e}"));
+        return Err(redact(format!("GOG: {e}"), &secrets));
     }
     Ok(Tokens {
         access_token: v["access_token"].as_str().ok_or("GOG: no access_token")?.into(),
@@ -157,11 +176,11 @@ pub async fn gog_user(access: &str) -> (String, String, String, Option<String>) 
 }
 
 async fn send_auth(url: &str, access: &str) -> R<Value> {
-    let res = client().get(url).bearer_auth(access).send().await.map_err(|e| e.to_string())?;
+    let res = client().get(url).bearer_auth(access).send().await.map_err(|e| redact(net_err(e), &[access]))?;
     if !res.status().is_success() {
         return Err(format!("HTTP {}", res.status().as_u16()));
     }
-    res.json().await.map_err(|e| e.to_string())
+    res.json().await.map_err(|e| redact(net_err(e), &[access]))
 }
 
 pub async fn gog_wishlist(access: &str) -> R<Vec<WishItem>> {
@@ -227,13 +246,15 @@ document.addEventListener('DOMContentLoaded', () => {
 async fn epic_token(extra: &[(&str, &str)]) -> R<Tokens> {
     let mut form = vec![("token_type", "eg1")];
     form.extend_from_slice(extra);
+    let mut secrets = form_secrets(&form);
+    secrets.push(EPIC_BASIC);
     let v: Value = client()
         .post("https://account-public-service-prod03.ol.epicgames.com/account/api/oauth/token")
         .header("Authorization", format!("basic {EPIC_BASIC}"))
         .form(&form)
-        .send().await.map_err(|e| e.to_string())?.json().await.map_err(|e| e.to_string())?;
+        .send().await.map_err(|e| redact(net_err(e), &secrets))?.json().await.map_err(|e| redact(net_err(e), &secrets))?;
     if let Some(e) = v["errorMessage"].as_str() {
-        return Err(format!("Epic: {e}"));
+        return Err(redact(format!("Epic: {e}"), &secrets));
     }
     Ok(Tokens {
         access_token: v["access_token"].as_str().ok_or("Epic: no access_token")?.into(),
@@ -267,13 +288,15 @@ const EPIC_OFFER_FIELDS: &str = r#"title id namespace urlSlug productSlug
 async fn epic_gql(url: &str, ua: &str, bearer: Option<&str>, query: &str, vars: Value) -> R<Value> {
     let mut req = client().post(url).header("User-Agent", ua).json(&json!({"query": query, "variables": vars}));
     if let Some(b) = bearer { req = req.bearer_auth(b); }
-    let res = req.send().await.map_err(|e| e.to_string())?;
+    let res = req.send().await.map_err(|e| match bearer { Some(b) => redact(net_err(e), &[b]), None => net_err(e) })?;
     if !res.status().is_success() {
         return Err(format!("HTTP {}", res.status().as_u16()));
     }
-    let v: Value = res.json().await.map_err(|e| e.to_string())?;
+    let v: Value = res.json().await.map_err(|e| match bearer { Some(b) => redact(net_err(e), &[b]), None => net_err(e) })?;
     if let Some(e) = v["errors"][0]["message"].as_str() {
-        if v["data"].is_null() { return Err(e.to_string()); }
+        if v["data"].is_null() {
+            return Err(match bearer { Some(b) => redact(e.to_string(), &[b]), None => e.to_string() });
+        }
     }
     Ok(v)
 }

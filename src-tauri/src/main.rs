@@ -117,6 +117,15 @@ impl AppState {
             #[cfg(unix)]
             { use std::os::unix::fs::OpenOptionsExt; o.mode(0o600); }
             if o.open(&tmp).and_then(|mut f| std::io::Write::write_all(&mut f, text.as_bytes())).is_ok() {
+                // mode() is ignored when config.tmp already exists; rename would publish that mode.
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    if std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600)).is_err() {
+                        let _ = std::fs::remove_file(&tmp);
+                        return out;
+                    }
+                }
                 let _ = std::fs::rename(&tmp, &self.path);
             }
         }
@@ -183,6 +192,22 @@ fn keep_or_fail(res: R<Vec<WishItem>>, store: &str, prev: &Snapshot, errors: &mu
     }
 }
 
+/// Last-good rows for one source. `steam-` is also a prefix of `steam-ftk-`, so a featured
+/// restore must not swallow free-to-keep rows. Any other id with that prefix is kept (`steam-fw-` stays).
+fn restore_by_prefix(old: &[Free], prefix: &str) -> Vec<Free> {
+    old.iter().filter(|g| g.id.starts_with(prefix) && !(prefix == "steam-" && g.id.starts_with("steam-ftk-"))).cloned().collect()
+}
+
+/// First poll: `Notify` is the normal path (`mark` records an upgrade from a config that
+/// already has seen ids). `Record` seeds silently. `Wait` leaves a failed first poll unprimed.
+enum Prime { Notify { mark: bool }, Record, Wait }
+
+fn should_prime(primed: bool, seen_empty: bool, had_errors: bool) -> Prime {
+    if primed || !seen_empty { Prime::Notify { mark: !primed } }
+    else if had_errors { Prime::Wait }
+    else { Prime::Record }
+}
+
 async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
     let (settings, steam_id, gog, epic) = st.read(|d| {
         (d.settings.clone(), d.steam_id.clone(), d.gog.clone(), d.epic.clone())
@@ -212,8 +237,7 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
     // On failure keep the last good items from that source (matched by id prefix) instead of blanking them.
     let log = |name: &str, r: R<Vec<Free>>, old: &[Free], prefix: &str| r.unwrap_or_else(|e| {
         eprintln!("[{name}] {e}"); source_errors.lock().unwrap().push(failure(name, &e));
-        // `steam-` is also a prefix of `steam-ftk-`: restoring featured must not swallow free-to-keep rows.
-        old.iter().filter(|g| g.id.starts_with(prefix) && !(prefix == "steam-" && g.id.starts_with("steam-ftk-"))).cloned().collect()
+        restore_by_prefix(old, prefix)
     });
     let (ef, sf, sk, sw, gp, ss, gs, es, hot) = tokio::join!(
         epic_free(), steam_free_featured(), steam_free_to_keep(), steam_free_weekends(), gamerpower(),
@@ -236,41 +260,68 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
     let free_weekends = dedupe_free(sw);
 
     // The very first poll on a fresh install only records what is free today; no notification burst.
-    if st.read(|d| d.primed || !d.seen_free_ids.is_empty()) {
-        if settings.notify_free_game { notify_new_free(app, st, &free_games, false); }
-        if settings.notify_free_weekend { notify_new_free(app, st, &free_weekends, true); }
-        if !st.read(|d| d.primed) { st.edit(|d| d.primed = true); }
-    } else if source_errors.lock().unwrap().is_empty() {
-        // Only prime from a complete baseline: a failed source would otherwise notify in a burst once it recovers.
-        st.edit(|d| {
-            d.primed = true;
-            d.seen_free_ids.extend(free_games.iter().chain(free_weekends.iter()).map(|g| g.id.clone()));
-        });
+    let had_errors = !source_errors.lock().unwrap().is_empty();
+    match st.read(|d| should_prime(d.primed, d.seen_free_ids.is_empty(), had_errors)) {
+        Prime::Notify { mark } => {
+            if settings.notify_free_game { notify_new_free(app, st, &free_games, false); }
+            if settings.notify_free_weekend { notify_new_free(app, st, &free_weekends, true); }
+            if mark { st.edit(|d| d.primed = true); }
+        }
+        Prime::Record => {
+            // Only prime from a complete baseline: a failed source would otherwise notify in a burst once it recovers.
+            st.edit(|d| {
+                d.primed = true;
+                d.seen_free_ids.extend(free_games.iter().chain(free_weekends.iter()).map(|g| g.id.clone()));
+            });
+        }
+        Prime::Wait => {} // errors on the first poll: leave it unprimed so a later clean poll can seed
     }
 
-    // 3. Wishlists
+    // 3. Wishlists. Drop a store's rows when that sign-in changed during this poll:
+    // Ok(empty) so a failure cannot restore the previous account's wishlist.
     let mut wishlist_errors = HashMap::new();
     let mut wishlist = vec![];
     let mut wishlist_private = false;
     if let Some(id) = &steam_id {
         let res = steam_wishlist(id).await;
-        if matches!(&res, Ok(v) if v.is_empty()) { wishlist_private = steam_profile_private(id).await; }
+        if st.read(|d| d.steam_id.as_deref() == Some(id.as_str())) && matches!(&res, Ok(v) if v.is_empty()) {
+            let private = steam_profile_private(id).await;
+            if st.read(|d| d.steam_id.as_deref() == Some(id.as_str())) { wishlist_private = private; }
+        }
+        let still = st.read(|d| d.steam_id.as_deref() == Some(id.as_str()));
+        if !still { wishlist_private = false; }
+        let res = if still { res } else { Ok(vec![]) };
         wishlist.extend(keep_or_fail(res, "steam", &prev, &mut wishlist_errors));
     }
     if let Some(t) = gog {
+        let started = t.refresh_token.clone();
         let res = match fresh_tokens(app, st, t, true).await {
-            Ok(t) => {
+            Ok(t) if same_refresh(st, true, &t.refresh_token) => {
                 if t.avatar.is_none() {
-                    if let Some(a) = stores::gog_user(&t.access_token).await.3 { st.edit(|d| if let Some(g) = d.gog.as_mut() { g.avatar = Some(a) }); }
+                    if let Some(a) = stores::gog_user(&t.access_token).await.3 {
+                        st.edit(|d| if let Some(g) = d.gog.as_mut() { if g.refresh_token == t.refresh_token { g.avatar = Some(a) } });
+                    }
                 }
-                stores::gog_wishlist(&t.access_token).await
+                let res = if same_refresh(st, true, &t.refresh_token) { stores::gog_wishlist(&t.access_token).await } else { Ok(vec![]) };
+                if same_refresh(st, true, &t.refresh_token) { res } else { Ok(vec![]) }
             }
-            Err(e) => Err(e),
+            Ok(_) => Ok(vec![]),
+            Err(e) if same_refresh(st, true, &started) => Err(e),
+            Err(_) => Ok(vec![]),
         };
         wishlist.extend(keep_or_fail(res, "gog", &prev, &mut wishlist_errors));
     }
     if let Some(t) = epic {
-        let res = match fresh_tokens(app, st, t, false).await { Ok(t) => stores::epic_wishlist(&t.access_token).await, Err(e) => Err(e) };
+        let started = t.refresh_token.clone();
+        let res = match fresh_tokens(app, st, t, false).await {
+            Ok(t) if same_refresh(st, false, &t.refresh_token) => {
+                let res = stores::epic_wishlist(&t.access_token).await;
+                if same_refresh(st, false, &t.refresh_token) { res } else { Ok(vec![]) }
+            }
+            Ok(_) => Ok(vec![]),
+            Err(e) if same_refresh(st, false, &started) => Err(e),
+            Err(_) => Ok(vec![]),
+        };
         wishlist.extend(keep_or_fail(res, "epic", &prev, &mut wishlist_errors));
     }
 
@@ -284,14 +335,27 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
     }
 }
 
+/// True when this store's slot still holds `refresh` (the token this poll is acting for).
+fn same_refresh(st: &AppState, gog: bool, refresh: &str) -> bool {
+    st.read(|d| {
+        let slot = if gog { &d.gog } else { &d.epic };
+        slot.as_ref().is_some_and(|s| s.refresh_token == refresh)
+    })
+}
+
 /// Refresh GOG/Epic tokens when they're about to expire and persist the result.
+/// Writes only if the slot still holds the refresh token this call started with, so a logout
+/// or a newer sign-in is not overwritten by the in-flight refresh.
 async fn fresh_tokens(_app: &AppHandle, st: &AppState, t: Tokens, gog: bool) -> R<Tokens> {
     if !t.stale() { return Ok(t); }
     let n = if gog { stores::gog_refresh(&t).await } else { stores::epic_refresh(&t).await }
         .map_err(|e| format!("{e} — sign in again"))?;
     let saved = n.clone();
-    // Only while still signed in: a logout during the refresh must not sign the user back in.
-    st.edit(|d| if gog { if d.gog.is_some() { d.gog = Some(saved) } } else if d.epic.is_some() { d.epic = Some(saved) });
+    st.edit(|d| {
+        let slot = if gog { &mut d.gog } else { &mut d.epic };
+        let same = slot.as_ref().is_some_and(|s| s.refresh_token == t.refresh_token);
+        if same { *slot = Some(saved); }
+    });
     Ok(n)
 }
 
@@ -586,7 +650,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{dedupe_free, failure, safe_https, store_label, Acct, Free};
+    use super::{dedupe_free, failure, restore_by_prefix, safe_https, should_prime, store_label, Acct, Free, Prime};
 
     #[test]
     fn account_json_is_camel_case() {
@@ -625,5 +689,26 @@ mod tests {
                     "https://store.steampowered.com@evil.example/", "https://127.0.0.1/", "https://localhost/", "https://[::1]/", "https://intranet/"] {
             assert!(safe_https(bad).is_none(), "{bad} should be rejected");
         }
+    }
+
+    #[test]
+    fn restore_by_prefix_splits_steam_ftk() {
+        let free = |id: &str| Free { id: id.into(), ..Default::default() };
+        let old = vec![free("steam-10"), free("steam-ftk-10"), free("steam-fw-10"), free("gp-400"), free("epic-1")];
+        let ids = |v: Vec<Free>| v.into_iter().map(|g| g.id).collect::<Vec<_>>();
+        assert_eq!(ids(restore_by_prefix(&old, "steam-")), ["steam-10", "steam-fw-10"]);
+        assert_eq!(ids(restore_by_prefix(&old, "steam-ftk-")), ["steam-ftk-10"]);
+        assert_eq!(ids(restore_by_prefix(&old, "gp-")), ["gp-400"]);
+    }
+
+    #[test]
+    fn should_prime_waits_on_errors_and_notifies_on_upgrade() {
+        assert!(matches!(should_prime(false, true, true), Prime::Wait));
+        assert!(matches!(should_prime(false, true, false), Prime::Record));
+        // primed=false but seen ids already stored (upgrade): notify, and mark primed, errors or not.
+        assert!(matches!(should_prime(false, false, true), Prime::Notify { mark: true }));
+        assert!(matches!(should_prime(false, false, false), Prime::Notify { mark: true }));
+        assert!(matches!(should_prime(true, true, true), Prime::Notify { mark: false }));
+        assert!(matches!(should_prime(true, false, false), Prime::Notify { mark: false }));
     }
 }
