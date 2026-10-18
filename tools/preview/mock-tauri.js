@@ -15,7 +15,7 @@
     notifyWishlistSale: true, notifyBigDeal: false, checkInterval: 60,
     theme: 'midnight', baseTheme: 'midnight', lastSaleTheme: '',
     rounded: false, effects: true, launcherGog: 'auto', launcherEpic: 'auto',
-    onboarded: flags.get('onboarded') === '1',
+    onboarded: flags.get('onboarded') === '1', hidden: [],
   }
   let accounts = {
     steam: signedStores.has('steam') ? { name: stress ? stressAccount : 'PlayerOne', avatar: null, profileUrl: 'https://steamcommunity.com/' } : null,

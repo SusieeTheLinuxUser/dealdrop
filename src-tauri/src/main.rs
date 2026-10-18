@@ -45,13 +45,14 @@ struct Settings {
     launcher_epic: String,
     /// The first-run tour has been completed or skipped.
     onboarded: bool,
+    hidden: Vec<String>,
 }
 impl Default for Settings {
     fn default() -> Self {
         Self { notify_major_sale: true, notify_free_game: true, notify_free_weekend: true,
                notify_wishlist_sale: true, notify_big_deal: false, check_interval: 60,
                theme: "midnight".into(), base_theme: "midnight".into(), last_sale_theme: String::new(),
-               rounded: false, effects: true, launcher_gog: "auto".into(), launcher_epic: "auto".into(), onboarded: false }
+               rounded: false, effects: true, launcher_gog: "auto".into(), launcher_epic: "auto".into(), onboarded: false, hidden: Vec::new() }
     }
 }
 
@@ -406,9 +407,30 @@ async fn hot_deals() -> (Vec<Deal>, String, Option<String>) {
 
 struct Notice { title: String, body: String }
 
+/// Hidden games match by title, ignoring case and spacing, so they match across stores.
+fn normalize_title(title: &str) -> String {
+    title.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
+}
+
+fn is_hidden(hidden: &[String], title: &str) -> bool {
+    let key = normalize_title(title);
+    hidden.iter().any(|h| normalize_title(h) == key)
+}
+
+/// Titles as shown (spacing tidied), without duplicates; only the newest 500 are kept.
+fn normalize_hidden(hidden: Vec<String>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for title in hidden {
+        let title = title.split_whitespace().collect::<Vec<_>>().join(" ");
+        if !title.is_empty() && !is_hidden(&out, &title) { out.push(title); }
+    }
+    if out.len() > 500 { out.drain(..out.len() - 500); }
+    out
+}
+
 /// Ids already in `seen` have been notified.
-fn fresh_free<'a>(items: &'a [Free], seen: &HashSet<String>) -> Vec<&'a Free> {
-    items.iter().filter(|g| !seen.contains(&g.id)).collect()
+fn fresh_free<'a>(items: &'a [Free], seen: &HashSet<String>, hidden: &[String]) -> Vec<&'a Free> {
+    items.iter().filter(|g| !seen.contains(&g.id) && !is_hidden(hidden, &g.title)).collect()
 }
 
 /// One game gets its own notice. Several share one, listing every title.
@@ -427,7 +449,7 @@ fn free_notice(fresh: &[&Free], weekend: bool) -> Option<Notice> {
 }
 
 fn notify_new_free(app: &AppHandle, st: &AppState, games: &[Free], weekend: bool) {
-    let fresh = st.read(|d| fresh_free(games, &d.seen_free_ids));
+    let fresh = st.read(|d| fresh_free(games, &d.seen_free_ids, &d.settings.hidden));
     if fresh.is_empty() { return; }
     st.edit(|d| d.seen_free_ids.extend(fresh.iter().map(|g| g.id.clone())));
     if let Some(n) = free_notice(&fresh, weekend) { notify(app, &n.title, &n.body); }
@@ -438,8 +460,8 @@ fn discount(w: &WishItem) -> u32 { w.price_info.as_ref().map_or(0, |p| p.discoun
 fn sale_key(w: &WishItem) -> String { format!("{}:{}", w.store, w.id) }
 
 /// 20% off or more, and not already notified for this sale.
-fn fresh_wishlist<'a>(items: &'a [WishItem], seen: &HashSet<String>) -> Vec<&'a WishItem> {
-    items.iter().filter(|w| discount(w) >= 20 && !seen.contains(&sale_key(w))).collect()
+fn fresh_wishlist<'a>(items: &'a [WishItem], seen: &HashSet<String>, hidden: &[String]) -> Vec<&'a WishItem> {
+    items.iter().filter(|w| discount(w) >= 20 && !seen.contains(&sale_key(w)) && !is_hidden(hidden, &w.name)).collect()
 }
 
 /// One game names its price. Several share one notice, the first four names, then an ellipsis.
@@ -471,13 +493,17 @@ fn remember_wishlist(seen: &mut HashSet<String>, items: &[WishItem], fresh: &[&W
 }
 
 fn notify_wishlist(app: &AppHandle, st: &AppState, items: &[WishItem]) {
-    let fresh = st.read(|d| fresh_wishlist(items, &d.seen_sale_ids));
+    let fresh = st.read(|d| fresh_wishlist(items, &d.seen_sale_ids, &d.settings.hidden));
     if let Some(n) = wishlist_notice(&fresh) { notify(app, &n.title, &n.body); }
     st.edit(|d| remember_wishlist(&mut d.seen_sale_ids, items, &fresh));
 }
 
+fn fresh_big_deals<'a>(items: &'a [Deal], seen: &HashSet<String>, hidden: &[String]) -> Vec<&'a Deal> {
+    items.iter().filter(|x| x.cut >= 75 && !seen.contains(&x.id) && !is_hidden(hidden, &x.title)).collect()
+}
+
 fn notify_big_deals(app: &AppHandle, st: &AppState, deals: &[Deal]) {
-    let fresh: Vec<&Deal> = st.read(|d| deals.iter().filter(|x| x.cut >= 75 && !d.seen_deal_ids.contains(&x.id)).collect());
+    let fresh: Vec<&Deal> = st.read(|d| fresh_big_deals(deals, &d.seen_deal_ids, &d.settings.hidden));
     if let [d] = fresh[..] {
         notify(app, &format!("🔥 {}% off: {}", d.cut, d.title), &format!("{} — ${:.2}", d.shop, d.price));
     } else if !fresh.is_empty() {
@@ -517,6 +543,8 @@ fn get_settings(st: State<AppState>) -> Settings { st.read(|d| d.settings.clone(
 
 #[tauri::command]
 fn save_settings(st: State<AppState>, settings: Settings) {
+    let mut settings = settings;
+    settings.hidden = normalize_hidden(settings.hidden);
     let changed = st.edit(|d| { let c = d.settings.check_interval != settings.check_interval; d.settings = settings; c });
     if changed { st.wake.notify_one(); }
 }
@@ -766,7 +794,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{dedupe_free, failure, free_notice, fresh_free, fresh_wishlist, remember_wishlist, restore_by_prefix, safe_https, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, Acct, Free, Price, Prime, WishItem};
+    use super::{dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, normalize_hidden, normalize_title, remember_wishlist, restore_by_prefix, safe_https, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, Acct, Deal, Free, Price, Prime, Settings, WishItem};
     use std::collections::HashSet;
 
     #[test]
@@ -785,6 +813,13 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(tray_counts(&snap), (3, 2));
+    }
+
+    #[test]
+    fn hidden_settings_default_empty_and_serialize_camel_case() {
+        let settings: Settings = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(settings.hidden.is_empty());
+        assert!(serde_json::to_value(settings).unwrap().get("hidden").is_some());
     }
 
     #[test]
@@ -860,16 +895,38 @@ mod tests {
     }
 
     #[test]
+    fn hidden_titles_normalize_and_keep_only_the_newest_500() {
+        assert_eq!(normalize_title("  The\t  LONG\nWay Home "), "the long way home");
+        assert_eq!(normalize_hidden(vec![" HADES ".into(), "hades".into(), "Control".into()]), ["HADES", "Control"]);
+        assert!(is_hidden(&["Hades  II".into()], "hades ii") && !is_hidden(&["Hades".into()], "Hades II"));
+        let hidden = normalize_hidden((0..501).map(|i| format!(" Game {i} ")).collect());
+        assert_eq!(hidden.len(), 500);
+        assert_eq!(hidden.first().unwrap(), "Game 1");
+        assert_eq!(hidden.last().unwrap(), "Game 500");
+    }
+
+    #[test]
+    fn hidden_titles_suppress_all_notification_types() {
+        let hidden = vec!["HADES".to_string()];
+        let free = vec![game("steam-1", " Hades ", "steam", "free"), game("steam-2", "Control", "steam", "free")];
+        assert_eq!(fresh_free(&free, &HashSet::new(), &hidden).iter().map(|g| g.id.as_str()).collect::<Vec<_>>(), ["steam-2"]);
+        let wishlist = vec![wish("1", "Hades", Some(40)), wish("2", "Control", Some(40))];
+        assert_eq!(fresh_wishlist(&wishlist, &HashSet::new(), &hidden).iter().map(|w| w.id.as_str()).collect::<Vec<_>>(), ["2"]);
+        let deals = vec![Deal { id: "1".into(), title: "Hades".into(), cut: 90, ..Default::default() }, Deal { id: "2".into(), title: "Control".into(), cut: 90, ..Default::default() }];
+        assert_eq!(fresh_big_deals(&deals, &HashSet::new(), &hidden).iter().map(|d| d.id.as_str()).collect::<Vec<_>>(), ["2"]);
+    }
+
+    #[test]
     fn new_free_id_notifies_once_then_is_recorded() {
         let games = vec![game("steam-ftk-1", "Hades", "steam", "free")];
         let mut seen = HashSet::new();
-        let fresh = fresh_free(&games, &seen);
+        let fresh = fresh_free(&games, &seen, &[]);
         let n = free_notice(&fresh, false).unwrap();
         assert_eq!(n.title, "Free: Hades");
         assert_eq!(n.body, "Hades is free on Steam!");
         seen.extend(fresh.iter().map(|g| g.id.clone()));
-        assert!(fresh_free(&games, &seen).is_empty());
-        assert!(free_notice(&fresh_free(&games, &seen), false).is_none());
+        assert!(fresh_free(&games, &seen, &[]).is_empty());
+        assert!(free_notice(&fresh_free(&games, &seen, &[]), false).is_none());
     }
 
     #[test]
@@ -879,10 +936,10 @@ mod tests {
             game("epic-2", "New", "epic", "free"),
         ];
         let seen = HashSet::<String>::from(["steam-10".into()]);
-        let fresh = fresh_free(&games, &seen);
+        let fresh = fresh_free(&games, &seen, &[]);
         assert_eq!(fresh.iter().map(|g| g.id.as_str()).collect::<Vec<_>>(), ["epic-2"]);
         let seen = HashSet::<String>::from(["steam-10".into(), "epic-2".into()]);
-        assert!(fresh_free(&games, &seen).is_empty());
+        assert!(fresh_free(&games, &seen, &[]).is_empty());
     }
 
     #[test]
@@ -895,29 +952,29 @@ mod tests {
             game("steam-ftk-2", "Control", "steam", "free"),
         ];
         let mut seen = HashSet::<String>::from(["steam-10".into(), "epic-1".into()]);
-        let fresh = fresh_free(&games, &seen);
+        let fresh = fresh_free(&games, &seen, &[]);
         assert_eq!(fresh.iter().map(|g| g.id.as_str()).collect::<Vec<_>>(), ["steam-ftk-1", "steam-ftk-2"]);
         let n = free_notice(&fresh, false).unwrap();
         assert_eq!(n.title, "2 free games available");
         assert_eq!(n.body, "Hades, Control");
         seen.extend(fresh.iter().map(|g| g.id.clone()));
-        assert!(fresh_free(&games, &seen).is_empty());
+        assert!(fresh_free(&games, &seen, &[]).is_empty());
     }
 
     #[test]
     fn weekend_and_free_notices_use_different_wording() {
         let seen = HashSet::new();
-        let free = free_notice(&fresh_free(&[game("steam-1", "Hades", "steam", "free")], &seen), false).unwrap();
+        let free = free_notice(&fresh_free(&[game("steam-1", "Hades", "steam", "free")], &seen, &[]), false).unwrap();
         assert_eq!(free.title, "Free: Hades");
         assert_eq!(free.body, "Hades is free on Steam!");
         let weekends = vec![
             game("steam-fw-1", "Hades", "steam", "weekend"),
             game("steam-fw-2", "Control", "steam", "weekend"),
         ];
-        let grouped = free_notice(&fresh_free(&weekends, &seen), true).unwrap();
+        let grouped = free_notice(&fresh_free(&weekends, &seen, &[]), true).unwrap();
         assert_eq!(grouped.title, "2 free weekend games available");
         assert_eq!(grouped.body, "Hades, Control");
-        let one = free_notice(&fresh_free(&weekends[..1], &seen), true).unwrap();
+        let one = free_notice(&fresh_free(&weekends[..1], &seen, &[]), true).unwrap();
         assert_eq!(one.title, "Free weekend: Hades");
         assert_eq!(one.body, "Hades is free on Steam!");
     }
@@ -929,20 +986,20 @@ mod tests {
             wish("2", "Barely", None),
             wish("3", "Hades", Some(20)),
         ];
-        let fresh = fresh_wishlist(&items, &HashSet::new());
+        let fresh = fresh_wishlist(&items, &HashSet::new(), &[]);
         assert_eq!(fresh.iter().map(|w| w.id.as_str()).collect::<Vec<_>>(), ["3"]);
         let n = wishlist_notice(&fresh).unwrap();
         assert_eq!(n.title, "🏷️ Hades is on sale!");
         assert_eq!(n.body, "20% off — now $4.99 on Steam");
-        assert!(fresh_wishlist(&items, &HashSet::<String>::from(["steam:3".into()])).is_empty());
+        assert!(fresh_wishlist(&items, &HashSet::<String>::from(["steam:3".into()]), &[]).is_empty());
 
         let pair = vec![wish("3", "Hades", Some(20)), wish("4", "Control", Some(50))];
-        let n = wishlist_notice(&fresh_wishlist(&pair, &HashSet::new())).unwrap();
+        let n = wishlist_notice(&fresh_wishlist(&pair, &HashSet::new(), &[])).unwrap();
         assert_eq!(n.title, "2 wishlist games on sale");
         assert_eq!(n.body, "Hades, Control");
 
         let many: Vec<_> = (0..5).map(|i| wish(&i.to_string(), &format!("G{i}"), Some(40))).collect();
-        let n = wishlist_notice(&fresh_wishlist(&many, &HashSet::new())).unwrap();
+        let n = wishlist_notice(&fresh_wishlist(&many, &HashSet::new(), &[])).unwrap();
         assert_eq!(n.title, "5 wishlist games on sale");
         assert_eq!(n.body, "G0, G1, G2, G3…");
     }
@@ -951,17 +1008,17 @@ mod tests {
     fn deeper_wishlist_cut_does_not_renotify() {
         let mut seen = HashSet::new();
         let mut items = vec![wish("10", "Hades", Some(25))];
-        let fresh = fresh_wishlist(&items, &seen);
+        let fresh = fresh_wishlist(&items, &seen, &[]);
         assert_eq!(fresh.len(), 1);
         remember_wishlist(&mut seen, &items, &fresh);
         items[0].price_info.as_mut().unwrap().discount = 60;
-        assert!(fresh_wishlist(&items, &seen).is_empty());
+        assert!(fresh_wishlist(&items, &seen, &[]).is_empty());
         // Under 5% the id is forgotten, so a later sale notifies again.
         items[0].price_info.as_mut().unwrap().discount = 4;
         remember_wishlist(&mut seen, &items, &[]);
         assert!(!seen.contains("steam:10"));
         items[0].price_info.as_mut().unwrap().discount = 30;
-        assert_eq!(fresh_wishlist(&items, &seen).len(), 1);
+        assert_eq!(fresh_wishlist(&items, &seen, &[]).len(), 1);
     }
 
     #[test]
@@ -972,7 +1029,7 @@ mod tests {
         ]);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].id, "steam-ftk-1091500");
-        let n = free_notice(&fresh_free(&rows, &HashSet::new()), false).unwrap();
+        let n = free_notice(&fresh_free(&rows, &HashSet::new(), &[]), false).unwrap();
         assert_eq!(n.title, "Free: Hades");
         assert_eq!(n.body, "Hades is free on Steam!");
     }

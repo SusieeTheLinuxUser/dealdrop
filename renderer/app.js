@@ -16,7 +16,7 @@ const DEFAULT_SETTINGS = {
   notifyMajorSale: true, notifyFreeGame: true, notifyFreeWeekend: true,
   notifyWishlistSale: true, notifyBigDeal: false, checkInterval: 60,
   theme: 'midnight', baseTheme: 'midnight', lastSaleTheme: '', rounded: false, effects: true,
-  launcherGog: 'auto', launcherEpic: 'auto', onboarded: false,
+  launcherGog: 'auto', launcherEpic: 'auto', onboarded: false, hidden: [],
 }
 
 const UI_PREFS_KEY = 'dealdrop-ui'
@@ -120,6 +120,15 @@ const state = {
 let shortcutsDialog = null
 let refreshAgeInterval = null
 
+function normalizeTitle (title) {
+  return String(title ?? '').trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+function hiddenTitle (title, hidden = state.settings.hidden) {
+  const key = normalizeTitle(title)
+  return hidden.some(h => normalizeTitle(h) === key)
+}
+
 function filteredSorted (items, key, fields = {}) {
   const { query, sort, onSaleOnly, minDiscount = 0, shop = '' } = state.listFilters[key]
   const value = (item, field, defaultField) => fields[field] ? fields[field](item) : item[defaultField]
@@ -131,7 +140,7 @@ function filteredSorted (items, key, fields = {}) {
   }
   return items.filter(item => {
     const title = String(value(item, 'title', 'title') ?? '')
-    return (!q || title.toLocaleLowerCase().includes(q)) && (!shop || item.shop === shop) && discount(item) >= Math.max(minDiscount, onSaleOnly ? 1 : 0)
+    return (key === 'wishlist' || !hiddenTitle(title)) && (!q || title.toLocaleLowerCase().includes(q)) && (!shop || item.shop === shop) && discount(item) >= Math.max(minDiscount, onSaleOnly ? 1 : 0)
   }).sort((a, b) => {
     if (sort === 'price') return price(a) - price(b)
     if (sort === 'name') return String(value(a, 'title', 'title') ?? '').localeCompare(String(value(b, 'title', 'title') ?? ''))
@@ -142,7 +151,7 @@ function filteredSorted (items, key, fields = {}) {
 // [[shop, count], …] sorted by shop name, for the Hot deals store filter.
 function dealShops (deals) {
   const counts = new Map()
-  for (const d of deals) if (d.shop) counts.set(d.shop, (counts.get(d.shop) || 0) + 1)
+  for (const d of deals) if (d.shop && !hiddenTitle(d.title)) counts.set(d.shop, (counts.get(d.shop) || 0) + 1)
   return [...counts].sort((a, b) => a[0].localeCompare(b[0]))
 }
 
@@ -182,7 +191,7 @@ function updateResultCount (key, visible, total) {
   const count = document.getElementById(`${key}-result-count`)
   if (!count) return
   const filters = state.listFilters[key]
-  const active = state.dataLoaded && (!!filters.query.trim() || !!filters.minDiscount || !!filters.onSaleOnly || !!filters.shop)
+  const active = state.dataLoaded && (!!filters.query.trim() || !!filters.minDiscount || !!filters.onSaleOnly || !!filters.shop || state.settings.hidden.length > 0)
   count.hidden = !active
   count.textContent = `${visible} of ${total}`
 }
@@ -726,7 +735,10 @@ function renderFreeGames () {
   gridWknd.innerHTML = ''
   if (tsEl) tsEl.textContent = fmtChecked(state.lastChecked)
 
-  if (!state.freeGames.length && !state.freeWeekends.length) {
+  const freeGames = state.freeGames.filter(g => !hiddenTitle(g.title))
+  const freeWeekends = state.freeWeekends.filter(g => !hiddenTitle(g.title))
+  if (!freeGames.length && !freeWeekends.length) {
+    lblWknd.style.display = 'none'
     if (!state.dataLoaded) {
       renderSkeletons(gridFree, 'card')
       emptyEl.style.display = 'none'
@@ -738,11 +750,11 @@ function renderFreeGames () {
     return
   }
   emptyEl.style.display = 'none'
-  claimedLast(endsFirst(state.freeGames), state.claimed).forEach(g => gridFree.appendChild(makeFreeCard(g, 'tag-free', 'FREE', true)))
+  claimedLast(endsFirst(freeGames), state.claimed).forEach(g => gridFree.appendChild(makeFreeCard(g, 'tag-free', 'FREE', true)))
 
-  if (state.freeWeekends.length) {
+  if (freeWeekends.length) {
     lblWknd.style.display = 'block'
-    endsFirst(state.freeWeekends).forEach(g => gridWknd.appendChild(makeFreeCard(g, 'tag-weekend', 'WEEKEND')))
+    endsFirst(freeWeekends).forEach(g => gridWknd.appendChild(makeFreeCard(g, 'tag-weekend', 'WEEKEND')))
   } else {
     lblWknd.style.display = 'none'
   }
@@ -756,7 +768,7 @@ function updateBadges () {
   if (wb) { wb.querySelector('.badge-count').textContent = onSale; wb.classList.toggle('visible', onSale > 0) }
 
   // Free games still worth a look: unclaimed giveaways plus free weekends (those can't be claimed)
-  const total = state.freeGames.filter(g => !state.claimed.includes(g.id)).length + state.freeWeekends.length
+  const total = state.freeGames.filter(g => !hiddenTitle(g.title) && !state.claimed.includes(g.id)).length + state.freeWeekends.filter(g => !hiddenTitle(g.title)).length
   const fb = document.getElementById('badge-free')
   if (fb) { fb.querySelector('.badge-count').textContent = total; fb.classList.toggle('visible', total > 0) }
 }
@@ -874,10 +886,13 @@ function makeDealRow (d) {
     return openBrowser(d.url)
   }
   main.addEventListener('click', open)
+  const hide = document.createElement('button')
+  hide.type = 'button'; hide.className = 'deal-open hide-title'; hide.textContent = 'Hide'; hide.setAttribute('aria-label', `Hide ${d.title}`)
+  hide.addEventListener('click', e => { e.stopPropagation(); hideTitle(d.title) })
   const btn = tmpl(`<button class="deal-open" title="Open store page">↗</button>`)
   btn.setAttribute('aria-label', `Open ${d.title} on ${d.shop}`)
   btn.addEventListener('click', e => { e.stopPropagation(); open() })
-  row.append(content, main, btn)
+  row.append(content, main, hide, btn)
   return row
 }
 
@@ -891,7 +906,7 @@ function renderStoreSales () {
   document.getElementById('lc-storesales').textContent = fmtChecked(state.lastChecked)
 
   emptyEl.classList.toggle('loading-state', !state.dataLoaded)
-  renderTabList(tabs, Object.keys(STORES).map(s => ({key:s, text:`${STORES[s]} (${state.sales[s]?.length ?? 0})`})),
+  renderTabList(tabs, Object.keys(STORES).map(s => ({key:s, text:`${STORES[s]} (${(state.sales[s] ?? []).filter(item => !hiddenTitle(item.title)).length})`})),
     state.salesTab, 'Stores', s => { state.salesTab = s; renderStoreSales() })
 
   grid.innerHTML = ''
@@ -932,7 +947,9 @@ function makeSaleCard (d) {
       </div>
     </div></div>`
   card.appendChild(makeCardOpenButton(src, d.url, d.title, salePriceDescription(d.regular, d.price, d.cut)))
-  card.appendChild(makeCardActions(src, d.url, d.appId ?? d.id, d.title))
+  const actions = makeCardActions(src, d.url, d.appId ?? d.id, d.title)
+  actions.appendChild(makeHideButton(d.title))
+  card.appendChild(actions)
   card.querySelector('.game-title').setAttribute('title', d.title)
   return card
 }
@@ -1224,10 +1241,63 @@ function renderSettings () {
   })
   renderLauncherPrefs()
   renderSettingsAccounts()
+  renderHiddenGames()
   renderAbout()
   const reset = document.getElementById('btn-reset-settings')
   reset.textContent = resetSettingsArmed ? 'Really reset?' : 'Reset settings to defaults'
   reset.setAttribute('aria-label', resetSettingsArmed ? 'Confirm reset settings to defaults' : 'Reset settings to defaults')
+}
+
+function hideTitle (title) {
+  const shown = String(title ?? '').trim().replace(/\s+/g, ' ')
+  if (!shown || hiddenTitle(shown)) return
+  state.settings.hidden = [...state.settings.hidden, shown].slice(-500)
+  window.api.saveSettings(state.settings)
+  renderDeals()
+  renderStoreSales()
+  renderFreeGames()
+  updateBadges()
+  if (state.page === 'settings') renderHiddenGames()
+}
+
+function makeHideButton (title) {
+  const button = document.createElement('button')
+  button.type = 'button'; button.className = 'card-btn hide-title'; button.textContent = 'Hide'
+  button.setAttribute('aria-label', `Hide ${title}`)
+  button.addEventListener('click', e => { e.stopPropagation(); hideTitle(title) })
+  return button
+}
+
+function renderHiddenGames () {
+  const con = document.getElementById('settings-hidden')
+  if (!con) return
+  con.replaceChildren()
+  const titles = state.settings.hidden
+  const summary = document.createElement('p')
+  summary.className = 'setting-sub settings-section-hint'
+  summary.textContent = titles.length ? `${titles.length} hidden` : 'Games you hide from deals, sales, free games, and notifications will appear here.'
+  con.appendChild(summary)
+  if (!titles.length) return
+  const list = document.createElement('div'); list.className = 'settings-group'
+  titles.forEach(title => {
+    const row = document.createElement('div'); row.className = 'setting-row hidden-game-row'
+    const name = document.createElement('span'); name.className = 'setting-label hidden-game-title'; name.textContent = title; name.title = title
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'settings-reset'; button.textContent = 'Unhide'
+    button.addEventListener('click', () => {
+      state.settings.hidden = state.settings.hidden.filter(item => item !== title)
+      window.api.saveSettings(state.settings)
+      renderHiddenGames(); renderDeals(); renderStoreSales(); renderFreeGames(); updateBadges()
+    })
+    row.append(name, button); list.appendChild(row)
+  })
+  con.appendChild(list)
+  const all = document.createElement('button'); all.type = 'button'; all.className = 'settings-reset'; all.textContent = 'Unhide all'
+  all.addEventListener('click', () => {
+    state.settings.hidden = []
+    window.api.saveSettings(state.settings)
+    renderHiddenGames(); renderDeals(); renderStoreSales(); renderFreeGames(); updateBadges()
+  })
+  con.appendChild(all)
 }
 
 function renderSettingsAccounts () {

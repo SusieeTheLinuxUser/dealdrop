@@ -3,6 +3,7 @@
 All notable changes to DealDrop are documented in this file.
 
 ## [Unreleased]
+- Hide games by title across free games, hot deals, store sales, and notifications; manage hidden titles in Settings.
 - Hot deals show a "Lowest ever" badge when their price matches CheapShark's historical low.
 - CI runs the unit tests and renderer self-check on every push and pull request.
 - GOG and Epic CheapShark deals open in their installed launcher after an exact-title lookup, with the CheapShark link as fallback.

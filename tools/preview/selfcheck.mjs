@@ -21,18 +21,24 @@ vm.runInContext([
   'const initialUiPrefs = mergeUiPrefs(null)',
   between('const CLAIMED_KEY', '\nconst state = {'),
   between('const state = {', '\nlet shortcutsDialog'),
-  between('function filteredSorted (', '\nfunction syncMinDiscount'),
+  between('function normalizeTitle (', '\nfunction announceStatus'),
   between('function storeKeyFor (', '\nconst gameStoreName'),
   between('function escHtml (', '\n// ─── Boot'),
   between('function updateRefreshAge (', '\nfunction updateLastCheckedLabels'),
-  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge, mergeUiPrefs, dealShops, parseClaimed, pruneClaimed, toggleClaimed, claimedLast }',
+  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge, mergeUiPrefs, dealShops, parseClaimed, pruneClaimed, toggleClaimed, claimedLast, normalizeTitle, hiddenTitle }',
 ].join('\n'), context)
 
 const h = context.helpers
+assert.equal(JSON.stringify(h.state.settings.hidden), '[]')
 assert.equal(h.escHtml(`<tag a="&">'`), '&lt;tag a=&quot;&amp;&quot;&gt;\'')
 assert.equal(h.storeKeyFor('Steam'), 'steam')
 assert.equal(h.storeKeyFor('Epic Games'), 'epic')
 assert.equal(h.storeKeyFor('GOG Galaxy'), 'gog')
+assert.equal(h.normalizeTitle('  The\t LONG  Way\nHome '), 'the long way home')
+h.state.settings.hidden = ['hades']
+assert.equal(h.hiddenTitle(' Hades '), true)
+assert.equal(h.hiddenTitle('Control'), false)
+assert.equal(h.hiddenTitle('hades ii', ['Hades  II']), true)
 
 const merged = h.mergeUiPrefs({
   version: 1, page: 'wishlist',
@@ -79,6 +85,10 @@ filters.query = 'alpha'
 assert.equal(h.filteredSorted(items, 'deals').length, 0)
 filters.query = ''; filters.shop = ''
 assert.equal(h.filteredSorted(items, 'deals').length, 4)
+h.state.settings.hidden = ['beta b']
+assert.equal(JSON.stringify(h.filteredSorted(items, 'deals').map(x => x.title)), '["Alpha","Beta A","Gamma"]')
+assert.equal(h.filteredSorted([{ name: 'Beta B', priceInfo: { discount: 80 } }], 'wishlist', { title: item => item.name, price: item => item.priceInfo.final, discount: item => item.priceInfo.discount }).length, 1)
+h.state.settings.hidden = []
 assert.equal(JSON.stringify(h.dealShops([...items, { title: 'No shop' }])), '[["Fanatical",1],["GOG",1],["Steam",2]]')
 
 context.now = new Date('2026-10-18T12:00:00Z')
@@ -90,4 +100,4 @@ h.state.lastChecked = Date.now()
 h.updateRefreshAge()
 assert.equal(label.textContent, 'Updated just now')
 
-console.log('Renderer self-check passed (escaping, filters, store filter, UI preference merge, claimed games, next sale, refresh age).')
+console.log('Renderer self-check passed (escaping, hidden titles, filters, store filter, UI preference merge, claimed games, next sale, refresh age).')
