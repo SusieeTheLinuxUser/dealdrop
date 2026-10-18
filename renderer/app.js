@@ -175,7 +175,7 @@ function renderWishlist () {
   renderWishlistDealPanel()
 }
 
-const storeTag = s => `<span class="store-tag ${s}">${STORES[s] ?? s}</span>`
+const storeTag = s => `<span class="store-tag ${escHtml(s)}">${escHtml(STORES[s] ?? s)}</span>`
 
 // Where "open" should go: the cheapest known offer if another store beats this one
 const bestUrl = w => w.cheapest?.url ?? w.url
