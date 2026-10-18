@@ -37,6 +37,7 @@
 .tour-spotlight[hidden]{display:none}
 .tour-card{position:fixed;z-index:1;left:50%;bottom:12px;transform:translateX(-50%);width:min(380px,calc(100vw - 24px));max-height:calc(100vh - 24px);overflow:auto;box-sizing:border-box;padding:16px;background:var(--bg0);border:1px solid var(--border);border-radius:12px;box-shadow:0 12px 36px #0009;color:var(--text1)}
 .tour-card-top{top:12px;bottom:auto}.tour-card-centered{top:50%;bottom:auto;transform:translate(-50%,-50%)}
+.tour-card-side{left:calc(clamp(150px,26vw,208px) + 12px);right:12px;top:50%;bottom:auto;transform:translateY(-50%);width:min(360px,calc(100vw - clamp(150px,26vw,208px) - 36px))}
 .tour-count{color:var(--text2);font-size:12px}.tour-card h2{margin:6px 0;color:var(--text0);font-size:17px}.tour-copy{margin:0;line-height:1.45}
 .tour-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:14px}.tour-backdrop :focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 @media(prefers-reduced-motion:reduce){.tour-backdrop *{scroll-behavior:auto!important;transition:none!important;animation:none!important}}

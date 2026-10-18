@@ -154,6 +154,10 @@
     }
     tourOverlay.classList.remove('tour-note-only'); spotlight.hidden = false; card.classList.remove('tour-card-centered')
     target.scrollIntoView({block:'nearest', inline:'nearest'})
+    const sidebar = target.closest('.sidebar')
+    const sidePlacement = sidebar && innerWidth - sidebar.getBoundingClientRect().right >= 280
+    card.classList.toggle('tour-card-side', Boolean(sidePlacement))
+    if (sidePlacement) card.classList.remove('tour-card-top')
     const rect = target.getBoundingClientRect()
     const left = Math.min(Math.max(4, rect.left - 6), innerWidth - 8)
     const top = Math.min(Math.max(4, rect.top - 6), innerHeight - 8)
@@ -161,7 +165,7 @@
     spotlight.style.top = top + 'px'
     spotlight.style.width = Math.min(innerWidth - left - 4, rect.width + 12) + 'px'
     spotlight.style.height = Math.min(innerHeight - top - 4, rect.height + 12) + 'px'
-    card.classList.toggle('tour-card-top', rect.top + rect.height / 2 > innerHeight * 0.55)
+    if (!sidePlacement) card.classList.toggle('tour-card-top', rect.top + rect.height / 2 > innerHeight * 0.55)
   }
   function renderTour () {
     const stop = tourStops[tourIndex]
