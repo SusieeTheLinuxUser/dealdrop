@@ -71,6 +71,23 @@ DealDrop is designed so **no secrets ever live in the source code**.
 - No telemetry or analytics; network requests go to Steam, GOG, Epic, GamerPower and CheapShark
 - Full details in [SECURITY.md](SECURITY.md)
 
+**APIs DealDrop talks to:**
+
+| Endpoint | Purpose | Auth |
+|---|---|---|
+| `store.steampowered.com/api/featured`, `/featuredcategories` | Free Steam games, sale & free-weekend detection | None |
+| `store.steampowered.com/search/results?specials=1` | Steam sales list | None |
+| `api.steampowered.com/IWishlistService/GetWishlist` | Steam wishlist (app ids) | None (profile must be public) |
+| `api.steampowered.com/IStoreBrowseService/GetItems` | Names & prices for many apps in one request | None |
+| `steamcommunity.com/profiles/<id>?xml=1` | Profile name & avatar | None |
+| `steamcommunity.com/openid/login`, `/profiles/{id}/?xml=1` | Steam sign-in, profile fallback, privacy check | Entered on Steam's own page |
+| `catalog.gog.com/v1/catalog` | GOG sales | None |
+| `auth.gog.com`, `embed.gog.com/user/wishlist.json`, `api.gog.com/products` | GOG sign-in, wishlist, prices | Entered on GOG's own page |
+| `store-site-backend-static.ak.epicgames.com/freeGamesPromotions` | Free Epic games | None |
+| `store.epicgames.com/graphql` | Epic sales | None |
+| `account-public-service-prod03.ol.epicgames.com`, `launcher.store.epicgames.com/graphql` | Epic sign-in & wishlist | Entered on Epic's own page |
+| `www.gamerpower.com/api/giveaways` | PC giveaway aggregation | None |
+| `www.cheapshark.com/api/1.0` | Hot deals, cheapest store for a wishlist game | None |
 
 ---
 
