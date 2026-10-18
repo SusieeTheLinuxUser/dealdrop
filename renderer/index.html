@@ -160,6 +160,10 @@
           <span class="last-checked" id="lc-storesales"></span>
         </div>
         <div class="tabs" id="sales-tabs"></div>
+        <div class="list-controls">
+          <input type="search" id="sales-search" placeholder="Search titles" aria-label="Search store sale titles" />
+          <select id="sales-sort" aria-label="Sort store sales"><option value="discount">Biggest discount</option><option value="price">Lowest price</option><option value="name">Name</option></select>
+        </div>
         <div class="game-grid" id="grid-storesales"></div>
         <div class="empty-state" id="empty-storesales" style="display:none">
           <p>No discounts loaded for this store right now.</p>
@@ -173,6 +177,10 @@
           <span class="last-checked" id="lc-deals"></span>
         </div>
         <div class="info-notice" id="info-notice" style="display:none"></div>
+        <div class="list-controls">
+          <input type="search" id="deals-search" placeholder="Search titles" aria-label="Search hot deal titles" />
+          <select id="deals-sort" aria-label="Sort hot deals"><option value="discount">Biggest discount</option><option value="price">Lowest price</option><option value="name">Name</option></select>
+        </div>
         <div class="deals-list" id="list-deals"></div>
         <div class="empty-state" id="empty-deals" style="display:none">
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/></svg>

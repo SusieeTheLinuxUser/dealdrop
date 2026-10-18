@@ -241,6 +241,10 @@ html[data-round="on"] #app,html[data-round="on"] #fx{border-radius:14px}
 .theme-chip:hover{color:var(--text0);border-color:var(--bord2)}
 .theme-chip.active{border-color:var(--acc);color:var(--acc);background:var(--acc-d)}
 .theme-chip.sale{border-style:dashed}
+.list-controls{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px;min-width:0}
+.list-controls input{flex:1 1 160px;min-width:0;width:0;box-sizing:border-box;padding:8px 10px;background:var(--bg1);border:1px solid var(--border);border-radius:var(--r);color:var(--text0);font:inherit}
+.list-controls select{max-width:100%;min-width:0;padding:8px;background:var(--bg1);border:1px solid var(--border);border-radius:var(--r);color:var(--text1);font:inherit}
+.clear-filter{padding:7px 12px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg1);color:var(--text1);cursor:pointer}
 .swatch{display:inline-flex}.swatch i{width:12px;height:12px;border-radius:50%;margin-right:-4px;border:1px solid rgba(255,255,255,.2)}
 #fx{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:60}
 

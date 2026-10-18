@@ -37,6 +37,17 @@ const state = {
   lastChecked:  null,
   selectedWishlistDeal: null,
   wishlistPrivate: false,
+  listFilters: { deals: { query: '', sort: 'discount' }, storesales: { query: '', sort: 'discount' } },
+}
+
+function filteredSorted (items, key) {
+  const { query, sort } = state.listFilters[key]
+  const q = query.trim().toLocaleLowerCase()
+  return items.filter(item => !q || String(item.title ?? '').toLocaleLowerCase().includes(q)).sort((a, b) => {
+    if (sort === 'price') return Number(a.price) - Number(b.price)
+    if (sort === 'name') return String(a.title ?? '').localeCompare(String(b.title ?? ''))
+    return Number(b.cut) - Number(a.cut)
+  })
 }
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
@@ -386,8 +397,15 @@ function renderDeals () {
     ? `<div>${escHtml(state.dealsError)}</div>`
     : `Source: ${escHtml(state.dealsSource)}`
 
-  emptyEl.style.display = state.deals.length ? 'none' : 'flex'
-  state.deals.forEach(d => list.appendChild(makeDealRow(d)))
+  const items = filteredSorted(state.deals, 'deals')
+  emptyEl.style.display = items.length ? 'none' : 'flex'
+  if (!items.length && state.listFilters.deals.query.trim()) {
+    emptyEl.innerHTML = '<p>No deals match that title.</p><button type="button" class="clear-filter">Clear search</button>'
+    emptyEl.querySelector('button').addEventListener('click', () => { state.listFilters.deals.query = ''; document.getElementById('deals-search').value = ''; renderDeals() })
+  } else if (!items.length) {
+    emptyEl.innerHTML = '<p>No deals could be loaded right now.</p>'
+  }
+  items.forEach(d => list.appendChild(makeDealRow(d)))
 }
 
 function makeDealRow (d) {
@@ -430,8 +448,15 @@ function renderStoreSales () {
 
   grid.innerHTML = ''
   const list = state.sales[state.salesTab] ?? []
-  emptyEl.style.display = list.length ? 'none' : 'flex'
-  list.forEach(d => grid.appendChild(makeSaleCard(d)))
+  const items = filteredSorted(list, 'storesales')
+  emptyEl.style.display = items.length ? 'none' : 'flex'
+  if (!items.length && state.listFilters.storesales.query.trim()) {
+    emptyEl.innerHTML = '<p>No games match that title.</p><button type="button" class="clear-filter">Clear search</button>'
+    emptyEl.querySelector('button').addEventListener('click', () => { state.listFilters.storesales.query = ''; document.getElementById('sales-search').value = ''; renderStoreSales() })
+  } else if (!items.length) {
+    emptyEl.innerHTML = '<p>No discounts loaded for this store right now.</p>'
+  }
+  items.forEach(d => grid.appendChild(makeSaleCard(d)))
 }
 
 function makeSaleCard (d) {
@@ -899,6 +924,16 @@ async function init () {
   document.getElementById('btn-check-now')?.addEventListener('click',      () => loadData(true))
   document.getElementById('btn-check-settings')?.addEventListener('click', () => loadData(true))
   document.getElementById('btn-show-onboarding')?.addEventListener('click', () => startOnboarding())
+  ;[['deals', renderDeals], ['storesales', renderStoreSales]].forEach(([key, render]) => {
+    const input = document.getElementById(key === 'deals' ? 'deals-search' : 'sales-search')
+    const sort = document.getElementById(key === 'deals' ? 'deals-sort' : 'sales-sort')
+    let timer
+    input.addEventListener('input', () => {
+      state.listFilters[key].query = input.value
+      clearTimeout(timer); timer = setTimeout(render, 180)
+    })
+    sort.addEventListener('change', () => { state.listFilters[key].sort = sort.value; render() })
+  })
 
   // ── Links (only hard-coded official URLs carry data-href) ───────────────
   document.addEventListener('click', e => {
