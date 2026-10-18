@@ -166,7 +166,10 @@ pub async fn gog_refresh(t: &Tokens) -> R<Tokens> {
 
 /// (username, country, currency, avatar url) — falls back to US/USD.
 pub async fn gog_user(access: &str) -> (String, String, String, Option<String>) {
-    let v = send_auth("https://embed.gog.com/userData.json", access).await.unwrap_or(Value::Null);
+    parse_gog_user(&send_auth("https://embed.gog.com/userData.json", access).await.unwrap_or(Value::Null))
+}
+
+fn parse_gog_user(v: &Value) -> (String, String, String, Option<String>) {
     (
         v["username"].as_str().unwrap_or("GOG user").into(),
         v["country"].as_str().filter(|c| c.len() == 2 && c.bytes().all(|b| b.is_ascii_alphabetic())).unwrap_or("US").into(), // goes into a URL: letters only
@@ -350,6 +353,11 @@ pub async fn epic_sales() -> R<Vec<Deal>> {
         "country": "US", "allowCountries": "US", "locale": "en-US", "onSale": true, "count": 60, "start": 0,
         "sortBy": "currentPrice", "sortDir": "DESC", "category": "games/edition/base|bundles/games|editors",
     })).await?;
+    Ok(parse_epic_sales(&v))
+}
+
+/// Discounted, non-free offers, biggest cut first.
+fn parse_epic_sales(v: &Value) -> Vec<Deal> {
     let mut deals: Vec<Deal> = v["data"]["Catalog"]["searchStore"]["elements"].as_array().into_iter().flatten()
         .filter_map(|o| {
             let p = epic_price(o)?;
@@ -366,7 +374,7 @@ pub async fn epic_sales() -> R<Vec<Deal>> {
             })
         }).collect();
     deals.sort_by_key(|d| std::cmp::Reverse(d.cut));
-    Ok(deals)
+    deals
 }
 
 /// Find an Epic product by exact title only when a user opens a CheapShark deal.
@@ -523,5 +531,72 @@ mod unit {
         assert_eq!(super::parse_epic_product(&products, "Alan"), None);
         let unsafe_slug = json!([{"title":"A Game", "productSlug":"bad slug"}]);
         assert_eq!(super::parse_epic_product(&unsafe_slug, "A Game"), Some("bad slug".into()));
+    }
+
+    #[test]
+    fn gog_user_validates_country_currency_and_avatar() {
+        let (name, country, currency, avatar) = super::parse_gog_user(&json!({
+            "username": "Geralt", "country": "PL", "selectedCurrency": {"code": "PLN", "symbol": "zł"},
+            "avatar": "https://images.gog.com/abc123"
+        }));
+        assert_eq!((name.as_str(), country.as_str(), currency.as_str()), ("Geralt", "PL", "PLN"));
+        assert_eq!(avatar.as_deref(), Some("https://images.gog.com/abc123_avm.jpg"));
+        // Anything that would go into a URL unchecked falls back
+        let (name, country, currency, avatar) = super::parse_gog_user(&json!({
+            "country": "P&L", "selectedCurrency": {"code": "US"}, "avatar": "https://evil.example/a"
+        }));
+        assert_eq!((name.as_str(), country.as_str(), currency.as_str()), ("GOG user", "US", "USD"));
+        assert!(avatar.is_none());
+        assert_eq!(super::parse_gog_user(&serde_json::Value::Null).1, "US");
+    }
+
+    #[test]
+    fn gog_wishlist_free_and_zero_base_prices() {
+        let products = json!([{"id": 7, "title": "Freebie"}, {"id": 8, "title": "Odd"}, {"title": "No Id"}]);
+        let prices = json!({"_embedded": {"items": [
+            {"_embedded": {"product": {"id": 7}, "prices": [{"basePrice": "999 USD", "finalPrice": "0 USD"}]}},
+            {"_embedded": {"product": {"id": 8}, "prices": [{"basePrice": "0 GBP", "finalPrice": "0 GBP"}]}}
+        ]}});
+        let v = super::parse_gog_wishlist_products(&products, &prices);
+        assert_eq!(v.len(), 3);
+        let free = v[0].price_info.as_ref().unwrap();
+        assert_eq!((free.discount, free.fin, free.initial), (100, 0.0, 9.99));
+        assert_eq!(free.formatted.as_deref(), Some("Free"));
+        let odd = v[1].price_info.as_ref().unwrap();
+        assert_eq!(odd.discount, 0);
+        assert_eq!(odd.currency.as_deref(), Some("GBP"));
+        // No slug/image/id: still listed with empty fallbacks (not dropped)
+        assert_eq!(v[1].url, "https://www.gog.com/en/game/");
+        assert!(v[1].image.is_none());
+        assert_eq!(v[2].id, "");
+        assert!(v[2].price_info.is_none());
+    }
+
+    #[test]
+    fn epic_sales_keep_paid_discounts_biggest_first() {
+        let offer = |id: &str, fin: u64, orig: u64| json!({
+            "title": id, "id": id, "offerMappings": [{"pageSlug": format!("{id}-page"), "pageType": "productHome"}],
+            "keyImages": [{"type": "Thumbnail", "url": "https://cdn.example/t.jpg"}, {"type": "OfferImageTall", "url": "https://cdn.example/tall.jpg"}],
+            "price": {"totalPrice": {"discountPrice": fin, "originalPrice": orig, "discount": orig - fin, "currencyInfo": {"decimals": 2}}}
+        });
+        let v = json!({"data": {"Catalog": {"searchStore": {"elements": [
+            offer("small", 1800, 2000),
+            offer("big", 500, 2000),
+            offer("free", 0, 2000),
+            offer("full", 2000, 2000),
+            {"title": "No Price", "id": "np"},
+            {"title": "Yen", "id": "yen", "price": {"totalPrice": {"discountPrice": 750, "originalPrice": 1500, "currencyInfo": {"decimals": 0}}}}
+        ]}}}});
+        let d = super::parse_epic_sales(&v);
+        assert_eq!(d.iter().map(|d| d.id.as_str()).collect::<Vec<_>>(), ["epic-big", "epic-yen", "epic-small"]);
+        assert_eq!((d[0].cut, d[0].price, d[0].regular), (75, 5.0, 20.0));
+        assert_eq!(d[0].shop, "Epic");
+        assert_eq!(d[0].url, "https://store.epicgames.com/en-US/p/big-page");
+        assert_eq!(d[0].image.as_deref(), Some("https://cdn.example/tall.jpg"));
+        // decimals: 0 → whole units
+        assert_eq!((d[1].price, d[1].regular), (750.0, 1500.0));
+        assert_eq!(d[1].url, "https://store.epicgames.com/en-US/browse");
+        assert!(d[1].image.is_none());
+        assert!(super::parse_epic_sales(&json!({"data": null})).is_empty());
     }
 }

@@ -181,28 +181,33 @@ pub async fn steam_items(ids: &[String]) -> R<HashMap<String, SteamItem>> {
             "https://api.steampowered.com/IStoreBrowseService/GetItems/v1?input_json={}",
             urlenc(&input.to_string())
         );
-        let v = get_json(&url).await?;
-        for it in v["response"]["store_items"].as_array().into_iter().flatten() {
-            let id = it["appid"].as_u64().or(it["id"].as_u64()).map(|n| n.to_string());
-            let (Some(id), Some(name)) = (id, s(&it["name"])) else { continue };
-            let bo = &it["best_purchase_option"];
-            let price = if bo.is_null() {
-                None
-            } else {
-                let fin = f(&bo["final_price_in_cents"]) / 100.0;
-                let discount = bo["discount_pct"].as_u64().unwrap_or(0) as u32;
-                let initial = if discount > 0 { f(&bo["original_price_in_cents"]) / 100.0 } else { fin };
-                Some(Price { discount, fin, initial, formatted: s(&bo["formatted_final_price"]), currency: Some("USD".into()) })
-            };
-            let a = &it["assets"];
-            let image = a["asset_url_format"].as_str()
-                .zip(a["header"].as_str().or(a["small_capsule"].as_str()))
-                .map(|(fmt, file)| format!("https://shared.akamai.steamstatic.com/store_item_assets/{}", fmt.replace("${FILENAME}", file)))
-                .unwrap_or_else(|| steam_header(&id));
-            out.insert(id, SteamItem { name, price, image });
-        }
+        out.extend(parse_steam_items(&get_json(&url).await?));
     }
     Ok(out)
+}
+
+fn parse_steam_items(v: &Value) -> HashMap<String, SteamItem> {
+    let mut out = HashMap::new();
+    for it in v["response"]["store_items"].as_array().into_iter().flatten() {
+        let id = it["appid"].as_u64().or(it["id"].as_u64()).map(|n| n.to_string());
+        let (Some(id), Some(name)) = (id, s(&it["name"])) else { continue };
+        let bo = &it["best_purchase_option"];
+        let price = if bo.is_null() {
+            None
+        } else {
+            let fin = f(&bo["final_price_in_cents"]) / 100.0;
+            let discount = bo["discount_pct"].as_u64().unwrap_or(0) as u32;
+            let initial = if discount > 0 { f(&bo["original_price_in_cents"]) / 100.0 } else { fin };
+            Some(Price { discount, fin, initial, formatted: s(&bo["formatted_final_price"]), currency: Some("USD".into()) })
+        };
+        let a = &it["assets"];
+        let image = a["asset_url_format"].as_str()
+            .zip(a["header"].as_str().or(a["small_capsule"].as_str()))
+            .map(|(fmt, file)| format!("https://shared.akamai.steamstatic.com/store_item_assets/{}", fmt.replace("${FILENAME}", file)))
+            .unwrap_or_else(|| steam_header(&id));
+        out.insert(id, SteamItem { name, price, image });
+    }
+    out
 }
 
 fn urlenc(t: &str) -> String {
@@ -267,10 +272,13 @@ pub async fn detect_steam_sale() -> R<(bool, Option<LiveSale>)> {
 }
 
 pub async fn steam_free_featured() -> R<Vec<Free>> {
-    let v = get_json("https://store.steampowered.com/api/featured/?cc=us&l=en").await?;
+    Ok(parse_steam_featured(&get_json("https://store.steampowered.com/api/featured/?cc=us&l=en").await?))
+}
+
+fn parse_steam_featured(v: &Value) -> Vec<Free> {
     let items = v["large_capsules"].as_array().into_iter().flatten()
         .chain(v["featured_win"].as_array().into_iter().flatten());
-    Ok(items
+    items
         .filter(|i| i["final_price"] == 0 && i["original_price"].as_u64().unwrap_or(0) > 0)
         .filter_map(|i| {
             let id = i["id"].as_u64()?.to_string();
@@ -285,25 +293,11 @@ pub async fn steam_free_featured() -> R<Vec<Free>> {
                 ..Default::default()
             })
         })
-        .collect())
+        .collect()
 }
 
 pub async fn steam_free_weekends() -> R<Vec<Free>> {
-    static APP: OnceLock<Regex> = OnceLock::new();
-    let app_re = re(r"/app/(\d+)", &APP);
-    let fdc = featured_categories().await?;
-
-    let mut ids: Vec<String> = spotlights(&fdc).iter()
-        .filter(|b| b["name"].as_str().is_some_and(|n| n.to_lowercase().contains("free weekend")))
-        .filter_map(|b| app_re.captures(b["url"].as_str()?).map(|c| c[1].to_string()))
-        .collect();
-    // Legacy shape: coming_soon items at 100% off
-    ids.extend(fdc["coming_soon"]["items"].as_array().into_iter().flatten()
-        .filter(|i| i["discount_percent"] == 100)
-        .filter_map(|i| i["id"].as_u64().map(|n| n.to_string())));
-    ids.sort();
-    ids.dedup();
-
+    let ids = steam_free_weekend_ids(&featured_categories().await?);
     let names = if ids.is_empty() { HashMap::new() } else { steam_items(&ids).await.unwrap_or_default() };
     Ok(ids.into_iter().map(|id| Free {
         id: format!("steam-fw-{id}"),
@@ -315,6 +309,23 @@ pub async fn steam_free_weekends() -> R<Vec<Free>> {
         kind: "weekend".into(),
         ..Default::default()
     }).collect())
+}
+
+/// Appids of "Free Weekend" spotlights, plus legacy coming_soon items at 100% off; sorted, unique.
+fn steam_free_weekend_ids(fdc: &Value) -> Vec<String> {
+    static APP: OnceLock<Regex> = OnceLock::new();
+    let app_re = re(r"/app/(\d+)", &APP);
+    let mut ids: Vec<String> = spotlights(fdc).iter()
+        .filter(|b| b["name"].as_str().is_some_and(|n| n.to_lowercase().contains("free weekend")))
+        .filter_map(|b| app_re.captures(b["url"].as_str()?).map(|c| c[1].to_string()))
+        .collect();
+    // Legacy shape: coming_soon items at 100% off
+    ids.extend(fdc["coming_soon"]["items"].as_array().into_iter().flatten()
+        .filter(|i| i["discount_percent"] == 100)
+        .filter_map(|i| i["id"].as_u64().map(|n| n.to_string())));
+    ids.sort();
+    ids.dedup();
+    ids
 }
 
 /// One `appdetails` body. `Some(true)` when `data.type` is `"dlc"`, `Some(false)`
@@ -458,16 +469,9 @@ fn parse_steam_sales(body: &str) -> R<Vec<Deal>> {
 // ─── Steam: wishlist ──────────────────────────────────────────────────────────
 
 pub async fn steam_wishlist(steam_id: &str) -> R<Vec<WishItem>> {
-    let v = get_json(&format!(
+    let ids = parse_steam_wishlist_ids(&get_json(&format!(
         "https://api.steampowered.com/IWishlistService/GetWishlist/v1?steamid={steam_id}"
-    )).await?;
-    let mut raw: Vec<(String, u64, u64)> = v["response"]["items"].as_array().into_iter().flatten()
-        .filter_map(|i| Some((i["appid"].as_u64()?.to_string(), i["priority"].as_u64().unwrap_or(0), i["date_added"].as_u64().unwrap_or(0))))
-        .collect();
-    // priority 0 means "unranked" — user-ranked entries first, then newest
-    raw.sort_by_key(|(_, p, added)| (*p == 0, *p, std::cmp::Reverse(*added)));
-
-    let ids: Vec<String> = raw.iter().map(|r| r.0.clone()).collect();
+    )).await?);
     let info = if ids.is_empty() { HashMap::new() } else { steam_items(&ids).await? };
     Ok(ids.into_iter().map(|id| {
         let it = info.get(&id);
@@ -485,26 +489,45 @@ pub async fn steam_wishlist(steam_id: &str) -> R<Vec<WishItem>> {
     }).collect())
 }
 
+/// Appids in display order: user-ranked first (by rank), then unranked newest first.
+fn parse_steam_wishlist_ids(v: &Value) -> Vec<String> {
+    let mut raw: Vec<(String, u64, u64)> = v["response"]["items"].as_array().into_iter().flatten()
+        .filter_map(|i| Some((i["appid"].as_u64()?.to_string(), i["priority"].as_u64().unwrap_or(0), i["date_added"].as_u64().unwrap_or(0))))
+        .collect();
+    // priority 0 means "unranked" — user-ranked entries first, then newest
+    raw.sort_by_key(|(_, p, added)| (*p == 0, *p, std::cmp::Reverse(*added)));
+    raw.into_iter().map(|r| r.0).collect()
+}
+
 /// Distinguishes "wishlist is empty" from "we can't see it".
 pub async fn steam_profile_private(steam_id: &str) -> bool {
     get_text(&format!("https://steamcommunity.com/profiles/{steam_id}/?xml=1")).await
-        .map(|x| x.to_lowercase().contains("<privacystate>private</privacystate>"))
-        .unwrap_or(false)
+        .is_ok_and(|x| profile_is_private(&x))
+}
+
+fn profile_is_private(xml: &str) -> bool {
+    xml.to_lowercase().contains("<privacystate>private</privacystate>")
 }
 
 /// Returns (name, avatar) from the public profile XML (no API key needed).
 pub async fn steam_profile(steam_id: &str) -> (String, Option<String>) {
-    static NAME: OnceLock<Regex> = OnceLock::new();
-    static AVATAR: OnceLock<Regex> = OnceLock::new();
-    let name_re = re(r"<steamID>(?:<!\[CDATA\[)?([^\]<]+)", &NAME);
-    let avatar_re = re(r"<avatarMedium>(?:<!\[CDATA\[)?([^\]<]+)", &AVATAR);
-    if let Ok(x) = get_text(&format!("https://steamcommunity.com/profiles/{steam_id}/?xml=1")).await {
-        if let Some(n) = name_re.captures(&x) {
-            return (n[1].trim().to_string(), avatar_re.captures(&x).map(|a| a[1].trim().to_string()));
-        }
+    if let Some(p) = get_text(&format!("https://steamcommunity.com/profiles/{steam_id}/?xml=1")).await.ok().and_then(|x| parse_steam_profile(&x)) {
+        return p;
     }
     let tail = steam_id.char_indices().nth_back(3).map(|(i, _)| &steam_id[i..]).unwrap_or(steam_id);
     (format!("Steam user {tail}"), None)
+}
+
+/// (name, avatar) from profile XML; `None` without a name. Text may be CDATA-wrapped
+/// and a name may contain `]` (clan tags like "[TAG] Bob").
+fn parse_steam_profile(xml: &str) -> Option<(String, Option<String>)> {
+    static NAME: OnceLock<Regex> = OnceLock::new();
+    static AVATAR: OnceLock<Regex> = OnceLock::new();
+    let name_re = re(r"(?s)<steamID>(?:<!\[CDATA\[(.*?)\]\]>|([^<]*))", &NAME);
+    let avatar_re = re(r"(?s)<avatarMedium>(?:<!\[CDATA\[(.*?)\]\]>|([^<]*))", &AVATAR);
+    let text = |r: &Regex| r.captures(xml).and_then(|c| c.get(1).or(c.get(2)))
+        .map(|m| m.as_str().trim().to_string()).filter(|t| !t.is_empty());
+    Some((text(name_re)?, text(avatar_re)))
 }
 
 // ─── Free games: Epic + GamerPower ────────────────────────────────────────────
@@ -562,11 +585,9 @@ fn epic_thumb(g: &Value) -> Option<String> {
 }
 
 pub fn epic_url(g: &Value) -> String {
-    let slug = s(&g["productSlug"])
-        .or_else(|| s(&g["catalogNs"]["mappings"][0]["pageSlug"]))
-        .or_else(|| s(&g["offerMappings"][0]["pageSlug"]))
-        .or_else(|| s(&g["urlSlug"]))
-        .filter(|x| !x.is_empty() && x != "[]");
+    // Each candidate is checked: Epic sends "" or "[]" in productSlug while a mapping has the real slug.
+    let slug = [&g["productSlug"], &g["catalogNs"]["mappings"][0]["pageSlug"], &g["offerMappings"][0]["pageSlug"], &g["urlSlug"]]
+        .into_iter().find_map(|v| v.as_str().filter(|x| !x.is_empty() && *x != "[]"));
     match slug {
         Some(sl) => format!("https://store.epicgames.com/p/{}", sl.trim_end_matches("/home")),
         None => "https://store.epicgames.com/free-games".into(),
@@ -662,6 +683,10 @@ fn parse_gog_sales(body: &str) -> R<Vec<Deal>> {
 
 async fn cheapshark_stores() -> HashMap<String, String> {
     let Ok(v) = get_json("https://www.cheapshark.com/api/1.0/stores").await else { return HashMap::new() };
+    parse_cheapshark_stores(&v)
+}
+
+fn parse_cheapshark_stores(v: &Value) -> HashMap<String, String> {
     v.as_array().into_iter().flatten()
         .filter_map(|x| Some((s(&x["storeID"])?, s(&x["storeName"])?)))
         .collect()
@@ -799,11 +824,15 @@ fn assign_lowest(items: &mut [WishItem], games: &[(usize, String)], lowest: &Has
 pub async fn cheapest_for_steam_app(app_id: &str) -> R<Option<Value>> {
     let url = format!("https://www.cheapshark.com/api/1.0/deals?steamAppID={}&pageSize=15", urlenc(app_id));
     let (stores, deals) = futures::join!(cheapshark_stores(), get_json(&url));
-    let deals = deals?;
+    Ok(parse_cheapest_deal(&deals?, &stores))
+}
+
+/// Lowest non-free `salePrice` in a CheapShark `deals?` list, as the detail panel's JSON.
+fn parse_cheapest_deal(deals: &Value, stores: &HashMap<String, String>) -> Option<Value> {
     let best = deals.as_array().into_iter().flatten()
         .filter(|d| f(&d["salePrice"]) > 0.0)
         .min_by(|a, b| f(&a["salePrice"]).total_cmp(&f(&b["salePrice"])));
-    Ok(best.map(|b| {
+    best.map(|b| {
         let deal_id = s(&b["dealID"]);
         json!({
             "store": stores.get(s(&b["storeID"]).unwrap_or_default().as_str()).cloned().unwrap_or_else(|| "store".into()),
@@ -812,7 +841,7 @@ pub async fn cheapest_for_steam_app(app_id: &str) -> R<Option<Value>> {
             "savingsPercent": f(&b["savings"]).round(),
             "url": deal_id.map(|d| format!("https://www.cheapshark.com/redirect?dealID={d}")),
         })
-    }))
+    })
 }
 
 // Live smoke tests: `cargo test -- --ignored --nocapture` (needs network).
@@ -1170,5 +1199,170 @@ mod unit {
         assert!(super::read_steam_sale("").is_none());
         assert!(super::read_steam_sale("null").is_none());
         assert!(super::read_steam_sale("[1]").is_none());
+    }
+
+    #[test]
+    fn steam_items_parses_store_browse() {
+        use serde_json::json;
+        // IStoreBrowseService/GetItems: string cents, discount_pct, asset manifest
+        let v = json!({"response": {"store_items": [
+            {"item_type":0,"id":620,"success":1,"name":"Portal 2","appid":620,
+             "best_purchase_option":{"final_price_in_cents":"98","original_price_in_cents":"979","formatted_final_price":"$0.98","discount_pct":90},
+             "assets":{"asset_url_format":"steam/apps/620/${FILENAME}?t=1745363004","header":"header.jpg","small_capsule":"capsule_231x87.jpg"}},
+            {"id":440,"name":"Team Fortress 2","appid":440,"is_free":true,
+             "assets":{"asset_url_format":"steam/apps/440/${FILENAME}","small_capsule":"capsule.jpg"}},
+            {"id":10,"name":"Counter-Strike","best_purchase_option":{"final_price_in_cents":"999","original_price_in_cents":"1999","discount_pct":0}},
+            {"id":999999,"success":2}
+        ]}});
+        let m = super::parse_steam_items(&v);
+        assert_eq!(m.len(), 3);
+        let p2 = &m["620"];
+        assert_eq!(p2.name, "Portal 2");
+        assert_eq!(p2.image, "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/620/header.jpg?t=1745363004");
+        let pr = p2.price.as_ref().unwrap();
+        assert_eq!((pr.discount, pr.fin, pr.initial), (90, 0.98, 9.79));
+        assert_eq!(pr.formatted.as_deref(), Some("$0.98"));
+        assert_eq!(pr.currency.as_deref(), Some("USD"));
+        // Free-to-play: no purchase option → no price; small_capsule when there's no header
+        assert!(m["440"].price.is_none());
+        assert_eq!(m["440"].image, "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/440/capsule.jpg");
+        // No discount: initial is the final price (original is ignored); no assets → legacy header; `id` when no `appid`
+        let cs = m["10"].price.as_ref().unwrap();
+        assert_eq!((cs.discount, cs.fin, cs.initial), (0, 9.99, 9.99));
+        assert!(cs.formatted.is_none());
+        assert_eq!(m["10"].image, super::steam_header("10"));
+        assert!(super::parse_steam_items(&json!({"response": {}})).is_empty());
+    }
+
+    #[test]
+    fn steam_featured_keeps_only_paid_games_at_zero() {
+        use serde_json::json;
+        let v = json!({
+            "large_capsules": [
+                {"id":1,"name":"Gift","final_price":0,"original_price":1999,"large_capsule_image":"https://cdn.example/l.jpg"}
+            ],
+            "featured_win": [
+                {"id":2,"name":"Always Free","final_price":0,"original_price":0},
+                {"id":3,"name":"Paid","final_price":499,"original_price":999},
+                {"id":4,"name":"Also Gift","final_price":0,"original_price":499},
+                {"name":"No Id","final_price":0,"original_price":499}
+            ]
+        });
+        let v = super::parse_steam_featured(&v);
+        assert_eq!(v.iter().map(|g| g.id.as_str()).collect::<Vec<_>>(), ["steam-1", "steam-4"]);
+        assert_eq!(v[0].title, "Gift");
+        assert_eq!(v[0].url, "https://store.steampowered.com/app/1");
+        assert_eq!(v[0].image.as_deref(), Some("https://cdn.example/l.jpg"));
+        assert_eq!(v[0].app_id.as_deref(), Some("1"));
+        assert_eq!((v[0].source.as_str(), v[0].kind.as_str()), ("steam", "free"));
+        assert!(v[1].image.is_none());
+        assert!(super::parse_steam_featured(&json!({})).is_empty());
+    }
+
+    #[test]
+    fn steam_free_weekend_ids_from_spotlights_and_coming_soon() {
+        let fdc: serde_json::Value = serde_json::from_str(r#"{
+            "0": {"id":"cat_spotlight","items":[
+                {"name":"Free Weekend - Play Now","url":"https://store.steampowered.com/app/313120/?snr=1"},
+                {"name":"FREE WEEKEND","url":"https://store.steampowered.com/sale/nolink"},
+                {"name":"Autumn Sale","url":"https://store.steampowered.com/app/999"}
+            ]},
+            "1": {"id":"cat_spotlight","items":[{"name":"Free weekend","url":"https://store.steampowered.com/app/313120"}]},
+            "coming_soon": {"items":[{"id":42,"discount_percent":100},{"id":43,"discount_percent":90}]}
+        }"#).unwrap();
+        assert_eq!(super::steam_free_weekend_ids(&fdc), ["313120", "42"]);
+        assert!(super::steam_free_weekend_ids(&serde_json::json!({})).is_empty());
+    }
+
+    #[test]
+    fn steam_wishlist_orders_ranked_then_newest() {
+        use serde_json::json;
+        let v = json!({"response": {"items": [
+            {"appid": 10, "priority": 0, "date_added": 100},
+            {"appid": 20, "priority": 2, "date_added": 50},
+            {"appid": 30, "priority": 0, "date_added": 300},
+            {"appid": 40, "priority": 1, "date_added": 10},
+            {"appid": 50},
+            {"priority": 3}
+        ]}});
+        assert_eq!(super::parse_steam_wishlist_ids(&v), ["40", "20", "30", "10", "50"]);
+        // Empty wishlist: Steam returns an empty response object
+        assert!(super::parse_steam_wishlist_ids(&json!({"response": {}})).is_empty());
+    }
+
+    #[test]
+    fn steam_profile_xml_reads_name_avatar_and_privacy() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<profile><steamID64>76561197960287930</steamID64><steamID><![CDATA[[TAG] Rabscuttle ]]></steamID>
+<privacyState>public</privacyState>
+<avatarIcon><![CDATA[https://avatars.steamstatic.com/abc.jpg]]></avatarIcon>
+<avatarMedium><![CDATA[https://avatars.steamstatic.com/abc_medium.jpg]]></avatarMedium></profile>"#;
+        let (name, avatar) = super::parse_steam_profile(xml).unwrap();
+        assert_eq!(name, "[TAG] Rabscuttle");
+        assert_eq!(avatar.as_deref(), Some("https://avatars.steamstatic.com/abc_medium.jpg"));
+        assert!(!super::profile_is_private(xml));
+        // Plain text (no CDATA), no avatar
+        let plain = "<profile><steamID>Bob</steamID><privacyState>Private</privacyState></profile>";
+        assert_eq!(super::parse_steam_profile(plain), Some(("Bob".into(), None)));
+        assert!(super::profile_is_private(plain));
+        // Unknown profile: Steam answers with an <error> document
+        assert_eq!(super::parse_steam_profile("<response><error><![CDATA[The specified profile could not be found.]]></error></response>"), None);
+        assert_eq!(super::parse_steam_profile("<profile><steamID><![CDATA[ ]]></steamID></profile>"), None);
+    }
+
+    #[test]
+    fn epic_urls_fall_back_through_slugs() {
+        use serde_json::json;
+        assert_eq!(super::epic_url(&json!({"productSlug": "[]", "offerMappings": [{"pageSlug": "from-offer"}]})), "https://store.epicgames.com/p/from-offer");
+        assert_eq!(super::epic_url(&json!({"productSlug": "", "urlSlug": "url-slug"})), "https://store.epicgames.com/p/url-slug");
+        assert_eq!(super::epic_url(&json!({"title": "Mystery Game"})), "https://store.epicgames.com/free-games");
+        // Mystery-game giveaways: a free element with no id is skipped, not an error
+        let body = r#"{"data":{"Catalog":{"searchStore":{"elements":[
+            {"title":"Mystery Game","promotions":{"promotionalOffers":[{"promotionalOffers":[{"discountSetting":{"discountPercentage":0}}]}]}},
+            {"title":"No Promo","id":"x","promotions":null}
+        ]}}}}"#;
+        assert!(super::parse_epic_free(body).unwrap().is_empty());
+        assert!(super::parse_epic_upcoming(body).unwrap().is_empty());
+    }
+
+    #[test]
+    fn cheapshark_stores_and_cheapest_deal() {
+        use serde_json::json;
+        let stores = super::parse_cheapshark_stores(&json!([
+            {"storeID":"1","storeName":"Steam","isActive":1},
+            {"storeID":"25","storeName":"Epic Games Store","isActive":1},
+            {"storeName":"No Id"}
+        ]));
+        assert_eq!(stores.len(), 2);
+        assert_eq!(stores["25"], "Epic Games Store");
+        assert!(super::parse_cheapshark_stores(&json!({"error": "rate limited"})).is_empty());
+
+        let deals = json!([
+            {"dealID":"steam1","storeID":"1","salePrice":"9.99","normalPrice":"19.99","savings":"50.025"},
+            {"dealID":"free","storeID":"25","salePrice":"0.00","normalPrice":"19.99","savings":"100"},
+            {"dealID":"cheap","storeID":"25","salePrice":"7.49","normalPrice":"19.99","savings":"62.531"},
+            {"dealID":"odd","storeID":"77","salePrice":"8.00","normalPrice":"19.99","savings":"59.9"}
+        ]);
+        let best = super::parse_cheapest_deal(&deals, &stores).unwrap();
+        assert_eq!(best, json!({
+            "store": "Epic Games Store", "price": 7.49, "retailPrice": 19.99, "savingsPercent": 63.0,
+            "url": "https://www.cheapshark.com/redirect?dealID=cheap",
+        }));
+        // Unknown store id → "store"; only free deals or none → no offer
+        let only = super::parse_cheapest_deal(&json!([deals[3]]), &stores).unwrap();
+        assert_eq!(only["store"], "store");
+        assert!(super::parse_cheapest_deal(&json!([deals[1]]), &stores).is_none());
+        assert!(super::parse_cheapest_deal(&json!([]), &stores).is_none());
+    }
+
+    #[test]
+    fn cheapshark_lowest_skips_bad_entries() {
+        let body = r#"{"10":{"info":{"title":"Hades"},"cheapestPriceEver":{"price":"0.00","date":1}},"11":{"cheapestPriceEver":{"price":"n/a"}},"12":[]}"#;
+        let m = super::parse_cheapshark_lowest(body);
+        assert_eq!(m.len(), 1);
+        assert_eq!(m.get("10"), Some(&0.0));
+        assert!(super::parse_cheapshark_lowest("[]").is_empty());
+        assert!(super::parse_cheapshark_lowest("not json").is_empty());
+        assert!(super::cheapshark_deals_by_game("not json").is_empty());
     }
 }
