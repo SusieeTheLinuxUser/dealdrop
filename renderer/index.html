@@ -213,17 +213,23 @@
         <div class="page-header"><h1>Settings</h1></div>
         <section class="settings-section">
           <h2 class="section-label settings-section-heading">Appearance</h2>
+          <p class="setting-sub settings-section-hint">Choose colors; sale themes appear during supported sales.</p>
           <div class="theme-grid" id="theme-grid"></div>
           <div class="settings-group" id="look-settings"></div>
         </section>
         <section class="settings-section">
           <h2 class="section-label settings-section-heading">Notifications</h2>
           <div class="settings-group" id="notif-settings"></div>
-          <button class="settings-reset" id="btn-reset-settings" type="button" aria-label="Reset settings to defaults">Reset settings to defaults</button>
+          <div class="setting-row settings-reset-row">
+            <div><div class="setting-label">Reset settings</div><div class="setting-sub">Resets appearance, alerts, and interval; keeps accounts and launchers.</div></div>
+            <button class="settings-reset" id="btn-reset-settings" type="button" aria-label="Reset settings to defaults">Reset settings to defaults</button>
+          </div>
         </section>
         <section class="settings-section">
           <h2 class="section-label settings-section-heading">Check interval</h2>
+          <p class="setting-sub settings-section-hint">How often DealDrop checks stores and wishlists.</p>
           <div class="interval-group" id="interval-group"></div>
+          <p class="setting-sub settings-section-hint settings-refresh-hint">Check stores and wishlists now.</p>
           <button class="action-btn" id="btn-check-settings">Refresh all</button>
         </section>
         <section class="settings-section">

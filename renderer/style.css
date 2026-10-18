@@ -162,6 +162,10 @@ html,body{background:transparent} /* window is transparent; #app paints the colo
 .settings-group{display:flex;flex-direction:column;gap:6px}
 .settings-section{min-width:0;margin:0 0 24px}
 .settings-section-heading{margin:0 0 12px}
+.settings-section-hint{margin:-6px 0 10px}
+.settings-reset-row>div{min-width:0}
+.settings-reset-row .settings-reset{flex-shrink:0;margin-top:0}
+.settings-refresh-hint{margin:10px 0 4px}
 .settings-account-row{min-width:0;gap:10px;padding:10px 12px}
 .settings-account-row .setting-label{min-width:0;overflow-wrap:anywhere}
 .settings-about{line-height:1.5;overflow-wrap:anywhere}
