@@ -74,6 +74,8 @@ Platform code: launcher detection (`has_scheme` in `launchers.rs`) is per-OS via
 - Hot deals come from CheapShark only (IsThereAnyDeal was removed: its key setup kept failing for users). Avatars: Steam (public profile XML) and GOG (`userData.json`); Epic has no public avatar API.
 - **Secrets never go in URLs.** Send tokens/keys in headers, and strip URLs from `reqwest` errors that could carry one (`e.without_url()`). Deep links (`launchers::link`) only accept the store's own domain and plain slugs. Escape every remote string put into `innerHTML` (including attribute values).
 - **Rounded window = transparent window.** `main.rs` builds the window `.transparent(true)`; `html`/`body` stay transparent and `#app` paints the background (and gets the radius when `data-round="on"`). Don't give `body` a background colour: with a transparent `<html>` it spreads over the whole canvas and squares the corners off again. macOS needs `macos-private-api` (enabled in `Cargo.toml` / `tauri.conf.json`).
+- **Fonts are bundled** (`renderer/fonts/`, DM Sans + DM Mono, OFL licences alongside). Never link a font CDN: the CSP is `font-src 'self'` and the webview must not contact third parties. Latin subset only.
+- **First-run tour:** `settings.onboarded` (Rust `Settings`) stays false until the tour is finished or skipped; keep any new setting the tour touches in both `Settings` and the JS defaults so `saveSettings` never drops it.
 - No telemetry. All external calls go through `sources.rs` / `stores.rs`; the webview never calls external APIs.
 - JSON sent to the UI is camelCase (`#[serde(rename_all = "camelCase")]`); keep it in sync with `renderer/app.js`.
 - Config keys in `Db` deliberately match the old Electron `electron-store` names so upgrades keep settings.

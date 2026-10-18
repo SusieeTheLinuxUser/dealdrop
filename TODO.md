@@ -1,22 +1,16 @@
 # TODO / known issues
 
-## Minimize animation on KDE Plasma (Wayland) flies to the wrong place
+## Minimize animation on KDE Plasma (Wayland) flies to the pointer
 
-**Symptom:** on KDE Plasma 6.8 (Wayland, Magic Lamp effect) clicking DealDrop's minimize button sucks the window into the mouse pointer / the minimize button instead of its taskbar icon. Minimizing itself works and the taskbar icon restores the window.
+**Cause (confirmed 2026-10-18):** a Plasma bug, not ours. A panel set to *Dodge Windows* / auto-hide is never laid out while hidden, so the taskbar publishes each task button with a width of 0 (`iconGeometry` = `38,1402 0x30`). KWin's Magic Lamp treats that as "no target" and aims at the pointer. Same shape as upstream [KDE bug 513815](https://bugs.kde.org/show_bug.cgi?id=513815) (open). The older bugs 232612, 398541, 342873, 222420 are not this one.
 
-**What we found (2026-10-16):**
-- KWin aims the minimize effect at the icon position the Plasma taskbar publishes for each window. For DealDrop that position is unusable (`window.iconGeometry` = `38,1402 0x30`, zero width), so KWin falls back to the pointer. A freshly started GTK app (Volume Control) had the same zero-width result.
-- Pinning DealDrop to the taskbar did **not** help (tested by the maintainer).
-- KWin's scripting API exposes `iconGeometry` read-only, and the Wayland protocol only lets the taskbar set it, so the app cannot fix it itself.
-- DealDrop already uses the normal minimize call (`window.minimize()` via `window_minimize` in `main.rs`) and matches its launcher entry (`StartupWMClass=dealdrop`).
-- Related KDE reports: bugs 232612, 398541, 342873, 222420 on bugs.kde.org.
+**Workaround:** set the panel's Visibility to **Always Visible**; the animation then goes to the taskbar icon (tested by the maintainer).
 
-**Ideas if someone picks this up:**
-- File a KDE bug with the evidence above.
-- Re-test on newer Plasma/KWin releases; it may already be fixed upstream.
-- Fallback: hide/restore without animation (loses the taskbar-minimize feel).
+The app can't fix it: `xdg_toplevel.set_minimized` has no target rectangle and only the taskbar may call `set_minimized_geometry`. DealDrop already uses `window.minimize()` (`window_minimize` in `main.rs`).
+
+If it still happens with an always-visible panel, file a new bug with 513815 in See Also.
 
 ## Release status
 
-- Windows `.msi` / macOS `.dmg` builds exist only up to v0.7.5; build newer ones with `gh workflow run release.yml -f tag=vX.Y.Z` once the Linux build is confirmed (see AGENTS.md "Releasing").
-- Unverified end to end: the Epic launcher deep link on Linux, sale themes during a live sale.
+- v0.7.9 has all three assets (AppImage, `.msi`, universal `.dmg`).
+- Unverified end to end: sale themes during a live sale; launcher detection on Windows/macOS (desk research says `reg query HKCR\<scheme> /ve` and the app-bundle paths are right, not tested on a real machine). The Epic deep link `store/p/<slug>` is reported valid alongside the documented `store/product/<slug>` (not tested on Epic's launcher).

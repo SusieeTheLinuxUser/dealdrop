@@ -26,11 +26,33 @@ See [AGENTS.md](AGENTS.md) for the file map and commands.
 
 ## Golden rules
 
-- **No secrets in the code.** API keys are always user-supplied at runtime. See [SECURITY.md](SECURITY.md).
+- **No secrets in the code.** The app has no API keys; sign-in tokens live only in the user's config file. Secrets never go in URLs. See [SECURITY.md](SECURITY.md).
 - **No telemetry.** DealDrop doesn't phone home. Don't add any.
 - **All API calls go through the Rust backend.** The webview never calls external APIs directly.
 - **Keep it dependency-light.** Think carefully before adding a crate.
 - **Three platforms.** Releases ship AppImage + .msi + .dmg (AppImage built locally; .msi/.dmg by `.github/workflows/release.yml`, run manually after the Linux build is tested). Keep OS-specific code behind `cfg` so all three compile. Test locally with `cargo tauri build --bundles appimage` on Linux.
+
+## Running checks
+
+Run these inside `src-tauri/`:
+
+```bash
+cargo check                                          # fast compile check
+cargo test                                           # unit tests
+cargo test -- --ignored --nocapture --test-threads=1 # live API smoke tests (needs network)
+```
+
+`wishlist_cheapest_live` needs a `STEAM_ID` environment variable (`STEAM_ID=... cargo test wishlist_cheapest_live -- --ignored --nocapture`). When an upstream API changes, fix it and extend the matching `#[ignore]` live test in `sources.rs`. For manual Windows/macOS testing see [TESTING.md](TESTING.md).
+
+## UI rules
+
+- Links open only through `open_url` / `open_in_app` (`safe_https`); external UI links are `<a data-href="https://…">`. Never render remote content in an in-app webview.
+- The CSP forbids inline handlers (`onclick=`, `onerror=`): use listeners.
+- Escape every remote string put into `innerHTML`, including attribute values.
+- Never add horizontal scrolling; shrink the sidebar (`clamp()`) instead.
+- Fonts are bundled in `renderer/fonts/`; never link a font CDN (`font-src 'self'`).
+- JSON sent to the UI is camelCase (`#[serde(rename_all = "camelCase")]`); keep it in sync with `renderer/app.js`.
+- Add a theme in both `renderer/style.css` (`html[data-theme="…"]`) and `renderer/app.js` (`BASE_THEMES` / `SALE_THEMES`).
 
 ## Building the AppImage (Linux)
 
