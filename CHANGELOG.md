@@ -3,6 +3,7 @@
 All notable changes to DealDrop are documented in this file.
 
 ## [Unreleased]
+- Settings can choose wishlist sale and big-deal notification thresholds.
 - Hide games by title across free games, hot deals, store sales, and notifications; manage hidden titles in Settings.
 - Hot deals and Store sales tag deals you haven't seen yet as "New", with a dot on the sidebar item until you've looked.
 - Hot deals show a "Lowest ever" badge when their price matches CheapShark's historical low.

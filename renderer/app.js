@@ -14,7 +14,7 @@ const SALES = [
 
 const DEFAULT_SETTINGS = {
   notifyMajorSale: true, notifyFreeGame: true, notifyFreeWeekend: true,
-  notifyWishlistSale: true, notifyBigDeal: false, checkInterval: 60,
+  notifyWishlistSale: true, wishlistMinCut: 20, notifyBigDeal: false, bigDealMinCut: 75, checkInterval: 60,
   theme: 'midnight', baseTheme: 'midnight', lastSaleTheme: '', rounded: false, effects: true,
   launcherGog: 'auto', launcherEpic: 'auto', onboarded: false, hidden: [],
 }
@@ -1105,8 +1105,8 @@ const NOTIFICATION_TOGGLES = [
   { key: 'notifyMajorSale', label: 'Steam major sale started', sub: 'Summer, Winter, Autumn & Spring sales' },
   { key: 'notifyFreeGame', label: 'Free game available', sub: 'Epic, Steam, GOG & GamerPower giveaways', gamerpower: true },
   { key: 'notifyFreeWeekend', label: 'Free weekend started', sub: 'Temporary Steam free-to-play promotions' },
-  { key: 'notifyWishlistSale', label: 'Wishlist game on sale', sub: 'Steam, GOG & Epic wishlist games at 20% or more off' },
-  { key: 'notifyBigDeal', label: 'Deal over 75% off', sub: 'Hot deals list (CheapShark)' },
+  { key: 'notifyWishlistSale', label: 'Wishlist game on sale', sub: 'Steam, GOG & Epic wishlist games', threshold: 'wishlistMinCut', cuts: [10, 20, 30, 50, 75] },
+  { key: 'notifyBigDeal', label: 'Big deal', sub: 'Hot deals list (CheapShark)', threshold: 'bigDealMinCut', cuts: [50, 60, 75, 85, 90] },
 ]
 window.dealDropOnboarding = { state, baseThemes: BASE_THEMES, lookToggles: LOOK_TOGGLES, notificationToggles: NOTIFICATION_TOGGLES, applyTheme, setAccounts, loadData, renderSettings, closeShortcutsDialog }
 
@@ -1219,7 +1219,15 @@ function toggleRows (con, rows, after) {
       window.api.saveSettings(s)
       after?.()
     })
-    row.append(copy, toggle)
+    if (r.threshold) {
+      const controls = document.createElement('div'); controls.className = 'notification-controls'
+      const select = document.createElement('select'); select.setAttribute('aria-label', `${r.label} notification threshold`)
+      r.cuts.forEach(cut => select.add(new Option(`at ${cut}%+ off`, String(cut))))
+      select.value = String(s[r.threshold]); select.disabled = !s[r.key]
+      select.addEventListener('change', () => { s[r.threshold] = Number(select.value); window.api.saveSettings(s) })
+      controls.append(select, toggle); row.append(copy, controls)
+      toggle.addEventListener('click', () => { select.disabled = !s[r.key] })
+    } else row.append(copy, toggle)
     con.appendChild(row)
   })
 }

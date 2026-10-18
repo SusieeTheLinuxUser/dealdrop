@@ -31,7 +31,9 @@ struct Settings {
     notify_free_game: bool,
     notify_free_weekend: bool,
     notify_wishlist_sale: bool,
+    wishlist_min_cut: u32,
     notify_big_deal: bool,
+    big_deal_min_cut: u32,
     check_interval: u64,
     /// Active theme; `base_theme` is the user's own pick to return to when a sale theme ends,
     /// `last_sale_theme` remembers which sale we already auto-switched for (so a restart
@@ -51,7 +53,7 @@ struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self { notify_major_sale: true, notify_free_game: true, notify_free_weekend: true,
-               notify_wishlist_sale: true, notify_big_deal: false, check_interval: 60,
+               notify_wishlist_sale: true, wishlist_min_cut: 20, notify_big_deal: false, big_deal_min_cut: 75, check_interval: 60,
                theme: "midnight".into(), base_theme: "midnight".into(), last_sale_theme: String::new(),
                rounded: false, effects: true, launcher_gog: "auto".into(), launcher_epic: "auto".into(), onboarded: false, hidden: Vec::new() }
     }
@@ -158,8 +160,8 @@ fn show_main(app: &AppHandle) {
 /// Tray menu shortcuts whose labels carry the latest counts.
 struct TrayItems { free: MenuItem<tauri::Wry>, wishlist: MenuItem<tauri::Wry> }
 
-/// Same numbers as the sidebar badges (`updateBadges` in app.js): free games + free weekends,
-/// and wishlist games at least 20% off.
+/// Free games + free weekends, and wishlist games at least 20% off.
+/// Keep tray counts and sidebar badges fixed at 20%; only notifications use the preference.
 fn tray_counts(s: &Snapshot) -> (usize, usize) {
     (s.free_games.len() + s.free_weekends.len(), s.wishlist.iter().filter(|w| discount(w) >= 20).count())
 }
@@ -458,11 +460,15 @@ fn notify_new_free(app: &AppHandle, st: &AppState, games: &[Free], weekend: bool
 
 fn discount(w: &WishItem) -> u32 { w.price_info.as_ref().map_or(0, |p| p.discount) }
 
+fn clamp_cut(value: u32, allowed: &[u32]) -> u32 {
+    *allowed.iter().min_by_key(|&&cut| (cut.abs_diff(value), cut)).unwrap()
+}
+
 fn sale_key(w: &WishItem) -> String { format!("{}:{}", w.store, w.id) }
 
-/// 20% off or more, and not already notified for this sale.
-fn fresh_wishlist<'a>(items: &'a [WishItem], seen: &HashSet<String>, hidden: &[String]) -> Vec<&'a WishItem> {
-    items.iter().filter(|w| discount(w) >= 20 && !seen.contains(&sale_key(w)) && !is_hidden(hidden, &w.name)).collect()
+/// At the configured cut or more, and not already notified for this sale.
+fn fresh_wishlist<'a>(items: &'a [WishItem], seen: &HashSet<String>, hidden: &[String], min_cut: u32) -> Vec<&'a WishItem> {
+    items.iter().filter(|w| discount(w) >= min_cut && !seen.contains(&sale_key(w)) && !is_hidden(hidden, &w.name)).collect()
 }
 
 /// One game names its price. Several share one notice, the first four names, then an ellipsis.
@@ -494,28 +500,30 @@ fn remember_wishlist(seen: &mut HashSet<String>, items: &[WishItem], fresh: &[&W
 }
 
 fn notify_wishlist(app: &AppHandle, st: &AppState, items: &[WishItem]) {
-    let fresh = st.read(|d| fresh_wishlist(items, &d.seen_sale_ids, &d.settings.hidden));
+    let fresh = st.read(|d| fresh_wishlist(items, &d.seen_sale_ids, &d.settings.hidden, d.settings.wishlist_min_cut));
     if let Some(n) = wishlist_notice(&fresh) { notify(app, &n.title, &n.body); }
     st.edit(|d| remember_wishlist(&mut d.seen_sale_ids, items, &fresh));
 }
 
-fn fresh_big_deals<'a>(items: &'a [Deal], seen: &HashSet<String>, hidden: &[String]) -> Vec<&'a Deal> {
-    items.iter().filter(|x| x.cut >= 75 && !seen.contains(&x.id) && !is_hidden(hidden, &x.title)).collect()
+fn fresh_big_deals<'a>(items: &'a [Deal], seen: &HashSet<String>, hidden: &[String], min_cut: u32) -> Vec<&'a Deal> {
+    items.iter().filter(|x| x.cut >= min_cut && !seen.contains(&x.id) && !is_hidden(hidden, &x.title)).collect()
 }
 
 fn notify_big_deals(app: &AppHandle, st: &AppState, deals: &[Deal]) {
-    let fresh: Vec<&Deal> = st.read(|d| fresh_big_deals(deals, &d.seen_deal_ids, &d.settings.hidden));
+    let (fresh, min_cut): (Vec<&Deal>, u32) = st.read(|d| (fresh_big_deals(deals, &d.seen_deal_ids, &d.settings.hidden, d.settings.big_deal_min_cut), d.settings.big_deal_min_cut));
     if let [d] = fresh[..] {
         notify(app, &format!("🔥 {}% off: {}", d.cut, d.title), &format!("{} — ${:.2}", d.shop, d.price));
     } else if !fresh.is_empty() {
         let names: Vec<&str> = fresh.iter().take(4).map(|d| d.title.as_str()).collect();
-        notify(app, &format!("{} deals over 75% off", fresh.len()), &(names.join(", ") + if fresh.len() > 4 { "…" } else { "" }));
+        notify(app, &format!("{} deals over {}% off", fresh.len(), min_cut), &(names.join(", ") + if fresh.len() > 4 { "…" } else { "" }));
     }
-    // Hysteresis: forget below 60% so flicker doesn't re-notify but a re-deepened deal does
-    st.edit(|s| {
-        s.seen_deal_ids.extend(fresh.iter().map(|d| d.id.clone()));
-        for d in deals { if d.cut < 60 { s.seen_deal_ids.remove(&d.id); } }
-    });
+    // Hysteresis stays 15 points below the selected notification threshold.
+    st.edit(|s| remember_big_deals(&mut s.seen_deal_ids, deals, &fresh, min_cut));
+}
+
+fn remember_big_deals(seen: &mut HashSet<String>, deals: &[Deal], fresh: &[&Deal], min_cut: u32) {
+    seen.extend(fresh.iter().map(|d| d.id.clone()));
+    for d in deals { if d.cut < min_cut.saturating_sub(15) { seen.remove(&d.id); } }
 }
 
 // ─── Commands ─────────────────────────────────────────────────────────────────
@@ -546,6 +554,8 @@ fn get_settings(st: State<AppState>) -> Settings { st.read(|d| d.settings.clone(
 fn save_settings(st: State<AppState>, settings: Settings) {
     let mut settings = settings;
     settings.hidden = normalize_hidden(settings.hidden);
+    settings.wishlist_min_cut = clamp_cut(settings.wishlist_min_cut, &[10, 20, 30, 50, 75]);
+    settings.big_deal_min_cut = clamp_cut(settings.big_deal_min_cut, &[50, 60, 75, 85, 90]);
     let changed = st.edit(|d| { let c = d.settings.check_interval != settings.check_interval; d.settings = settings; c });
     if changed { st.wake.notify_one(); }
 }
@@ -805,7 +815,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, normalize_hidden, normalize_title, remember_wishlist, restore_by_prefix, safe_https, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, Acct, Deal, Free, Price, Prime, Settings, WishItem};
+    use super::{clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, normalize_hidden, normalize_title, remember_big_deals, remember_wishlist, restore_by_prefix, safe_https, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, Acct, Deal, Free, Price, Prime, Settings, WishItem};
     use std::collections::HashSet;
 
     #[test]
@@ -922,9 +932,9 @@ mod tests {
         let free = vec![game("steam-1", " Hades ", "steam", "free"), game("steam-2", "Control", "steam", "free")];
         assert_eq!(fresh_free(&free, &HashSet::new(), &hidden).iter().map(|g| g.id.as_str()).collect::<Vec<_>>(), ["steam-2"]);
         let wishlist = vec![wish("1", "Hades", Some(40)), wish("2", "Control", Some(40))];
-        assert_eq!(fresh_wishlist(&wishlist, &HashSet::new(), &hidden).iter().map(|w| w.id.as_str()).collect::<Vec<_>>(), ["2"]);
+        assert_eq!(fresh_wishlist(&wishlist, &HashSet::new(), &hidden, 20).iter().map(|w| w.id.as_str()).collect::<Vec<_>>(), ["2"]);
         let deals = vec![Deal { id: "1".into(), title: "Hades".into(), cut: 90, ..Default::default() }, Deal { id: "2".into(), title: "Control".into(), cut: 90, ..Default::default() }];
-        assert_eq!(fresh_big_deals(&deals, &HashSet::new(), &hidden).iter().map(|d| d.id.as_str()).collect::<Vec<_>>(), ["2"]);
+        assert_eq!(fresh_big_deals(&deals, &HashSet::new(), &hidden, 75).iter().map(|d| d.id.as_str()).collect::<Vec<_>>(), ["2"]);
     }
 
     #[test]
@@ -997,20 +1007,20 @@ mod tests {
             wish("2", "Barely", None),
             wish("3", "Hades", Some(20)),
         ];
-        let fresh = fresh_wishlist(&items, &HashSet::new(), &[]);
+        let fresh = fresh_wishlist(&items, &HashSet::new(), &[], 20);
         assert_eq!(fresh.iter().map(|w| w.id.as_str()).collect::<Vec<_>>(), ["3"]);
         let n = wishlist_notice(&fresh).unwrap();
         assert_eq!(n.title, "🏷️ Hades is on sale!");
         assert_eq!(n.body, "20% off — now $4.99 on Steam");
-        assert!(fresh_wishlist(&items, &HashSet::<String>::from(["steam:3".into()]), &[]).is_empty());
+        assert!(fresh_wishlist(&items, &HashSet::<String>::from(["steam:3".into()]), &[], 20).is_empty());
 
         let pair = vec![wish("3", "Hades", Some(20)), wish("4", "Control", Some(50))];
-        let n = wishlist_notice(&fresh_wishlist(&pair, &HashSet::new(), &[])).unwrap();
+        let n = wishlist_notice(&fresh_wishlist(&pair, &HashSet::new(), &[], 20)).unwrap();
         assert_eq!(n.title, "2 wishlist games on sale");
         assert_eq!(n.body, "Hades, Control");
 
         let many: Vec<_> = (0..5).map(|i| wish(&i.to_string(), &format!("G{i}"), Some(40))).collect();
-        let n = wishlist_notice(&fresh_wishlist(&many, &HashSet::new(), &[])).unwrap();
+        let n = wishlist_notice(&fresh_wishlist(&many, &HashSet::new(), &[], 20)).unwrap();
         assert_eq!(n.title, "5 wishlist games on sale");
         assert_eq!(n.body, "G0, G1, G2, G3…");
     }
@@ -1019,17 +1029,40 @@ mod tests {
     fn deeper_wishlist_cut_does_not_renotify() {
         let mut seen = HashSet::new();
         let mut items = vec![wish("10", "Hades", Some(25))];
-        let fresh = fresh_wishlist(&items, &seen, &[]);
+        let fresh = fresh_wishlist(&items, &seen, &[], 20);
         assert_eq!(fresh.len(), 1);
         remember_wishlist(&mut seen, &items, &fresh);
         items[0].price_info.as_mut().unwrap().discount = 60;
-        assert!(fresh_wishlist(&items, &seen, &[]).is_empty());
+        assert!(fresh_wishlist(&items, &seen, &[], 20).is_empty());
         // Under 5% the id is forgotten, so a later sale notifies again.
         items[0].price_info.as_mut().unwrap().discount = 4;
         remember_wishlist(&mut seen, &items, &[]);
         assert!(!seen.contains("steam:10"));
         items[0].price_info.as_mut().unwrap().discount = 30;
-        assert_eq!(fresh_wishlist(&items, &seen, &[]).len(), 1);
+        assert_eq!(fresh_wishlist(&items, &seen, &[], 20).len(), 1);
+    }
+
+    #[test]
+    fn configurable_notification_cuts_and_hysteresis() {
+        assert_eq!(clamp_cut(40, &[10, 20, 30, 50, 75]), 30);
+        assert_eq!(clamp_cut(42, &[10, 20, 30, 50, 75]), 50);
+        assert_eq!(clamp_cut(50, &[50, 60, 75, 85, 90]), 50);
+        let items = vec![wish("1", "A", Some(29)), wish("2", "B", Some(30))];
+        assert_eq!(fresh_wishlist(&items, &HashSet::new(), &[], 30).len(), 1);
+        let deals = vec![Deal { id: "a".into(), cut: 60, ..Default::default() }, Deal { id: "b".into(), cut: 59, ..Default::default() }];
+        assert_eq!(fresh_big_deals(&deals, &HashSet::new(), &[], 75).len(), 0);
+        let mut seen = HashSet::from(["a".into(), "b".into()]);
+        remember_big_deals(&mut seen, &deals, &[], 75);
+        assert!(seen.contains("a"));
+        assert!(!seen.contains("b"));
+        assert_eq!(fresh_big_deals(&deals, &HashSet::new(), &[], 60).len(), 1);
+    }
+
+    #[test]
+    fn notification_cut_defaults_are_serialized_in_camel_case() {
+        let settings = serde_json::to_value(Settings::default()).unwrap();
+        assert_eq!(settings["wishlistMinCut"], 20);
+        assert_eq!(settings["bigDealMinCut"], 75);
     }
 
     #[test]

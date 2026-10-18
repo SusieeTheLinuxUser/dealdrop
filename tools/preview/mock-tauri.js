@@ -12,7 +12,7 @@
   const lastChecked = Date.now() - (flags.get('stale') === '1' ? 3 * 60 * 60 * 1000 : 5 * 60 * 1000)
   let settings = {
     notifyMajorSale: true, notifyFreeGame: true, notifyFreeWeekend: true,
-    notifyWishlistSale: true, notifyBigDeal: false, checkInterval: 60,
+    notifyWishlistSale: true, wishlistMinCut: 20, notifyBigDeal: false, bigDealMinCut: 75, checkInterval: 60,
     theme: 'midnight', baseTheme: 'midnight', lastSaleTheme: '',
     rounded: false, effects: true, launcherGog: 'auto', launcherEpic: 'auto',
     onboarded: flags.get('onboarded') === '1', hidden: [],
