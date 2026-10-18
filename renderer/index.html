@@ -199,19 +199,38 @@
       <!-- SETTINGS -->
       <section class="page" id="page-settings">
         <div class="page-header"><h1>Settings</h1></div>
-        <div class="section-label">Appearance</div>
-        <div class="theme-grid" id="theme-grid"></div>
-        <div class="settings-group" id="look-settings" style="margin-top:10px"></div>
-        <div class="section-label" style="margin-top:24px">Launchers</div>
-        <div class="settings-group" id="launcher-prefs"></div>
-        <div class="section-label" style="margin-top:24px">Notifications</div>
-        <div class="settings-group" id="notif-settings"></div>
-        <div class="section-label" style="margin-top:24px">Check interval</div>
-        <div class="interval-group" id="interval-group"></div>
-
-        <div class="section-label" style="margin-top:24px">Data</div>
-        <button class="action-btn" id="btn-check-settings">Refresh all</button>
-        <button class="action-btn" id="btn-show-onboarding">Show welcome tour again</button>
+        <section class="settings-section">
+          <h2 class="section-label settings-section-heading">Appearance</h2>
+          <div class="theme-grid" id="theme-grid"></div>
+          <div class="settings-group" id="look-settings"></div>
+        </section>
+        <section class="settings-section">
+          <h2 class="section-label settings-section-heading">Notifications</h2>
+          <div class="settings-group" id="notif-settings"></div>
+          <button class="settings-reset" id="btn-reset-settings" type="button" aria-label="Reset appearance and notifications to defaults">Reset appearance &amp; notifications to defaults</button>
+        </section>
+        <section class="settings-section">
+          <h2 class="section-label settings-section-heading">Check interval</h2>
+          <div class="interval-group" id="interval-group"></div>
+          <button class="action-btn" id="btn-check-settings">Refresh all</button>
+        </section>
+        <section class="settings-section">
+          <h2 class="section-label settings-section-heading">Launchers</h2>
+          <div class="settings-group" id="launcher-prefs"></div>
+        </section>
+        <section class="settings-section">
+          <h2 class="section-label settings-section-heading">Accounts</h2>
+          <div class="settings-group" id="settings-accounts"></div>
+        </section>
+        <section class="settings-section settings-about">
+          <h2 class="section-label settings-section-heading">About</h2>
+          <p id="about-version" class="settings-about-version">DealDrop version loading…</p>
+          <p id="about-project-links" class="settings-about-links"></p>
+          <h3>Credits &amp; data sources</h3>
+          <ul id="about-sources" class="settings-about-sources"></ul>
+          <p class="settings-about-trademark">Trademarks belong to their owners; DealDrop is not affiliated with Valve, GOG, Epic, or any store.</p>
+          <button class="action-btn" id="btn-show-onboarding">Show welcome tour again</button>
+        </section>
       </section>
 
     </main>

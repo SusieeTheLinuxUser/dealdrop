@@ -12,6 +12,13 @@ const SALES = [
   { name: 'Summer Sale',         start: '2027-06-24', end: '2027-07-08', icon: '☀️', est: true },
 ]
 
+const DEFAULT_SETTINGS = {
+  notifyMajorSale: true, notifyFreeGame: true, notifyFreeWeekend: true,
+  notifyWishlistSale: true, notifyBigDeal: false, checkInterval: 60,
+  theme: 'midnight', baseTheme: 'midnight', lastSaleTheme: '', rounded: false, effects: true,
+  launcherGog: 'auto', launcherEpic: 'auto', onboarded: false,
+}
+
 const state = {
   page:         'free',
   freeGames:    [],
@@ -26,11 +33,7 @@ const state = {
   wishlistTab:  'all',
   wishlistErrors: {},
   wishlist:     [],
-  settings:     {
-    notifyMajorSale: true, notifyFreeGame: true, notifyFreeWeekend: true,
-    notifyWishlistSale: true, notifyBigDeal: false, checkInterval: 60,
-    theme: 'midnight', baseTheme: 'midnight', lastSaleTheme: '', rounded: false, effects: true, launcherGog: 'auto', launcherEpic: 'auto', onboarded: false,
-  },
+  settings:     { ...DEFAULT_SETTINGS },
   accounts:     { steam: null, gog: null, epic: null },
   sourceErrors: [],
   fetchError:   null,
@@ -736,7 +739,6 @@ function renderSettings () {
   renderThemeGrid()
   toggleRows(document.getElementById('look-settings'), LOOK_TOGGLES, applyTheme)
 
-  renderLauncherPrefs()
   toggleRows(document.getElementById('notif-settings'), NOTIFICATION_TOGGLES.map(r => ({ ...r, sub: r.gamerpower ? 'Epic, Steam, GOG & <a data-href="https://www.gamerpower.com" role="link" tabindex="0">GamerPower</a> giveaways' : r.sub })))
 
   const ig = document.getElementById('interval-group')
@@ -752,6 +754,64 @@ function renderSettings () {
       window.api.saveSettings(s)
     })
     ig.appendChild(b)
+  })
+  renderLauncherPrefs()
+  renderSettingsAccounts()
+  renderAbout()
+  const reset = document.getElementById('btn-reset-settings')
+  reset.textContent = resetSettingsArmed ? 'Really reset?' : 'Reset appearance & notifications to defaults'
+  reset.setAttribute('aria-label', resetSettingsArmed ? 'Confirm reset appearance and notifications to defaults' : 'Reset appearance and notifications to defaults')
+}
+
+function renderSettingsAccounts () {
+  const con = document.getElementById('settings-accounts')
+  con.replaceChildren()
+  Object.keys(STORES).forEach(store => {
+    const row = document.createElement('div'); row.className = 'setting-row settings-account-row'
+    const account = state.accounts[store]
+    const status = document.createElement('span'); status.className = 'setting-label'
+    status.textContent = account ? `${STORES[store]} — signed in as ${account.name || STORES[store] + ' user'}` : `${STORES[store]} — not signed in`
+    row.appendChild(status)
+    if (account) {
+      const signOut = document.createElement('button'); signOut.type = 'button'; signOut.className = 'acct-out'; signOut.textContent = 'Sign out'
+      signOut.addEventListener('click', async () => {
+        setAccounts(await window.api.logout(store))
+        state.wishlist = state.wishlist.filter(item => item.store !== store)
+        navigate(state.page)
+      })
+      row.appendChild(signOut)
+    }
+    con.appendChild(row)
+  })
+}
+
+function renderAbout () {
+  const projectLinks = document.getElementById('about-project-links')
+  const sources = document.getElementById('about-sources')
+  projectLinks.replaceChildren()
+  ;[['GitHub repository', REPO], ['Report an issue', REPO + '/issues']].forEach(([label, url], i) => {
+    if (i) projectLinks.appendChild(document.createTextNode(' · '))
+    const link = document.createElement('a'); link.href = '#'; link.dataset.href = url; link.textContent = label; projectLinks.appendChild(link)
+  })
+  sources.replaceChildren()
+  const credits = [
+    ['Steam', 'https://store.steampowered.com/'], ['GOG', 'https://www.gog.com/'],
+    ['Epic Games', 'https://store.epicgames.com/'], ['GamerPower', 'https://www.gamerpower.com'],
+    ['CheapShark', 'https://www.cheapshark.com'],
+  ]
+  credits.forEach(([name, url]) => {
+    const item = document.createElement('li'), link = document.createElement('a')
+    link.href = '#'; link.dataset.href = url; link.textContent = name; item.appendChild(link); sources.appendChild(item)
+  })
+  const fonts = document.createElement('li'); fonts.textContent = 'DM Sans and DM Mono — SIL Open Font License (OFL)'; sources.appendChild(fonts)
+}
+
+let resetSettingsArmed = false
+let resetSettingsTimer = null
+function resetSettings () {
+  const settings = state.settings
+  Object.assign(settings, DEFAULT_SETTINGS, {
+    launcherGog: settings.launcherGog, launcherEpic: settings.launcherEpic, onboarded: settings.onboarded,
   })
 }
 
@@ -824,6 +884,7 @@ function setAccounts (acc) {
   state.accounts = { steam: acc?.steam ?? null, gog: acc?.gog ?? null, epic: acc?.epic ?? null }
   renderAccounts()
   if (state.page === 'wishlist') renderWishlist()
+  if (state.page === 'settings') renderSettingsAccounts()
 }
 
 // ─── Data loading ─────────────────────────────────────────────────────────────
@@ -932,6 +993,27 @@ async function init () {
   document.getElementById('btn-check-now')?.addEventListener('click',      () => loadData(true))
   document.getElementById('btn-check-settings')?.addEventListener('click', () => loadData(true))
   document.getElementById('btn-show-onboarding')?.addEventListener('click', () => startOnboarding())
+  document.getElementById('btn-reset-settings')?.addEventListener('click', async e => {
+    const btn = e.currentTarget
+    if (!resetSettingsArmed) {
+      resetSettingsArmed = true
+      btn.textContent = 'Really reset?'
+      btn.setAttribute('aria-label', 'Confirm reset appearance and notifications to defaults')
+      clearTimeout(resetSettingsTimer)
+      resetSettingsTimer = setTimeout(() => {
+        resetSettingsArmed = false
+        btn.textContent = 'Reset appearance & notifications to defaults'
+        btn.setAttribute('aria-label', 'Reset appearance and notifications to defaults')
+      }, 4000)
+      return
+    }
+    clearTimeout(resetSettingsTimer); resetSettingsArmed = false; btn.disabled = true
+    resetSettings()
+    try {
+      await window.api.saveSettings(state.settings)
+      applyTheme(); renderSettings()
+    } finally { btn.disabled = false }
+  })
   ;[['deals', renderDeals], ['storesales', renderStoreSales]].forEach(([key, render]) => {
     const input = document.getElementById(key === 'deals' ? 'deals-search' : 'sales-search')
     const sort = document.getElementById(key === 'deals' ? 'deals-sort' : 'sales-sort')
@@ -974,7 +1056,10 @@ async function init () {
     e.preventDefault()
     window.__TAURI__.window.getCurrentWindow().startResizeDragging(el.dataset.dir)
   }))
-  window.__TAURI__.app.getVersion().then(v => { document.getElementById('app-version').textContent = 'DealDrop v' + v }).catch(() => {})
+  window.__TAURI__.app.getVersion().then(v => {
+    document.getElementById('app-version').textContent = 'DealDrop v' + v
+    document.getElementById('about-version').textContent = 'DealDrop v' + v
+  }).catch(() => {})
 
   // ── Load initial state ────────────────────────────────────────────────────
   Object.assign(state.settings, await window.api.getSettings())
