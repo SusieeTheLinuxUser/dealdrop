@@ -870,6 +870,8 @@ function renderSettingsAccounts () {
       signOut.addEventListener('click', async () => {
         setAccounts(await window.api.logout(store))
         state.wishlist = state.wishlist.filter(item => item.store !== store)
+        updateBadges()
+        renderErrors()
         navigate(state.page)
       })
       row.appendChild(signOut)
