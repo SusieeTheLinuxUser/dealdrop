@@ -12,6 +12,7 @@ Short manual test checklist for Windows and macOS. Check each item as you verify
 - [ ] **Minimize / close**: Minimize button minimizes window; close button (`X`) closes to tray instead of quitting.
 - [ ] **Tray interaction**: Clicking tray icon restores/toggles the window; right-click menu offers Open, Refresh all, Quit.
 - [ ] **Resize handles**: Hovering edges and corners shows resize cursors; dragging resizes window (min size 570x420).
+- [ ] **Start at login**: In Settings -> Notifications, turn on **Start DealDrop when I log in**, sign out and back in: only the tray icon appears; opening DealDrop again shows the window. Turning it off removes the entry (Windows: `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` value `DealDrop`; macOS: `~/Library/LaunchAgents/com.dealdrop.desktop.plist`).
 - [ ] **Rounded corners**: In Settings -> Appearance, toggling **Rounded window** rounds the window corners.
 - [ ] **First-run guide**: On a fresh install (no config file) the setup guide opens; Skip or Escape closes it and it does not come back on restart.
 - [ ] **Guide again**: Settings -> About -> "Show welcome guide again" reopens it; choices made there show in Settings afterwards.

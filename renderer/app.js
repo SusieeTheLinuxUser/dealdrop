@@ -1185,6 +1185,39 @@ function toggleRows (con, rows, after) {
   })
 }
 
+// "Start when I log in" lives in the OS (autostart entry), not in state.settings.
+const AUTOSTART_SUB = 'Starts hidden in the tray, so alerts keep coming'
+async function renderAutostart () {
+  const con = document.getElementById('autostart-settings')
+  const on = await window.api.getAutostart().catch(() => false)
+  const row = document.createElement('div')
+  row.className = 'setting-row'
+  const copy = document.createElement('div')
+  const label = document.createElement('div'); label.className = 'setting-label'; label.textContent = 'Start DealDrop when I log in'
+  const sub = document.createElement('div'); sub.className = 'setting-sub'; sub.textContent = AUTOSTART_SUB
+  copy.append(label, sub)
+  const toggle = document.createElement('button')
+  toggle.type = 'button'; toggle.className = 'toggle'
+  toggle.setAttribute('aria-label', label.textContent)
+  const show = value => { toggle.classList.toggle('on', value); toggle.setAttribute('aria-pressed', String(value)) }
+  show(on)
+  toggle.addEventListener('click', async () => {
+    if (toggle.disabled) return
+    const next = !toggle.classList.contains('on')
+    show(next); toggle.disabled = true
+    try {
+      await window.api.setAutostart(next)
+    } catch (err) {
+      show(!next)
+      sub.textContent = String(err); sub.classList.add('err')
+      announceStatus(`Couldn't change start at login`)
+      setTimeout(() => { sub.textContent = AUTOSTART_SUB; sub.classList.remove('err') }, 5000)
+    } finally { toggle.disabled = false }
+  })
+  row.append(copy, toggle)
+  con.replaceChildren(row)
+}
+
 // "Open GOG/Epic games in": Auto prefers the store's own client.
 function renderLauncherPrefs () {
   const con = document.getElementById('launcher-prefs')
@@ -1223,6 +1256,7 @@ function renderSettings () {
   renderThemeGrid()
   toggleRows(document.getElementById('look-settings'), LOOK_TOGGLES, applyTheme)
 
+  renderAutostart()
   toggleRows(document.getElementById('notif-settings'), NOTIFICATION_TOGGLES)
 
   const ig = document.getElementById('interval-group')

@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod autostart;
 mod launchers;
 mod sources;
 mod stores;
@@ -682,6 +683,12 @@ fn window_minimize(app: AppHandle) { if let Some(w) = app.get_webview_window("ma
 fn window_close(app: AppHandle) { if let Some(w) = app.get_webview_window("main") { let _ = w.hide(); } }
 
 #[tauri::command]
+fn get_autostart() -> bool { autostart::get() }
+
+#[tauri::command]
+fn set_autostart(on: bool) -> Result<(), String> { autostart::set(on) }
+
+#[tauri::command]
 async fn wishlist_game_deals(app_id: String, name: String) -> Value {
     let ids = [app_id.clone()];
     let (steam, cheapest) = tokio::join!(steam_items(&ids), cheapest_for_steam_app(&app_id));
@@ -699,7 +706,10 @@ fn load_db(path: &PathBuf) -> Db {
 
 fn main() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _, _| show_main(app)))
+        // A second launch shows the window, unless it is the login autostart (`--hidden`)
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _| {
+            if !argv.iter().any(|a| a == autostart::HIDDEN) { show_main(app) }
+        }))
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
@@ -720,6 +730,7 @@ fn main() {
                 .min_inner_size(570.0, 420.0)
                 .decorations(false)
                 .transparent(true) // the page paints the background so the window corners can be rounded
+                .visible(!std::env::args().any(|a| a == autostart::HIDDEN)) // login autostart: tray only
                 // `cargo tauri dev` serves the UI from http://127.0.0.1:1430; release builds never do.
                 .on_navigation(|u| matches!(u.scheme(), "tauri" | "about") || u.host_str() == Some("tauri.localhost")
                     || (cfg!(debug_assertions) && u.scheme() == "http" && matches!(u.host_str(), Some("127.0.0.1" | "localhost"))))
@@ -786,7 +797,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_settings, save_settings, fetch_data, check_now, get_accounts,
             steam_login, gog_login, epic_login, logout, open_url, open_in_app, open_deal_in_app, launchers,
-            window_minimize, window_close, wishlist_game_deals,
+            window_minimize, window_close, wishlist_game_deals, get_autostart, set_autostart,
         ])
         .run(tauri::generate_context!())
         .expect("error while running DealDrop");

@@ -17,6 +17,7 @@
     rounded: false, effects: true, launcherGog: 'auto', launcherEpic: 'auto',
     onboarded: flags.get('onboarded') === '1', hidden: [],
   }
+  let autostart = false
   let accounts = {
     steam: signedStores.has('steam') ? { name: stress ? stressAccount : 'PlayerOne', avatar: null, profileUrl: 'https://steamcommunity.com/' } : null,
     gog: signedStores.has('gog') ? { name: stress ? stressAccount : 'PlayerOne', avatar: null, profileUrl: 'https://www.gog.com/u/' } : null,
@@ -115,6 +116,8 @@
       case 'check_now': sample.lastChecked = Date.now(); return clone(sample)
       case 'get_accounts': return clone(accounts)
       case 'launchers': return launchers()
+      case 'get_autostart': return autostart
+      case 'set_autostart': autostart = args.on; return undefined
       case 'steam_login': accounts.steam = { name: 'Preview Steam', avatar: null, profileUrl: 'https://steamcommunity.com/' }; signedStores.add('steam'); syncWishlist(); return clone(accounts)
       case 'gog_login': accounts.gog = { name: 'Preview GOG', avatar: null, profileUrl: 'https://www.gog.com/u/' }; signedStores.add('gog'); syncWishlist(); return clone(accounts)
       case 'epic_login': accounts.epic = { name: 'Preview Epic', avatar: null, profileUrl: 'https://www.epicgames.com/account/personal' }; signedStores.add('epic'); syncWishlist(); return clone(accounts)

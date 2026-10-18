@@ -10,6 +10,7 @@ It polls store APIs, shows free games / store sales / hot deals / wishlists, and
 | `src-tauri/src/main.rs` | App state, persistence (`config.json` in the OS config dir: `~/.config/dealdrop` / `%APPDATA%\dealdrop` / `~/Library/Application Support/dealdrop`), poll loop, notifications, tray, Tauri commands |
 | `src-tauri/src/sources.rs` | Every no-account HTTP source (Steam, GOG, Epic free, GamerPower, CheapShark) + live smoke tests |
 | `src-tauri/src/stores.rs` | Sign-in window + Steam/GOG/Epic auth, GOG & Epic wishlists, Epic sales |
+| `src-tauri/src/autostart.rs` | "Start when I log in": per-OS entry (XDG autostart file / `Run` registry value / LaunchAgent) that runs the app with `--hidden` (tray only); the OS entry is the only record of the setting |
 | `src-tauri/src/launchers.rs` | Open-in-launcher table, per-OS install detection, deep links |
 | `.github/workflows/ci.yml` | Every push to `dev`/`main` and every PR → `cargo test` + `node tools/preview/selfcheck.mjs` |
 | `.github/workflows/release.yml` | Manual dispatch → builds Windows .msi + macOS .dmg and attaches them to an existing release |
@@ -96,6 +97,7 @@ See [TODO.md](TODO.md) (e.g. the KDE minimize animation flying to the pointer in
 ## Known unverified paths
 
 - Windows and macOS builds are CI-built only (not yet run by the maintainer on those OSes); their `has_scheme` detection and the unsigned-install flow are untested.
+- Start at login on Windows (`reg add` of a `Run` value) and macOS (LaunchAgent plist with `RunAtLoad`) has not been run on a real machine (only the plist text is unit-tested; see [TESTING.md](TESTING.md)). Linux was checked by unit test plus the written `.desktop` file.
 - GOG/Epic wishlist sign-in works for the maintainer's accounts but follows the launchers' unofficial OAuth flows; if one breaks, the UI shows the error above the wishlist.
 - Epic's `store/p/<slug>` deep link versus documented `store/product/<slug>` route is unverified. [Heroic issue #3342](https://github.com/Heroic-Games-Launcher/HeroicGamesLauncher/issues/3342) reports `/p/` works in the official Windows client; Linux without the official launcher falls back to the browser. See [TESTING.md](TESTING.md) for manual checks.
 - Sale themes during a live sale have not been seen end to end.
