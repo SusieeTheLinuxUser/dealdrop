@@ -1,6 +1,6 @@
 # Preview coverage for TESTING.md
 
-Start the local server as described in [README.md](README.md), then use `http://localhost:8000/tools/preview/`. Flags can be combined with `&`.
+Start the local server as described in [README.md](README.md), then use `http://localhost:8000/tools/preview/`. Flags can be combined with `&`. Run `node tools/preview/selfcheck.mjs` from the repo root for helper assertions.
 
 | TESTING.md item (sections 2–7) | Preview or real-build check |
 |---|---|
@@ -12,7 +12,7 @@ Start the local server as described in [README.md](README.md), then use `http://
 | Rounded corners setting | `?onboarded=1` — toggle in Settings; inspect corners (browser transparency may differ). |
 | First-run guide and Skip/Escape persistence | No flag — test guide dismissal; persistent config across restart needs a real build. |
 | Guide again from Settings | `?onboarded=1` — Settings → About → Show welcome guide again. |
-| Coach tour fit and highlights | No flag — open guide, choose Show me around; inspect at a 570×420 pane. |
+| Coach tour fit and highlights | No flag — open guide, choose Show me around; verify all four targets and highlights fit at 570×420 and copy matches the UI. |
 | Keyboard shortcuts and typing guard | `?onboarded=1` — press `?`, try `/` on Wishlist/Store sales/Hot deals, then confirm shortcuts are ignored while typing. |
 | Bundled fonts offline | Needs a real build for offline confirmation; preview sources fonts locally, no external requests. |
 | Free games, sales, and hot deals populate | `?onboarded=1` — inspect Free now, Store sales, and Hot deals. |

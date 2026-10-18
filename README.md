@@ -63,6 +63,8 @@ cargo tauri build --bundles appimage        # Linux AppImage
 cargo tauri build                           # Windows MSI or macOS DMG on that OS
 ```
 
+Run the dependency-free renderer helper self-check from the repo root with `node tools/preview/selfcheck.mjs`.
+
 ---
 
 ## Security & privacy
