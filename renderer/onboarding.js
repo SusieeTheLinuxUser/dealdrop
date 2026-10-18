@@ -86,7 +86,6 @@
       ;[['steam','Steam'],['gog','GOG'],['epic','Epic Games']].forEach(([key,name]) => {
         const row = document.createElement('div'); row.className = 'onboarding-account'
         const account = state.accounts[key], status = document.createElement('span')
-        status.dataset.focusKey = 'account-' + key; status.tabIndex = -1
         status.textContent = account ? name + ': signed in as ' + (account.name || name + ' user') : name + ': not signed in'
         if (account?.avatar) { const image = document.createElement('img'); image.src = account.avatar; image.alt = ''; row.appendChild(image) }
         row.appendChild(status)
@@ -117,9 +116,9 @@
     if (step) actions.appendChild(button('Back', 'onboarding-secondary', () => { step--; render() }))
     if (step < 4) { const skip = button('Skip', 'onboarding-skip', finish); skip.setAttribute('aria-label', 'Skip and keep my choices'); actions.appendChild(skip) }
     actions.appendChild(button(step === 4 ? 'Finish' : 'Next', 'onboarding-primary', () => { if (step === 4) finish(); else { step++; render() } }))
-    const restore = focusKey && [...dialog.querySelectorAll('[data-focus-key]')].find(el => el.dataset.focusKey === focusKey)
+    const restore = focusKey && [...dialog.querySelectorAll('button:not(:disabled)[data-focus-key],select[data-focus-key],a[href][data-focus-key]')].find(el => el.dataset.focusKey === focusKey)
     if (restore) restore.focus()
-    else if (stepChanged) actions.querySelector('button:last-child').focus()
+    else if (stepChanged || focusKey) actions.querySelector('button:last-child').focus()
   }
   function startTour () {
     if (!dialog || tourOverlay) return
