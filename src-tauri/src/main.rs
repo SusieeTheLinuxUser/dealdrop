@@ -951,6 +951,7 @@ fn main() {
                 poll_lock: AsyncMutex::new(()),
                 wake: Notify::new(),
             });
+            std::thread::spawn(autostart::refresh); // off the startup path: Windows runs `reg`
 
             // The main webview may only ever show the bundled UI. Anything else (a stray link,
             // a redirect) is blocked; real links go through `open_url` to the default browser.
