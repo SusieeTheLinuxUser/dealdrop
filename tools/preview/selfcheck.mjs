@@ -31,7 +31,7 @@ vm.runInContext([
   between('function nextTheme (', '\nfunction syncSaleTheme'),
   between('const targetKey', '\nfunction wishlistTargetTag'),
   between('const nextIndex', '\n// Moves focus between'),
-  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge, mergeUiPrefs, dealShops, parseClaimed, pruneClaimed, toggleClaimed, claimedLast, normalizeTitle, hiddenTitle, searchRank, parseSeen, newIds, mergeSeen, wishlistKey, seenIds, PAGE_SIZE, pageSlice, nextTheme, targetKey, targetPrice, targetHit, parseTarget , nextIndex }',
+  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge, mergeUiPrefs, dealShops, parseClaimed, pruneClaimed, toggleClaimed, claimedLast, normalizeTitle, hiddenTitle, searchRank, parseSeen, newIds, mergeSeen, wishlistKey, seenIds, salesSeenIds, PAGE_SIZE, pageSlice, nextTheme, targetKey, targetPrice, targetHit, parseTarget , nextIndex }',
 ].join('\n'), context)
 
 const h = context.helpers
@@ -87,6 +87,13 @@ assert.equal(JSON.stringify([...h.newIds(['a', 'b', 'c'], ['b'])]), '["a","c"]')
 assert.equal(JSON.stringify(h.mergeSeen({ deals: ['old'], storesales: null }, 'deals', ['a', 'b', 'a'])), '{"deals":["a","b"],"storesales":null}')
 const seenBefore = { deals: ['a'], storesales: ['s'] }
 assert.equal(h.mergeSeen(seenBefore, 'storesales', []), seenBefore) // empty list may be a failed load: keep the old set
+// Store sales: leaving after the Steam tab marks only Steam; unopened GOG keeps its old seen ids, its new sale stays new
+assert.equal(h.state.salesViewed.size, 0)
+const salesNow = { steam: [{ id: 's1' }, { id: 's2' }], gog: [{ id: 'g1' }, { id: 'g2' }], epic: [] }
+const salesSeen = h.salesSeenIds(salesNow, new Set(['steam']), ['s1', 'g1', 'gone'])
+assert.equal(JSON.stringify(salesSeen), '["s1","s2","g1"]')
+assert.equal(JSON.stringify([...h.newIds(Object.values(salesNow).flat().map(d => d.id), salesSeen)]), '["g2"]')
+assert.equal(JSON.stringify(h.salesSeenIds(salesNow, new Set(['steam', 'gog', 'epic']), [])), '["s1","s2","g1","g2"]')
 
 // Wishlist: only discounted games count, a new sale after full price is a new key, hidden titles never light the dot
 const wish = (id, discount, name = id) => ({ store: 'gog', id, name, priceInfo: discount == null ? null : { discount } })

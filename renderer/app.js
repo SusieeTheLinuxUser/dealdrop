@@ -127,6 +127,7 @@ const state = {
   liveSale:     null,
   launchers:    {},   // store -> { options:[{key,label}], chosen:{key,label}|null } from the backend
   salesTab:     'steam',
+  salesViewed:  new Set(), // Store sales tabs shown since the page was last marked seen
   wishlistTab:  'all',
   wishlistErrors: {},
   wishlist:     [],
@@ -1124,13 +1125,21 @@ function seenIds (page, visibleOnly = false) {
   if (page === 'wishlist') return state.wishlist.filter(w => w.priceInfo?.discount > 0 && (!visibleOnly || !hiddenTitle(w.name))).map(wishlistKey)
   return (page === 'deals' ? state.deals : Object.values(state.sales).flat()).filter(d => !visibleOnly || !hiddenTitle(d.title)).map(d => d.id)
 }
+// Store sales: the tabs shown get their current ids; the others keep only what was seen before (the format stays a flat id list)
+function salesSeenIds (sales, viewed, old) {
+  const before = new Set(old)
+  return Object.entries(sales).flatMap(([tab, list]) => (list ?? []).map(d => d.id).filter(id => viewed.has(tab) || before.has(id)))
+}
 const unseen = page => newIds(seenIds(page, true), state.seen[page]) // hidden games don't light the dot
 
 // Called when the user leaves the page or hides the window, not on render, so the tags stay while they look
 function markSeen (page) {
   if (!SEEN_PAGES.includes(page) || !state.dataLoaded) return
+  // First run (nothing stored yet) records every store's sales; later only the tabs the user looked at
+  const ids = page === 'storesales' && state.seen.storesales ? salesSeenIds(state.sales, state.salesViewed, state.seen.storesales) : seenIds(page)
+  if (page === 'storesales') state.salesViewed = new Set()
   // A loaded wishlist with nothing on sale is a real empty set, so the first sale afterwards is new
-  state.seen = mergeSeen(state.seen, page, seenIds(page), page === 'wishlist' ? state.wishlist.length > 0 : undefined)
+  state.seen = mergeSeen(state.seen, page, ids, page === 'wishlist' ? state.wishlist.length > 0 : undefined)
   try { localStorage.setItem(SEEN_KEY, JSON.stringify(state.seen)) } catch {}
   updateBadges()
 }
@@ -1283,6 +1292,7 @@ function renderStoreSales () {
     state.salesTab, 'Stores', s => { state.salesTab = s; renderStoreSales() })
 
   grid.innerHTML = ''
+  if (state.page === 'storesales') state.salesViewed.add(state.salesTab)
   const list = state.sales[state.salesTab] ?? []
   const items = filteredSorted(list, 'storesales')
   updateResultCount('storesales', items.length, list.length)
