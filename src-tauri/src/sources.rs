@@ -773,20 +773,30 @@ pub async fn cheapshark_deals() -> R<Vec<Deal>> {
     let body = body?;
     let mut deals = parse_cheapshark_deals(&body, &stores)?;
     let game_by_deal = cheapshark_deals_by_game(&body);
-    let lowest = cheapshark_lowest(game_by_deal.values().cloned()).await;
+    let (lowest, _) = cheapshark_games(game_by_deal.values().cloned()).await;
     for deal in &mut deals {
         deal.lowest = game_by_deal.get(&deal.id).and_then(|id| lowest.get(id)).copied();
     }
     Ok(deals)
 }
 
-/// gameID → all-time low, 25 ids per request; failed batches are just missing.
-async fn cheapshark_lowest(ids: impl IntoIterator<Item = String>) -> HashMap<String, f64> {
+/// gameID → all-time low, and dealID → storeID of each game's current deals; 25 ids per request,
+/// failed batches are just missing.
+async fn cheapshark_games(ids: impl IntoIterator<Item = String>) -> (HashMap<String, f64>, HashMap<String, String>) {
     let ids: Vec<String> = ids.into_iter().collect::<std::collections::HashSet<_>>().into_iter().collect();
     let results = futures::future::join_all(ids.chunks(25).map(|chunk| async move {
         cheapshark_get(&format!("https://www.cheapshark.com/api/1.0/games?ids={}", chunk.join(","))).await.ok()
     })).await;
-    results.into_iter().flatten().flat_map(|body| parse_cheapshark_lowest(&body)).collect()
+    let bodies: Vec<String> = results.into_iter().flatten().collect();
+    (bodies.iter().flat_map(|b| parse_cheapshark_lowest(b)).collect(), bodies.iter().flat_map(|b| parse_deal_stores(b)).collect())
+}
+
+fn parse_deal_stores(body: &str) -> HashMap<String, String> {
+    let Ok(v) = serde_json::from_str::<Value>(body) else { return HashMap::new() };
+    v.as_object().into_iter().flatten()
+        .flat_map(|(_, game)| game["deals"].as_array().into_iter().flatten())
+        .filter_map(|d| Some((s(&d["dealID"])?, s(&d["storeID"])?)))
+        .collect()
 }
 
 fn cheapshark_deals_by_game(body: &str) -> HashMap<String, String> {
@@ -859,20 +869,17 @@ pub async fn attach_cheapest(items: &mut [WishItem]) -> R<Vec<usize>> {
     let games: Vec<(usize, String)> = found.iter()
         .filter(|m| items[m.0].price_info.as_ref().is_some_and(|p| p.discount > 0))
         .filter_map(|m| Some((m.0, m.3.clone()?))).collect();
-    // Only look up store/link for games where somebody else is strictly cheaper
+    // Store/link only for games where somebody else is strictly cheaper. The same batched `games?ids=`
+    // lookup lists each game's deals with their store, so no request per item (that burst drew 429s).
     let cheaper: Vec<_> = found.into_iter()
-        .filter_map(|(i, price, deal, _)| Some((i, price, deal?)))
-        .filter(|(i, price, _)| items[*i].price_info.as_ref().is_some_and(|p| *price + 0.005 < p.fin))
+        .filter_map(|(i, price, deal, game)| Some((i, price, deal?, game?)))
+        .filter(|(i, price, _, _)| items[*i].price_info.as_ref().is_some_and(|p| *price + 0.005 < p.fin))
         .collect();
-    let (lowest, details) = futures::join!(
-        cheapshark_lowest(games.iter().map(|(_, g)| g.clone())),
-        futures::future::join_all(cheaper.iter().map(|(_, _, deal)| async move {
-            cheapshark_json(&format!("https://www.cheapshark.com/api/1.0/deals?id={deal}")).await.ok()
-        }))
-    );
+    let ids = games.iter().map(|(_, g)| g.clone()).chain(cheaper.iter().map(|c| c.3.clone()));
+    let (lowest, deal_stores) = cheapshark_games(ids).await;
     assign_lowest(items, &games, &lowest);
-    for ((i, price, deal), d) in cheaper.into_iter().zip(details) {
-        let store = d.and_then(|d| s(&d["gameInfo"]["storeID"])).and_then(|id| stores.get(&id).cloned());
+    for (i, price, deal, _) in cheaper {
+        let store = deal_stores.get(&deal).and_then(|id| stores.get(id).cloned());
         match store {
             Some(store) => items[i].cheapest = Some(Cheapest { store, price, url: format!("https://www.cheapshark.com/redirect?dealID={deal}") }),
             None => answered[i] = false,
@@ -985,6 +992,16 @@ mod live {
         for i in w.iter().filter(|i| i.cheapest.is_some()).take(5) {
             println!("{} steam ${:.2} -> {:?}", i.name, i.price_info.as_ref().unwrap().fin, i.cheapest);
         }
+    }
+    #[tokio::test] #[ignore] async fn wishlist_cheaper_store_live() {
+        // Priced far above any real offer, so CheapShark must name a cheaper store from the batched games?ids= lookup
+        let price = Some(Price { fin: 999.0, currency: Some("USD".into()), ..Default::default() });
+        let mut w = vec![WishItem { app_id: Some("620".into()), name: "Portal 2".into(), price_info: price, ..Default::default() }];
+        let unanswered = attach_cheapest(&mut w).await.unwrap();
+        println!("{:?}", w[0].cheapest);
+        assert!(unanswered.is_empty());
+        let c = w[0].cheapest.as_ref().expect("a cheaper store");
+        assert!(!c.store.is_empty() && c.url.starts_with("https://www.cheapshark.com/redirect?dealID="));
     }
     #[tokio::test] #[ignore] async fn steam_wishlist_prices_live() {
         let ids = vec!["60".to_string(), "1203620".to_string()];
@@ -1475,6 +1492,10 @@ mod unit {
         assert_eq!(m.get("10"), Some(&0.0));
         assert!(super::parse_cheapshark_lowest("[]").is_empty());
         assert!(super::parse_cheapshark_lowest("not json").is_empty());
+        let games = r#"{"36":{"deals":[{"storeID":"1","dealID":"a%3D"},{"storeID":"7"}]},"7":{"deals":[{"storeID":"25","dealID":"b"}]},"8":[]}"#;
+        let m = super::parse_deal_stores(games);
+        assert_eq!((m.len(), m.get("a%3D").map(String::as_str), m.get("b").map(String::as_str)), (2, Some("1"), Some("25")));
+        assert!(super::parse_deal_stores("not json").is_empty());
         assert!(super::cheapshark_deals_by_game("not json").is_empty());
     }
 
