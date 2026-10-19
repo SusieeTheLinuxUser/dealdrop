@@ -1808,6 +1808,7 @@ function resetSettings () {
   const settings = state.settings
   Object.assign(settings, DEFAULT_SETTINGS, {
     launcherGog: settings.launcherGog, launcherEpic: settings.launcherEpic, onboarded: settings.onboarded,
+    hidden: settings.hidden, priceTargets: settings.priceTargets,
     lastSaleTheme: SALE_THEMES[state.liveSale?.key] ? state.liveSale.key : '',
   })
   state.listFilters = {
