@@ -324,7 +324,7 @@ fn keep_prices(items: &mut [WishItem], prev: &[WishItem]) {
 }
 
 /// CheapShark gave no answer for these items this poll (a failed request, or past the lookup cap):
-/// keep the last cheaper offer while the store's own price is unchanged, so one bad poll neither
+/// keep the last cheaper offer (and lowest-ever price) while the store's own price is unchanged, so one bad poll neither
 /// hides it nor re-arms its price target (which would notify again on the next good poll).
 /// ponytail: an item that stays past the cap keeps an offer that may have ended, until its own price
 /// changes; rotate the lookups if that shows up.
@@ -333,7 +333,7 @@ fn carry_cheapest(items: &mut [WishItem], prev: &[WishItem], unanswered: &[usize
     for &i in unanswered {
         let w = &mut items[i];
         let Some(p) = prev.iter().find(|p| p.store == w.store && p.id == w.id) else { continue };
-        if own(p) == own(w) { w.cheapest = p.cheapest.clone(); }
+        if own(p) == own(w) { w.cheapest = p.cheapest.clone(); w.lowest = w.lowest.or(p.lowest); }
     }
 }
 
@@ -1443,18 +1443,20 @@ mod tests {
         item.price_info.as_mut().unwrap().currency = Some("USD".into());
         let mut offer = item.clone();
         offer.cheapest = Some(Cheapest { store: "Fanatical".into(), price: 9.5, url: String::new() });
+        offer.lowest = Some(8.0);
         let (hits, fired) = target_hits(std::slice::from_ref(&offer), &targets, &HashMap::new(), &[]);
         assert_eq!(hits.len(), 1);
         // next poll CheapShark has no answer for it: the offer carries over and the target stays fired
         let mut now = vec![item.clone()];
         carry_cheapest(&mut now, std::slice::from_ref(&offer), &[0]);
+        assert_eq!(now[0].lowest, Some(8.0)); // its "Lowest ever" tag doesn't flicker off either
         let (hits, fired) = target_hits(&now, &targets, &fired, &[]);
         assert!(hits.is_empty() && fired.contains_key("steam:a"));
         // a changed store price drops the old offer; an answered item is left alone
         let mut now = vec![item.clone(), item];
         now[0].price_info.as_mut().unwrap().fin = 19.0;
         carry_cheapest(&mut now, std::slice::from_ref(&offer), &[0]);
-        assert!(now[0].cheapest.is_none() && now[1].cheapest.is_none());
+        assert!(now[0].cheapest.is_none() && now[1].cheapest.is_none() && now[0].lowest.is_none());
     }
 
     #[test]
