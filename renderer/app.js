@@ -1320,21 +1320,20 @@ window.dealDropOnboarding = { state, baseThemes: BASE_THEMES, lookToggles: LOOK_
 
 // A sale starting switches to its theme once. If the user picks something else, lastSaleTheme
 // stays set, so a restart doesn't switch back. When the sale ends its theme is dropped.
+// liveKey: the live sale's key, '' when none, null when detection failed (change nothing).
+// keepTheme: record the sale but leave the theme (the tour's theme pick wins).
+function nextTheme ({ theme, baseTheme, lastSaleTheme }, liveKey, keepTheme = false) {
+  if (liveKey == null || (SALE_THEMES[liveKey] && lastSaleTheme === liveKey)) return { theme, lastSaleTheme }
+  if (SALE_THEMES[liveKey]) return { theme: keepTheme ? theme : liveKey, lastSaleTheme: liveKey }
+  return { theme: SALE_THEMES[theme] ? (BASE_THEMES[baseTheme] ? baseTheme : 'midnight') : theme, lastSaleTheme: '' }
+}
+
 function syncSaleTheme () {
   const s = state.settings
-  const key = state.liveSale?.key ?? ''
-  let dirty = false
-  if (key && SALE_THEMES[key]) {
-    if (s.lastSaleTheme !== key) {
-      s.lastSaleTheme = key
-      if (!state.onboardingOpen || !state.onboardingThemePicked) s.theme = key
-      dirty = true
-    }
-  } else {
-    if (SALE_THEMES[s.theme]) { s.theme = BASE_THEMES[s.baseTheme] ? s.baseTheme : 'midnight'; dirty = true }
-    if (s.lastSaleTheme) { s.lastSaleTheme = ''; dirty = true }
-  }
-  if (dirty) window.api.saveSettings(s)
+  // A failed check (e.g. offline at login) is not "the sale ended": main.rs pushes this prefix via failure()
+  const failed = state.sourceErrors.some(e => e.startsWith('Steam sale detection:'))
+  const next = nextTheme(s, failed ? null : state.liveSale?.key ?? '', state.onboardingOpen && state.onboardingThemePicked)
+  if (next.theme !== s.theme || next.lastSaleTheme !== s.lastSaleTheme) { Object.assign(s, next); window.api.saveSettings(s) }
   applyTheme()
 }
 

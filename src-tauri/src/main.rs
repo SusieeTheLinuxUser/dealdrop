@@ -342,6 +342,7 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
             }
             live
         }
+        // app.js syncSaleTheme matches this "Steam sale detection" name to keep the theme as is
         Err(e) => { eprintln!("[sale-detect] {e}"); source_errors.lock().unwrap().push(failure("Steam sale detection", &e)); prev.live_sale.clone() }
     };
 

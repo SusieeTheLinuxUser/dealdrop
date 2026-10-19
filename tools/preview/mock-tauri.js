@@ -83,7 +83,8 @@
         deal('epic-sale-128', 'Classic Quest', 'Epic Games', 95, 1.49, 29.99, '128', 'https://store.epicgames.com/p/classic-quest'),
       ],
     },
-    liveSale: flags.get('sale') === 'winter' ? { key: 'winter', name: 'Winter Sale', url: 'https://store.steampowered.com/specials' } : null,
+    // ?sale=<key> (lunar, spring, summer, halloween, autumn, winter, or anything else for a sale with no theme)
+    liveSale: flags.get('sale') ? { key: flags.get('sale'), name: `Steam ${flags.get('sale')} sale`, url: 'https://store.steampowered.com/specials' } : null,
     deals: empty ? [] : [
       { ...deal('deal-440', 'Team Fortress 2', 'Steam', 20, 7.99, 9.99, '440', undefined, 7.99), rating: 97, ratingText: 'Overwhelmingly Positive' },
       { ...deal('deal-123', 'Skyward Bound', 'GOG', 55, 13.49, 29.99, '123', 'https://www.gog.com/game/skyward_bound', 13.49), rating: 88, ratingText: 'Very Positive' },

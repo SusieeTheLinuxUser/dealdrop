@@ -39,4 +39,4 @@ Start the local server as described in [README.md](README.md), then use `http://
 | Minimum discount chips and Clear filters | `?onboarded=1` — Hot deals and Store sales; try Any, 50%+, 75%+, 90%+, then clear a no-match filter. |
 | Responsive layout at narrow and wide sizes | `?stress=1&onboarded=1` — inspect every page at 570×420, 520px, 1280×800 and 1600×1000; check long text, $1234.56, toolbars, and grid fill. |
 | Reduced motion and scrolling | `?onboarded=1` — emulate `prefers-reduced-motion: reduce`; verify transitions, scrolling, and tour spotlight movement are instant. |
-| Live sale theme activation | `?onboarded=1&sale=winter` — inspect sale banner, theme, and effects. |
+| Live sale theme activation | `?onboarded=1&sale=<key>` (lunar, spring, summer, halloween, autumn, winter) — inspect sale banner, theme, "· live" chip, and effects; reload without `sale` and confirm the base theme returns. |

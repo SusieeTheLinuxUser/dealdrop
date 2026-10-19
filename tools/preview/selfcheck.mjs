@@ -27,7 +27,9 @@ vm.runInContext([
   between('function seenIds (', '\nconst unseen'),
   between('function updateRefreshAge (', '\nfunction updateLastCheckedLabels'),
   between('const PAGE_SIZE', '\n// Rows for the first'),
-  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge, mergeUiPrefs, dealShops, parseClaimed, pruneClaimed, toggleClaimed, claimedLast, normalizeTitle, hiddenTitle, searchRank, parseSeen, newIds, mergeSeen, wishlistKey, seenIds, PAGE_SIZE, pageSlice }',
+  between('const BASE_THEMES = {', '\nfunction applyTheme'),
+  between('function nextTheme (', '\nfunction syncSaleTheme'),
+  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge, mergeUiPrefs, dealShops, parseClaimed, pruneClaimed, toggleClaimed, claimedLast, normalizeTitle, hiddenTitle, searchRank, parseSeen, newIds, mergeSeen, wishlistKey, seenIds, PAGE_SIZE, pageSlice, nextTheme }',
 ].join('\n'), context)
 
 const h = context.helpers
@@ -142,4 +144,25 @@ h.state.lastChecked = Date.now()
 h.updateRefreshAge()
 assert.equal(label.textContent, 'Updated just now')
 
-console.log('Renderer self-check passed (escaping, hidden titles, search ranking, filters, store filter, UI preference merge, claimed games, seen deals, list paging, next sale, refresh age).')
+// Sale-theme lifecycle: each step feeds the last result back in, like settings saved across polls/restarts
+let look = { theme: 'lavender', baseTheme: 'lavender', lastSaleTheme: '' }
+const step = (key, pick, keep) => { if (pick) Object.assign(look, pick); look = { ...look, ...h.nextTheme(look, key, keep) }; return `${look.theme}/${look.lastSaleTheme}` }
+assert.equal(step(''), 'lavender/')                                            // no sale
+assert.equal(step(null), 'lavender/')                                          // detection failed: no change
+assert.equal(step('winter'), 'winter/winter')                                  // sale starts: switch once
+assert.equal(step('winter'), 'winter/winter')
+assert.equal(step('winter', { theme: 'forest', baseTheme: 'forest' }), 'forest/winter') // user picks a base theme mid-sale
+assert.equal(step('winter'), 'forest/winter')                                  // ...and it sticks across a restart
+assert.equal(step(null), 'forest/winter')                                      // a failed check at startup doesn't reset it
+assert.equal(step('winter'), 'forest/winter')
+assert.equal(step('winter', { theme: 'winter' }), 'winter/winter')             // picks the sale theme again
+assert.equal(step(''), 'forest/')                                              // sale ends: back to baseTheme
+assert.equal(step('summer'), 'summer/summer')                                  // next different sale switches again
+assert.equal(step('autumn'), 'autumn/autumn')                                  // a sale straight after another switches too
+assert.equal(step('', { theme: 'summer' }), 'forest/')                         // ends while on another sale's theme: baseTheme
+assert.equal(step('seasonal'), 'forest/')                                      // unknown sale with no theme: no change
+assert.equal(step('lunar', null, true), 'forest/lunar')                        // tour theme pick wins, but the sale is recorded
+assert.equal(step('lunar'), 'forest/lunar')
+assert.equal(step('', { theme: 'lunar', baseTheme: 'gone' }), 'midnight/')     // unknown baseTheme falls back to midnight
+
+console.log('Renderer self-check passed (escaping, hidden titles, search ranking, filters, store filter, UI preference merge, claimed games, seen deals, list paging, next sale, refresh age, sale themes).')
