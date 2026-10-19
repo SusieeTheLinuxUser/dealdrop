@@ -6,6 +6,7 @@ All notable changes to DealDrop are documented in this file.
 - Keyboard: **J / K** move to the next / previous item on Hot deals, Store sales, Wishlist and Free now (Enter opens it); listed under `?`.
 - Optional **Free DLC & loot** section on Free now (Settings → Free now, off by default): in-game items and DLC giveaways from GamerPower, hideable and searchable, never notified or counted in the badge.
 - Wishlist price targets: a game's **Target** button sets "tell me at or below $X"; one notification when its price (or a cheaper offer elsewhere) reaches it, again only after it rises above or the target changes. USD prices only.
+- Fixed: a price target no longer notifies twice when one refresh misses CheapShark's cheaper offer for the game (a failed lookup, or a long wishlist where the game fell outside the lookups); the last offer is kept while the store's own price is unchanged.
 - Fixed: "Reset settings to defaults" keeps your hidden games and price targets (it resets appearance, alerts and interval, as the button says).
 - Fixed: a background refresh no longer closes an open price-target editor (and loses what you typed); the list updates when you close it.
 - Fixed: in a narrow window the Wishlist sidebar item no longer shrinks its icon and "New" dot or spills its on-sale count out of the badge when both are shown.

@@ -827,9 +827,11 @@ fn parse_cheapshark_deals(body: &str, stores: &HashMap<String, String>) -> R<Vec
 /// price (what deals.gg shows: the best current price across stores).
 /// CheapShark batches Steam appids; GOG/Epic items are matched by exact title.
 /// Err (once, not per batch) when CheapShark rate-limited us, so the poll keeps the last good prices.
-pub async fn attach_cheapest(items: &mut [WishItem]) -> R<()> {
+/// Ok holds the items CheapShark gave no answer for (failed request, past the lookup cap, unknown store).
+pub async fn attach_cheapest(items: &mut [WishItem]) -> R<Vec<usize>> {
     let stores = cheapshark_stores().await;
     let mut found: Vec<GameMatch> = vec![];
+    let mut answered = vec![false; items.len()];
 
     // CheapShark prices are USD, so only USD-priced items are compared (GOG may use the account's currency).
     let usd = |w: &WishItem| w.price_info.as_ref().is_some_and(|p| p.currency.as_deref() == Some("USD"));
@@ -839,6 +841,7 @@ pub async fn attach_cheapest(items: &mut [WishItem]) -> R<()> {
     for chunk in steam_idx.chunks(25) {
         let ids: Vec<&str> = chunk.iter().filter_map(|&i| items[i].app_id.as_deref()).collect();
         let Ok(v) = cheapshark_json(&format!("https://www.cheapshark.com/api/1.0/games?steamAppID={}", ids.join(","))).await else { continue };
+        for &i in chunk { answered[i] = true; }
         found.extend(cheapshark_matches(items, chunk, &v));
     }
     // GOG/Epic: one request per title, so 30 at most, discounted first (only those can get "Lowest ever";
@@ -849,7 +852,7 @@ pub async fn attach_cheapest(items: &mut [WishItem]) -> R<()> {
         async move { (i, cheapshark_json(&url).await.ok()) }
     })).await;
     for (i, v) in lookups {
-        if let Some(v) = v { found.extend(cheapshark_matches(items, &[i], &v)); }
+        if let Some(v) = v { answered[i] = true; found.extend(cheapshark_matches(items, &[i], &v)); }
     }
 
     // Lowest-ever only matters (and is only shown) for games on sale
@@ -870,11 +873,12 @@ pub async fn attach_cheapest(items: &mut [WishItem]) -> R<()> {
     assign_lowest(items, &games, &lowest);
     for ((i, price, deal), d) in cheaper.into_iter().zip(details) {
         let store = d.and_then(|d| s(&d["gameInfo"]["storeID"])).and_then(|id| stores.get(&id).cloned());
-        if let Some(store) = store {
-            items[i].cheapest = Some(Cheapest { store, price, url: format!("https://www.cheapshark.com/redirect?dealID={deal}") });
+        match store {
+            Some(store) => items[i].cheapest = Some(Cheapest { store, price, url: format!("https://www.cheapshark.com/redirect?dealID={deal}") }),
+            None => answered[i] = false,
         }
     }
-    cheapshark_blocked().map_or(Ok(()), Err)
+    cheapshark_blocked().map_or(Ok((0..items.len()).filter(|&i| !answered[i]).collect()), Err)
 }
 
 /// Indexes of the items `keep` accepts, biggest discount first (list order among equals), at most `cap`.

@@ -323,6 +323,20 @@ fn keep_prices(items: &mut [WishItem], prev: &[WishItem]) {
     }
 }
 
+/// CheapShark gave no answer for these items this poll (a failed request, or past the lookup cap):
+/// keep the last cheaper offer while the store's own price is unchanged, so one bad poll neither
+/// hides it nor re-arms its price target (which would notify again on the next good poll).
+/// ponytail: an item that stays past the cap keeps an offer that may have ended, until its own price
+/// changes; rotate the lookups if that shows up.
+fn carry_cheapest(items: &mut [WishItem], prev: &[WishItem], unanswered: &[usize]) {
+    let own = |w: &WishItem| w.price_info.as_ref().map(|p| (p.fin, p.currency.clone()));
+    for &i in unanswered {
+        let w = &mut items[i];
+        let Some(p) = prev.iter().find(|p| p.store == w.store && p.id == w.id) else { continue };
+        if own(p) == own(w) { w.cheapest = p.cheapest.clone(); }
+    }
+}
+
 /// Last-good rows for one source. `steam-` is also a prefix of `steam-ftk-`, so a featured
 /// restore must not swallow free-to-keep rows. Any other id with that prefix is kept (`steam-fw-` stays).
 fn restore_by_prefix(old: &[Free], prefix: &str) -> Vec<Free> {
@@ -486,10 +500,13 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
         wishlist.extend(keep_or_fail(res, "epic", &prev, &mut wishlist_errors));
     }
 
-    if let Err(e) = attach_cheapest(&mut wishlist).await {
-        eprintln!("[wishlist prices] {e}");
-        source_errors.lock().unwrap().extend(price_failure(&e, deals_error.as_deref()));
-        keep_prices(&mut wishlist, &prev.wishlist);
+    match attach_cheapest(&mut wishlist).await {
+        Ok(unanswered) => carry_cheapest(&mut wishlist, &prev.wishlist, &unanswered),
+        Err(e) => {
+            eprintln!("[wishlist prices] {e}");
+            source_errors.lock().unwrap().extend(price_failure(&e, deals_error.as_deref()));
+            keep_prices(&mut wishlist, &prev.wishlist);
+        }
     }
     if settings.notify_wishlist_sale { notify_wishlist(app, st, &wishlist); }
     notify_targets(app, st, &wishlist); // setting a target is the opt-in, so no extra toggle
@@ -1011,7 +1028,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{civil_from_days, days_from_civil, sale_soon_notice, sale_starting_tomorrow, SALES, clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, keep_prices, normalize_hidden, normalize_targets, target_hits, target_notice, price_failure, CS_BLOCKED, normalize_title, remember_big_deals, remember_wishlist, restore_by_prefix, safe_https, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, load_db, Acct, Deal, Free, Price, Prime, Settings, WishItem};
+    use super::{civil_from_days, days_from_civil, sale_soon_notice, sale_starting_tomorrow, SALES, clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, keep_prices, carry_cheapest, normalize_hidden, normalize_targets, target_hits, target_notice, price_failure, CS_BLOCKED, normalize_title, remember_big_deals, remember_wishlist, restore_by_prefix, safe_https, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, load_db, Acct, Deal, Free, Price, Prime, Settings, WishItem};
     use std::collections::{HashMap, HashSet};
 
     #[test]
@@ -1384,6 +1401,29 @@ mod tests {
         let (hits, _) = target_hits(std::slice::from_ref(&w), &targets, &none, &[]);
         let n = target_notice(&hits).unwrap();
         assert_eq!((n.title.as_str(), n.body.as_str()), ("Under your target: Game a", "Game a is $9.50 on Fanatical (target $10.00)"));
+    }
+
+    #[test]
+    fn a_missed_cheapshark_lookup_does_not_rearm_a_price_target() {
+        use super::Cheapest;
+        let targets = HashMap::from([("steam:a".to_string(), 10.0)]);
+        let mut item = wish("a", "Game a", Some(0));
+        item.price_info.as_mut().unwrap().fin = 20.0;
+        item.price_info.as_mut().unwrap().currency = Some("USD".into());
+        let mut offer = item.clone();
+        offer.cheapest = Some(Cheapest { store: "Fanatical".into(), price: 9.5, url: String::new() });
+        let (hits, fired) = target_hits(std::slice::from_ref(&offer), &targets, &HashMap::new(), &[]);
+        assert_eq!(hits.len(), 1);
+        // next poll CheapShark has no answer for it: the offer carries over and the target stays fired
+        let mut now = vec![item.clone()];
+        carry_cheapest(&mut now, std::slice::from_ref(&offer), &[0]);
+        let (hits, fired) = target_hits(&now, &targets, &fired, &[]);
+        assert!(hits.is_empty() && fired.contains_key("steam:a"));
+        // a changed store price drops the old offer; an answered item is left alone
+        let mut now = vec![item.clone(), item];
+        now[0].price_info.as_mut().unwrap().fin = 19.0;
+        carry_cheapest(&mut now, std::slice::from_ref(&offer), &[0]);
+        assert!(now[0].cheapest.is_none() && now[1].cheapest.is_none());
     }
 
     #[test]
