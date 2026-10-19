@@ -401,10 +401,8 @@ fn parse_epic_sales(v: &Value) -> Vec<Deal> {
 
 /// Find an Epic product by exact title only when a user opens a CheapShark deal.
 pub async fn epic_product_for_title(title: &str) -> R<Option<String>> {
-    let q = format!(
-        "query q($country:String!,$locale:String,$keywords:String,$count:Int,$start:Int){{Catalog{{searchStore(country:$country,locale:$locale,keywords:$keywords,count:$count,start:$start){{elements{{title productSlug urlSlug catalogNs{{mappings(pageType:\"productHome\"){{pageSlug}}}} offerMappings{{pageSlug}}}}}}}}}}"
-    );
-    let v = epic_gql("https://store.epicgames.com/graphql", EPIC_UA_BROWSER, None, &q, json!({
+    let q = "query q($country:String!,$locale:String,$keywords:String,$count:Int,$start:Int){Catalog{searchStore(country:$country,locale:$locale,keywords:$keywords,count:$count,start:$start){elements{title productSlug urlSlug catalogNs{mappings(pageType:\"productHome\"){pageSlug}} offerMappings{pageSlug}}}}}";
+    let v = epic_gql("https://store.epicgames.com/graphql", EPIC_UA_BROWSER, None, q, json!({
         "country": "US", "locale": "en-US", "keywords": title, "count": 60, "start": 0,
     })).await?;
     Ok(parse_epic_product(&v["data"]["Catalog"]["searchStore"]["elements"], title))
