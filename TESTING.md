@@ -89,7 +89,7 @@ One pass on Linux (KDE Plasma, Wayland) for everything in CHANGELOG.md [Unreleas
 
 ### "New" tags and sidebar dots (2 min)
 - [ ] Force them: in the inspector Console run `localStorage.setItem('dealdrop-seen', JSON.stringify({deals:[],storesales:[],wishlist:[]})); location.reload()`. Small dots appear on **Hot deals**, **Store sales** and **Wishlist** (if any wishlist game is discounted; next to its count badge), and rows/cards show **New**.
-- [ ] Open Hot deals: the tags stay while you're there. Go to another page: the Hot deals dot is gone; come back: no New tags. Same for Store sales (one dot covers all store tabs) and Wishlist.
+- [ ] Open Hot deals: the tags stay while you're there. Go to another page: the Hot deals dot is gone; come back: no New tags. Same for Wishlist, and for Store sales once you've opened every store tab that has sales (one dot covers them all).
 - [ ] Force again, open Store sales, look only at the Steam tab and leave: the Store sales dot stays (GOG/Epic sales are still new). Come back and open GOG: its cards still show **New**.
 - [ ] Force again, open Hot deals, close the window to the tray (X) and reopen from the tray: that page's tags are gone.
 - [ ] A fresh install (or **Reset settings**) shows no New tags on its first load.
@@ -127,8 +127,8 @@ One pass on Linux (KDE Plasma, Wayland) for everything in CHANGELOG.md [Unreleas
 - [ ] Run the built AppImage from where it will stay. Settings → Notifications → turn on **Start DealDrop when I log in**.
 - [ ] `cat ~/.config/autostart/dealdrop.desktop`: `Exec="/path/to/DealDrop_….AppImage" --hidden` with the AppImage's own path (not `/tmp/.mount_…`), and `Icon=/home/<you>/.config/dealdrop/autostart-icon.png`. It also shows in System Settings → Autostart with the DealDrop icon (not a generic one).
 - [ ] Log out and in: only the tray icon appears, no window. Tray → Open DealDrop shows it; starting the AppImage again while it runs shows the window too.
-- [ ] With it on, quit DealDrop from the tray, rename the AppImage (as an update does) and start the renamed file: the `Exec=` line now shows the new path. Copy it elsewhere instead (the original stays) and start the copy: `Exec=` is unchanged.
-- [ ] Turn DealDrop off in your desktop's own autostart settings (e.g. KDE System Settings → Autostart), then start DealDrop: it stays off there.
+- [ ] With it on, quit DealDrop from the tray, rename the AppImage (as an update does) and start the renamed file: the `Exec=` line now shows the new path. Put a second `DealDrop_….AppImage` next to the first (as AppImageUpdate does without `-r`) and start it: `Exec=` points at it. Copy one to another folder instead and start that copy: `Exec=` is unchanged.
+- [ ] Turn DealDrop off in your desktop's own autostart settings (or add `Hidden=true` to the file by hand if yours only offers Remove), quit and rename the AppImage, then start it: `Exec=` shows the new path and the entry is still off.
 - [ ] Turn it off: the file and `autostart-icon.png` are gone. Delete the file by hand instead and reopen Settings: the toggle is off.
 - [ ] Don't turn it on from `cargo tauri dev`: the entry would point at `target/debug/dealdrop`, which needs the dev server, so it would start blank at login.
 - [ ] *(Windows/macOS)* See §2 **Start at login**.

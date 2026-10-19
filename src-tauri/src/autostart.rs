@@ -125,11 +125,14 @@ fn exec_path(line: &str) -> Option<String> {
 /// The entry with only its `Exec=` line pointed at `exe`, when the app it records is gone (an AppImage
 /// update renames the file). Everything else is kept, e.g. `Hidden=true` or
 /// `X-GNOME-Autostart-enabled=false` from the desktop's own autostart settings. A recorded app that
-/// still exists is left alone, so trying another copy doesn't take the entry over.
+/// still exists is left alone, so trying another copy doesn't take the entry over, unless both are
+/// release AppImages in the same folder: AppImageUpdate keeps the old file next to the new one.
 #[cfg(any(target_os = "linux", test))]
 fn repaired_entry(text: &str, exe: &str, exists: impl Fn(&str) -> bool) -> Option<String> {
     let old = text.lines().find_map(exec_path)?;
-    if old == exe || exists(&old) || exe.starts_with("/tmp/.mount_") { return None; }
+    let release = |p: &str| p.rsplit_once('/').filter(|(_, f)| f.starts_with("DealDrop_") && f.ends_with(".AppImage")).map(|(dir, _)| dir.to_owned());
+    let update = release(&old).is_some_and(|dir| release(exe) == Some(dir));
+    if old == exe || (exists(&old) && !update) || exe.starts_with("/tmp/.mount_") { return None; }
     let exec = format!("Exec={} {HIDDEN}", exec_arg(exe));
     Some(text.lines().map(|l| if l.starts_with("Exec=") { exec.as_str() } else { l }).collect::<Vec<_>>().join("\n") + "\n")
 }
@@ -230,7 +233,9 @@ mod tests {
         let new = "/apps/DealDrop_0.9.0_amd64.AppImage";
         let fixed = repaired_entry(&old, new, |_| false).unwrap();
         assert_eq!(fixed, old.replace("0.8.0", "0.9.0")); // only Exec= changed; the user's "off" stays
-        assert!(repaired_entry(&old, new, |_| true).is_none()); // the recorded app still exists: not ours to take
+        assert!(repaired_entry(&old, new, |_| true).is_some()); // AppImageUpdate kept the old file next to it
+        assert!(repaired_entry(&old, "/home/me/Downloads/DealDrop_0.9.0_amd64.AppImage", |_| true).is_none()); // a copy elsewhere
+        assert!(repaired_entry(&old, "/apps/dealdrop-test", |_| true).is_none()); // not a release AppImage
         assert!(repaired_entry(&old, "/tmp/.mount_x/dealdrop", |_| false).is_none());
         assert!(repaired_entry("[Desktop Entry]\nExec=other\n", new, |_| false).is_none());
     }
