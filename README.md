@@ -32,7 +32,7 @@ Optional store sign-in enables wishlist alerts. No API keys or telemetry; DealDr
 - **Open in your launcher** — Steam and Epic, plus GOG Galaxy for GOG games; choose a preference in Settings
 - **Sales calendar** — Steam seasonal sales with countdown; click one to open it in Steam
 - **System tray** — minimizes to tray, polls in the background on your chosen interval; the tray menu jumps to Free now or Wishlist with their counts; optionally starts when you log in, hidden in the tray
-- **Welcome guide and keyboard shortcuts** — quick setup on first run, with shortcuts for common actions
+- **Welcome guide and keyboard shortcuts** — quick setup on first run, with shortcuts for common actions (J / K to move between items in lists)
 - **Accessible updates and loading** — live result/refresh feedback and lightweight loading skeletons while the first snapshot arrives
 - **Keyboard-friendly cards** — press Enter on a free game, store sale or hot deal to open its store page; launcher and browser buttons remain available
 - **Responsive layouts** — card grids fill wide windows while keeping rows and text at a readable width

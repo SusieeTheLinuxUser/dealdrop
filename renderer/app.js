@@ -411,7 +411,7 @@ function openShortcutsDialog () {
   ;[
     ['R', 'Refresh all'], ['/','Focus search on this page'], [MOD_KEY + 'K', 'Search everything'],
     ['1–5', 'Open Wishlist, Free now, Store sales, Hot deals, or Calendar'],
-    [',', 'Open Settings'], ['?', 'Show this help'],
+    ['J / K', 'Next / previous item'], [',', 'Open Settings'], ['?', 'Show this help'],
   ].forEach(([key, description]) => {
     const term = document.createElement('dt'), code = document.createElement('kbd'), detail = document.createElement('dd')
     code.textContent = key; term.appendChild(code); detail.textContent = description; list.append(term, detail)
@@ -529,6 +529,22 @@ function openSearchResult (r) {
   name?.closest('.deal-row, .wishlist-row, .game-card')?.querySelector('button')?.focus()
 }
 
+// J/K: index of the next (dir 1) or previous (dir -1) item; current -1 = none focused. Stops at the ends.
+const nextIndex = (current, length, dir) =>
+  !length ? -1 : current < 0 ? (dir > 0 ? 0 : length - 1) : Math.min(length - 1, Math.max(0, current + dir))
+
+// Moves focus between the rows/cards of the current list page (main open button). Doesn't load "Show more".
+function moveListFocus (dir) {
+  const rowSel = '.deal-row, .wishlist-row, .game-card'
+  const buttons = [...document.querySelectorAll(`#page-${state.page} :is(.deal-row-main, .wishlist-main, .game-card-open)`)]
+    .filter(b => b.getClientRects().length)
+  const current = buttons.findIndex(b => b.closest(rowSel).contains(document.activeElement))
+  const button = buttons[nextIndex(current, buttons.length, dir)]
+  if (!button) return
+  button.focus({ preventScroll: true })
+  button.closest(rowSel).scrollIntoView({ block: 'nearest' })
+}
+
 function handleShortcutKeydown (e) {
   if (searchDialog) {
     if (e.key === 'Escape') { e.preventDefault(); closeSearchDialog(); return }
@@ -558,6 +574,9 @@ function handleShortcutKeydown (e) {
     return
   }
   if (key === ',') { e.preventDefault(); navigate('settings'); return }
+  if ((key === 'j' || key === 'k') && ['wishlist', 'free', 'storesales', 'deals'].includes(state.page)) {
+    e.preventDefault(); moveListFocus(key === 'j' ? 1 : -1); return
+  }
   const pages = ['wishlist', 'free', 'storesales', 'deals', 'sales']
   if (/^[1-5]$/.test(key)) { e.preventDefault(); navigate(pages[Number(key) - 1]) }
 }

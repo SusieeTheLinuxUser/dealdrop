@@ -30,7 +30,8 @@ vm.runInContext([
   between('const BASE_THEMES = {', '\nfunction applyTheme'),
   between('function nextTheme (', '\nfunction syncSaleTheme'),
   between('const targetKey', '\nfunction wishlistTargetTag'),
-  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge, mergeUiPrefs, dealShops, parseClaimed, pruneClaimed, toggleClaimed, claimedLast, normalizeTitle, hiddenTitle, searchRank, parseSeen, newIds, mergeSeen, wishlistKey, seenIds, PAGE_SIZE, pageSlice, nextTheme, targetKey, targetPrice, targetHit, parseTarget }',
+  between('const nextIndex', '\n// Moves focus between'),
+  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge, mergeUiPrefs, dealShops, parseClaimed, pruneClaimed, toggleClaimed, claimedLast, normalizeTitle, hiddenTitle, searchRank, parseSeen, newIds, mergeSeen, wishlistKey, seenIds, PAGE_SIZE, pageSlice, nextTheme, targetKey, targetPrice, targetHit, parseTarget , nextIndex }',
 ].join('\n'), context)
 
 const h = context.helpers
@@ -178,4 +179,12 @@ assert.equal(h.targetHit(targeted, 9.49), false)
 assert.equal(h.targetHit({ ...targeted, priceInfo: { final: 5, currency: 'EUR' } }, 10), false)
 assert.equal(h.targetHit(targeted, undefined), false)
 
-console.log('Renderer self-check passed (price targets, escaping, hidden titles, search ranking, filters, store filter, UI preference merge, claimed games, seen deals, list paging, next sale, refresh age, sale themes).')
+assert.equal(h.nextIndex(-1, 5, 1), 0)    // J with nothing focused: first item
+assert.equal(h.nextIndex(-1, 5, -1), 4)   // K with nothing focused: last item
+assert.equal(h.nextIndex(2, 5, 1), 3)
+assert.equal(h.nextIndex(2, 5, -1), 1)
+assert.equal(h.nextIndex(4, 5, 1), 4)     // stops at the ends
+assert.equal(h.nextIndex(0, 5, -1), 0)
+assert.equal(h.nextIndex(-1, 0, 1), -1)   // empty list
+
+console.log('Renderer self-check passed (price targets, escaping, hidden titles, search ranking, filters, store filter, UI preference merge, claimed games, seen deals, list paging, next sale, refresh age, sale themes, J/K navigation).')

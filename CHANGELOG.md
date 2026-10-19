@@ -3,6 +3,7 @@
 All notable changes to DealDrop are documented in this file.
 
 ## [Unreleased]
+- Keyboard: **J / K** move to the next / previous item on Hot deals, Store sales, Wishlist and Free now (Enter opens it); listed under `?`.
 - Optional **Free DLC & loot** section on Free now (Settings → Free now, off by default): in-game items and DLC giveaways from GamerPower, hideable and searchable, never notified or counted in the badge.
 - Wishlist price targets: a game's **Target** button sets "tell me at or below $X"; one notification when its price (or a cheaper offer elsewhere) reaches it, again only after it rises above or the target changes. USD prices only.
 - Fixed: if a Steam sale starts or ends while Settings is open, the theme chips update right away (the "· live" sale chip appears or goes) instead of after leaving the page; keyboard focus stays on the theme chip.
