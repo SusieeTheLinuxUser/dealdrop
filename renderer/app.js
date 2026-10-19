@@ -16,7 +16,7 @@ const DEFAULT_SETTINGS = {
   notifyMajorSale: true, notifySaleSoon: true, notifyFreeGame: true, notifyFreeWeekend: true,
   notifyWishlistSale: true, wishlistMinCut: 20, notifyBigDeal: false, bigDealMinCut: 75, checkInterval: 60,
   theme: 'midnight', baseTheme: 'midnight', lastSaleTheme: '', rounded: false, effects: true,
-  launcherGog: 'auto', launcherEpic: 'auto', onboarded: false, hidden: [],
+  launcherGog: 'auto', launcherEpic: 'auto', showLoot: false, onboarded: false, hidden: [],
 }
 
 const UI_PREFS_KEY = 'dealdrop-ui'
@@ -117,6 +117,7 @@ const state = {
   freeGames:    [],
   freeWeekends: [],
   freeUpcoming: [],
+  freeLoot:     [],
   claimed:      readClaimed(),
   seen:         readSeen(),
   deals:        [],
@@ -431,6 +432,7 @@ function searchEntries () {
     ...free(state.freeGames, 'Free now', () => 'Free'),
     ...free(state.freeWeekends, 'Free weekend', () => 'Free'),
     ...free(state.freeUpcoming, 'Coming next', g => startDateLabel(g.starts)),
+    ...free(state.settings.showLoot ? state.freeLoot : [], 'Free DLC & loot', () => 'Free'),
     ...Object.entries(state.sales).flatMap(([store, list]) => list.filter(d => !hiddenTitle(d.title))
       .map(d => ({ title: d.title, page: 'storesales', tab: store, item: d, where: `Store sales · ${STORES[store] ?? store}`, price: fmt$(d.price) + off(d) }))),
     ...state.deals.filter(d => !hiddenTitle(d.title))
@@ -941,18 +943,25 @@ function renderFreeGames () {
   const emptyEl   = document.getElementById('empty-free')
   const tsEl      = document.getElementById('lc-free')
   const gridNext  = document.getElementById('grid-upcoming')
+  const gridLoot  = document.getElementById('grid-loot')
 
   emptyEl.classList.toggle('loading-state', !state.dataLoaded)
   updateBadges()
   gridFree.innerHTML = ''
   gridWknd.innerHTML = ''
   gridNext.innerHTML = ''
+  gridLoot.innerHTML = ''
   if (tsEl) tsEl.textContent = fmtChecked(state.lastChecked)
 
   // Not free yet: no claim button, no badge count, the start date in place of the FREE tag
   const upcoming = state.freeUpcoming.filter(g => !hiddenTitle(g.title))
   document.getElementById('label-upcoming').style.display = upcoming.length ? 'block' : 'none'
   upcoming.forEach(g => gridNext.appendChild(makeFreeCard(g, 'tag-weekend', escHtml(startDateLabel(g.starts)), false, false)))
+
+  // Opt-in DLC & in-game items: hideable, but no claim button and no badge/tray count
+  const loot = state.settings.showLoot ? state.freeLoot.filter(g => !hiddenTitle(g.title)) : []
+  document.getElementById('label-loot').style.display = loot.length ? 'block' : 'none'
+  endsFirst(loot).forEach(g => gridLoot.appendChild(makeFreeCard(g, 'tag-free', 'LOOT')))
 
   const freeGames = state.freeGames.filter(g => !hiddenTitle(g.title))
   const freeWeekends = state.freeWeekends.filter(g => !hiddenTitle(g.title))
@@ -1310,6 +1319,9 @@ const LOOK_TOGGLES = [
   { key: 'rounded', label: 'Rounded window', sub: 'Round the corners of the app window' },
   { key: 'effects', label: 'Seasonal effects', sub: 'Falling leaves, snow & more during Steam sale themes' },
 ]
+const FREE_TOGGLES = [
+  { key: 'showLoot', label: 'Show free DLC & loot', sub: 'In-game items and DLC giveaways from GamerPower', gamerpower: true },
+]
 const NOTIFICATION_TOGGLES = [
   { key: 'notifyMajorSale', label: 'Steam major sale started', sub: 'Summer, Winter, Autumn & Spring sales' },
   { key: 'notifySaleSoon', label: 'Steam sale starts tomorrow', sub: 'A heads-up the day before a major sale' },
@@ -1416,9 +1428,10 @@ function toggleRows (con, rows, after) {
     const label = document.createElement('div'); label.className = 'setting-label'; label.textContent = r.label
     const sub = document.createElement('div'); sub.className = 'setting-sub'
     if (r.gamerpower) {
-      sub.appendChild(document.createTextNode('Epic, Steam, GOG & '))
+      // the GamerPower attribution must stay an active link
+      const [before, after] = r.sub.split('GamerPower')
       const link = document.createElement('a'); link.href = '#'; link.dataset.href = 'https://www.gamerpower.com'; link.textContent = 'GamerPower'
-      sub.append(link, document.createTextNode(' giveaways'))
+      sub.append(before, link, after)
     } else sub.textContent = r.sub
     copy.append(label, sub)
     const toggle = document.createElement('button')
@@ -1518,6 +1531,7 @@ function renderSettings () {
   const s = state.settings
   renderThemeGrid()
   toggleRows(document.getElementById('look-settings'), LOOK_TOGGLES, applyTheme)
+  toggleRows(document.getElementById('free-settings'), FREE_TOGGLES, renderFreeGames)
 
   renderAutostart()
   toggleRows(document.getElementById('notif-settings'), NOTIFICATION_TOGGLES)
@@ -1852,6 +1866,7 @@ function applyData (data) {
   state.freeGames    = data.freeGames    ?? []
   state.freeWeekends = data.freeWeekends ?? []
   state.freeUpcoming = data.freeUpcoming ?? []
+  state.freeLoot     = data.freeLoot     ?? []
   // forget claimed games that left the list; an empty list may be a failed load, so keep them then
   if (state.freeGames.length) {
     const kept = pruneClaimed(state.claimed, state.freeGames)

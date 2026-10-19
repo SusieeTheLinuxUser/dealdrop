@@ -13,6 +13,7 @@ Optional store sign-in enables wishlist alerts. No API keys or telemetry; DealDr
 - **Steam sale alerts** — notified the moment a major seasonal sale goes live, plus a heads-up the day before it starts
 - **Free game alerts** — Epic, Steam and GOG giveaways, de-duplicated across sources; mark the ones you've claimed (dimmed, sorted last, left out of the count)
 - **Coming next on Epic** — the next free Epic games and the date they turn free
+- **Free DLC & loot** (optional) — in-game items and DLC giveaways from GamerPower, off by default
 - **Steam free-to-keep games** — includes qualifying DLC, clearly tagged as DLC
 - **Free weekend alerts** — Steam free-to-play weekends
 - **Store sales** — current discounts from **Steam, GOG and Epic Games**, browsable per store

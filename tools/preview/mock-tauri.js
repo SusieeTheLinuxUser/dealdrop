@@ -14,7 +14,7 @@
     notifyMajorSale: true, notifySaleSoon: true, notifyFreeGame: true, notifyFreeWeekend: true,
     notifyWishlistSale: true, wishlistMinCut: 20, notifyBigDeal: false, bigDealMinCut: 75, checkInterval: 60,
     theme: 'midnight', baseTheme: 'midnight', lastSaleTheme: '',
-    rounded: false, effects: true, launcherGog: 'auto', launcherEpic: 'auto',
+    rounded: false, effects: true, launcherGog: 'auto', launcherEpic: 'auto', showLoot: false,
     onboarded: flags.get('onboarded') === '1', hidden: [],
   }
   let autostart = false
@@ -56,6 +56,11 @@
     freeUpcoming: empty ? [] : [
       { id: 'epic-next-sample-1', title: 'Lanterns of the Deep', source: 'epic', url: 'https://store.epicgames.com/free-games', image: null, appId: null, endDate: null, starts: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString(), type: 'upcoming' },
       { id: 'epic-next-sample-2', title: 'Clockwork Orchard', source: 'epic', url: 'https://store.epicgames.com/free-games', image: null, appId: null, endDate: null, starts: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString(), type: 'upcoming' },
+    ],
+    // Like main.rs: only fetched (and sent) while Settings → Show free DLC & loot is on
+    freeLoot: empty ? [] : [
+      { id: 'gp-loot-3818', title: 'Squad Weapon Skins - Recon Team Pack', source: 'steam', url: 'https://www.gamerpower.com/open/squad-weapon-skins-recon-team-pack-steam-giveaway', image: null, appId: null, endDate: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000).toISOString(), type: 'loot' },
+      { id: 'gp-loot-3815', title: 'World of Tanks: Halloween Gift Packs', source: 'other', url: 'https://www.gamerpower.com/open/world-of-tanks-halloween-gift-packs', image: null, appId: null, endDate: null, type: 'loot' },
     ],
     sales: empty ? { steam: [], gog: [], epic: [] } : {
       steam: [
@@ -103,6 +108,7 @@
   const syncWishlist = () => { sample.wishlist = empty ? [] : wishlistItems.filter(item => signedStores.has(item.store)) }
   if (stress) {
     sample.freeGames.unshift({ id: 'stress-free', title: stressTitle, source: 'steam', url: 'https://store.steampowered.com/app/999001', image: null, appId: '999001', endDate: null, type: 'free' })
+    sample.freeLoot.unshift({ id: 'gp-loot-stress', title: stressTitle, source: 'other', url: 'https://www.gamerpower.com/open/stress', image: null, appId: null, endDate: null, type: 'loot' })
     sample.freeWeekends.unshift({ id: 'stress-weekend', title: stressTitle, source: 'steam', url: 'https://store.steampowered.com/app/999002', image: null, appId: '999002', endDate: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(), type: 'weekend' })
     Object.entries(sample.sales).forEach(([store, items]) => {
       const shop = store === 'epic' ? 'Epic Games' : store === 'gog' ? 'GOG' : 'Steam'
@@ -123,12 +129,19 @@
     return [store, { options: clone(options), chosen: clone(chosen) }]
   }))
   const clone = value => JSON.parse(JSON.stringify(value))
+  const snapshot = () => clone({ ...sample, freeLoot: settings.showLoot ? sample.freeLoot : [] })
   async function invoke (cmd, args = {}) {
     switch (cmd) {
       case 'get_settings': return clone(settings)
-      case 'save_settings': settings = { ...settings, ...(args.settings || {}) }; return undefined
+      case 'save_settings': {
+        const lootOn = !settings.showLoot && args.settings?.showLoot
+        settings = { ...settings, ...(args.settings || {}) }
+        // main.rs wakes the poll when loot is switched on
+        if (lootOn) setTimeout(() => { const payload = snapshot(); emitters.forEach(callback => callback({ payload })) }, 300)
+        return undefined
+      }
       case 'fetch_data':
-      case 'check_now': sample.lastChecked = Date.now(); return clone(sample)
+      case 'check_now': sample.lastChecked = Date.now(); return snapshot()
       case 'get_accounts': return clone(accounts)
       case 'launchers': return launchers()
       case 'get_autostart': return autostart

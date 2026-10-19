@@ -599,18 +599,25 @@ pub fn epic_url(g: &Value) -> String {
 }
 
 /// "Foo (Epic Games) Giveaway" → "Foo", so it dedupes against the store's own listing.
+/// Loot titles also lose "(DLC)" and a trailing "Steam Key Giveaway".
 fn gp_title(raw: &str) -> String {
     static NOISE: OnceLock<Regex> = OnceLock::new();
-    let noise = re(r"(?i)\s*\((epic games|epic|steam|gog|gog\.com|free game)[^)]*\)|\s+giveaway$", &NOISE);
+    let noise = re(r"(?i)\s*\((epic games|epic|steam|gog|gog\.com|free game|dlc)[^)]*\)|\s+(steam\s+)?(key\s+)?giveaway$", &NOISE);
     noise.replace_all(raw, "").trim().to_string()
 }
 
 pub async fn gamerpower() -> R<Vec<Free>> {
     let body = get_text("https://www.gamerpower.com/api/giveaways?platform=pc&type=game").await?;
-    parse_gamerpower(&body)
+    parse_gamerpower(&body, "gp-", "free")
 }
 
-fn parse_gamerpower(body: &str) -> R<Vec<Free>> {
+/// Free DLC & in-game items (opt-in `show_loot`): shown on the Free page, never notified or counted.
+pub async fn gamerpower_loot() -> R<Vec<Free>> {
+    let body = get_text("https://www.gamerpower.com/api/giveaways?platform=pc&type=loot").await?;
+    parse_gamerpower(&body, "gp-loot-", "loot")
+}
+
+fn parse_gamerpower(body: &str, prefix: &str, kind: &str) -> R<Vec<Free>> {
     let v: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
     Ok(v.as_array().into_iter().flatten()
         .filter(|g| g["status"].as_str().is_none_or(|st| st.eq_ignore_ascii_case("active")))
@@ -620,14 +627,14 @@ fn parse_gamerpower(body: &str) -> R<Vec<Free>> {
                 else if plat.contains("gog") { "gog" } else { "other" };
             let end = s(&g["end_date"]).filter(|e| e != "N/A");
             Some(Free {
-                id: format!("gp-{}", g["id"].as_u64()?),
+                id: format!("{prefix}{}", g["id"].as_u64()?),
                 title: gp_title(&s(&g["title"])?),
                 source: source.into(),
                 app_id: g["steam_appid"].as_u64().map(|n| n.to_string()),
                 url: s(&g["open_giveaway_url"]).or(s(&g["open_giveaway"])).unwrap_or_else(|| "#".into()),
                 end_date: end,
                 image: s(&g["thumbnail"]),
-                kind: "free".into(),
+                kind: kind.into(),
                 starts: None,
             })
         })
@@ -954,7 +961,10 @@ mod live {
         println!("epic coming next: {} items, first = {:?}", next.len(), next.first());
         show("epic free", Ok(now));
     }
-    #[tokio::test] #[ignore] async fn gamerpower_live() { show("gamerpower", gamerpower().await) }
+    #[tokio::test] #[ignore] async fn gamerpower_live() {
+        show("gamerpower loot", gamerpower_loot().await);
+        show("gamerpower", gamerpower().await);
+    }
     #[tokio::test] #[ignore] async fn cheapshark_live() {
         let deals = cheapshark_deals().await.expect("CheapShark deals");
         assert!(deals.iter().any(|deal| deal.lowest.is_some()), "no deals included a lowest-ever price");
@@ -994,6 +1004,8 @@ mod unit {
         assert_eq!(super::gp_title("Agent A: A puzzle in disguise (Epic Games) Giveaway"), "Agent A: A puzzle in disguise");
         assert_eq!(super::gp_title("Bad Cheese (Epic Games)"), "Bad Cheese");
         assert_eq!(super::gp_title("Foo (Steam) Giveaway"), "Foo");
+        assert_eq!(super::gp_title("Voidtrain - Big Catch (DLC) Giveaway"), "Voidtrain - Big Catch");
+        assert_eq!(super::gp_title("RIDE 6 Welcome Bikes Pack Steam Key Giveaway"), "RIDE 6 Welcome Bikes Pack");
     }
 
     fn search_body(html: &str) -> String {
@@ -1140,7 +1152,7 @@ mod unit {
             {"id":3100,"title":"Hades (Steam) Giveaway","status":"Active","platforms":"PC, Steam","end_date":"2026-10-24 23:59:59","steam_appid":1145360,"open_giveaway_url":"https://www.gamerpower.com/open/hades","thumbnail":"https://www.gamerpower.com/thumb.jpg"},
             {"id":3101,"title":"Old (Epic Games)","status":"Ended","platforms":"PC, Epic Games Store","end_date":"N/A"}
         ]"#;
-        let v = super::parse_gamerpower(body).unwrap();
+        let v = super::parse_gamerpower(body, "gp-", "free").unwrap();
         assert_eq!(v.len(), 1);
         assert_eq!(v[0].id, "gp-3100");
         assert_eq!(v[0].title, "Hades");
@@ -1150,8 +1162,12 @@ mod unit {
         assert_eq!(v[0].url, "https://www.gamerpower.com/open/hades");
         assert_eq!(v[0].image.as_deref(), Some("https://www.gamerpower.com/thumb.jpg"));
         assert_eq!(v[0].kind, "free");
-        assert!(super::parse_gamerpower("nope").is_err());
-        assert!(super::parse_gamerpower(r#"{"status":0}"#).unwrap().is_empty());
+        assert!(super::parse_gamerpower("nope", "gp-", "free").is_err());
+        assert!(super::parse_gamerpower(r#"{"status":0}"#, "gp-", "free").unwrap().is_empty());
+        let loot = r#"[{"id":3818,"title":"Squad Weapon Skins - Recon Team Pack (Steam) Giveaway","type":"DLC","status":"Active","platforms":"PC, Steam","end_date":"N/A","open_giveaway_url":"https://www.gamerpower.com/open/squad"}]"#;
+        let v = super::parse_gamerpower(loot, "gp-loot-", "loot").unwrap();
+        assert_eq!((v[0].id.as_str(), v[0].title.as_str(), v[0].kind.as_str()), ("gp-loot-3818", "Squad Weapon Skins - Recon Team Pack", "loot"));
+        assert_eq!((v[0].source.as_str(), v[0].end_date.as_deref()), ("steam", None));
     }
 
     #[test]

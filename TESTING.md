@@ -127,6 +127,10 @@ One pass on Linux (KDE Plasma, Wayland) for everything in CHANGELOG.md [Unreleas
 - [ ] Focus after Hide/Unhide: covered above.
 - [ ] Tab through Settings from the top: theme chips, toggles and threshold dropdowns, interval buttons, launcher choices, Sign out, Unhide, About links are all reachable in order, each with a visible focus ring; Space/Enter works on each. (With Orca: theme, interval and launcher choices say "pressed" on the selected one; Sign out says which store.)
 
+### Free DLC & loot (1 min)
+- [ ] Free now has no **Free DLC & loot** section by default. Settings → Free now → **Show free DLC & loot** on: within a few seconds the section appears at the bottom of Free now with **LOOT** cards (GamerPower). The Free now badge and tray count don't change, and no notification fires.
+- [ ] **Hide** on a loot card removes it; Ctrl+K finds a loot title ("Free DLC & loot · …"). Toggle off: the section and its search results go away.
+
 ### Daylight theme (½ min)
 - [ ] Settings → Appearance → **Daylight**: FREE/WEEKEND and discount tags, **New**, **Lowest ever**, **Claimed ✓**, cheaper-store prices, Steam badges, sidebar badges, hints, counts, dates and the version label are all easy to read; nothing pale grey on white.
 

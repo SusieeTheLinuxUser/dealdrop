@@ -47,6 +47,8 @@ struct Settings {
     /// Where GOG / Epic links open: "auto" | "native" | "browser"; old GOG preferences fall back to the first available option.
     launcher_gog: String,
     launcher_epic: String,
+    /// Free DLC & loot section on the Free page (opt-in: one extra GamerPower request per poll).
+    show_loot: bool,
     /// The first-run tour has been completed or skipped.
     onboarded: bool,
     hidden: Vec<String>,
@@ -56,7 +58,7 @@ impl Default for Settings {
         Self { notify_major_sale: true, notify_sale_soon: true, notify_free_game: true, notify_free_weekend: true,
                notify_wishlist_sale: true, wishlist_min_cut: 20, notify_big_deal: false, big_deal_min_cut: 75, check_interval: 60,
                theme: "midnight".into(), base_theme: "midnight".into(), last_sale_theme: String::new(),
-               rounded: false, effects: true, launcher_gog: "auto".into(), launcher_epic: "auto".into(), onboarded: false, hidden: Vec::new() }
+               rounded: false, effects: true, launcher_gog: "auto".into(), launcher_epic: "auto".into(), show_loot: false, onboarded: false, hidden: Vec::new() }
     }
 }
 
@@ -91,6 +93,8 @@ struct Snapshot {
     free_weekends: Vec<Free>,
     /// Epic's next giveaways: shown on the Free page, never notified or counted.
     free_upcoming: Vec<Free>,
+    /// GamerPower DLC & in-game items (only when `show_loot`): shown, never notified or counted.
+    free_loot: Vec<Free>,
     sales: Sales,
     live_sale: Option<LiveSale>,
     deals: Vec<Deal>,
@@ -379,10 +383,20 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
         *free_failed.lock().unwrap() = true;
         restore_by_prefix(old, prefix)
     });
-    let (ef, sf, sk, sw, gp, ss, gs, es, hot) = tokio::join!(
-        epic_free(), steam_free_featured(), steam_free_to_keep(), steam_free_weekends(), gamerpower(),
+    let loot = async { if settings.show_loot { Some(gamerpower_loot().await) } else { None } };
+    let (ef, sf, sk, sw, gp, lt, ss, gs, es, hot) = tokio::join!(
+        epic_free(), steam_free_featured(), steam_free_to_keep(), steam_free_weekends(), gamerpower(), loot,
         steam_sales(), gog_sales(), stores::epic_sales(), hot_deals(),
     );
+    // Not part of the first-poll seed (never notified), so a failure doesn't set free_failed.
+    let free_loot = match lt {
+        None => vec![],
+        Some(Ok(v)) => v,
+        Some(Err(e)) => {
+            eprintln!("[GamerPower loot] {e}"); source_errors.lock().unwrap().push(failure("GamerPower loot", &e));
+            restore_by_prefix(&prev.free_loot, "gp-loot-")
+        }
+    };
     // One Epic response feeds both lists; a failure keeps the last good upcoming list too.
     let (ef, free_upcoming) = match ef { Ok((now, next)) => (Ok(now), next), Err(e) => (Err(e), prev.free_upcoming.clone()) };
     let (ef, sf, sk, sw, gp) = (
@@ -477,7 +491,7 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
     if settings.notify_big_deal { notify_big_deals(app, st, &deals); }
 
     Snapshot {
-        free_games, free_weekends, free_upcoming, sales, live_sale, deals, deals_source, deals_error,
+        free_games, free_weekends, free_upcoming, free_loot, sales, live_sale, deals, deals_source, deals_error,
         wishlist, wishlist_private, wishlist_errors, source_errors: source_errors.into_inner().unwrap(), last_checked: now_ms(),
     }
 }
@@ -661,7 +675,11 @@ fn save_settings(app: AppHandle, st: State<AppState>, settings: Settings) {
     settings.hidden = normalize_hidden(settings.hidden);
     settings.wishlist_min_cut = clamp_cut(settings.wishlist_min_cut, &[10, 20, 30, 50, 75]);
     settings.big_deal_min_cut = clamp_cut(settings.big_deal_min_cut, &[50, 60, 75, 85, 90]);
-    let changed = st.edit(|d| { let c = d.settings.check_interval != settings.check_interval; d.settings = settings; c });
+    // A new interval, or loot just switched on (fetch it now rather than at the next poll)
+    let changed = st.edit(|d| {
+        let c = d.settings.check_interval != settings.check_interval || (settings.show_loot && !d.settings.show_loot);
+        d.settings = settings; c
+    });
     if changed { st.wake.notify_one(); }
     // hiding a game changes the tray counts now, not at the next poll
     let snap = st.snapshot.lock().unwrap().clone();
