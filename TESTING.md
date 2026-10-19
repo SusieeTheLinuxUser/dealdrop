@@ -89,7 +89,8 @@ One pass on Linux (KDE Plasma, Wayland) for everything in CHANGELOG.md [Unreleas
 
 ### Hide games and Settings → Hidden games (2 min)
 - [ ] Hot deals: Tab to a row's **Hide** and press Enter. The row disappears and focus lands on the next row's Hide (the new last one if you hid the last row, the search box once the list is empty); the "N of M" count shows.
-- [ ] Store sales: a card's **Hide** does the same. The hidden title (case and spacing ignored) also disappears from Free now and Store sales if it's listed there, and never appears in notifications. The Wishlist still lists it (its wishlist sale alert is suppressed). Free now cards have no Hide button.
+- [ ] Store sales: a card's **Hide** does the same. The hidden title (case and spacing ignored) also disappears from Free now and Store sales if it's listed there, and never appears in notifications. The Wishlist still lists it (its wishlist sale alert is suppressed).
+- [ ] Free now: giveaway and free-weekend cards have **Hide** ("Coming next" cards don't). Hiding one moves focus to the next card's Hide, then to the other section's, and to the "Free now" heading once nothing is left; the sidebar badge drops by one.
 - [ ] Settings → **Hidden games** shows "N hidden" and one row per title. **Unhide** brings the game back in Hot deals and focus moves to the Unhide now in its place; **Unhide all** empties the list, focus goes to the "Games you hide…" text.
 
 ### Ctrl+K search (2 min)

@@ -952,7 +952,7 @@ function renderFreeGames () {
   // Not free yet: no claim button, no badge count, the start date in place of the FREE tag
   const upcoming = state.freeUpcoming.filter(g => !hiddenTitle(g.title))
   document.getElementById('label-upcoming').style.display = upcoming.length ? 'block' : 'none'
-  upcoming.forEach(g => gridNext.appendChild(makeFreeCard(g, 'tag-weekend', escHtml(startDateLabel(g.starts)))))
+  upcoming.forEach(g => gridNext.appendChild(makeFreeCard(g, 'tag-weekend', escHtml(startDateLabel(g.starts)), false, false)))
 
   const freeGames = state.freeGames.filter(g => !hiddenTitle(g.title))
   const freeWeekends = state.freeWeekends.filter(g => !hiddenTitle(g.title))
@@ -1009,7 +1009,7 @@ function markSeen (page) {
   updateBadges()
 }
 
-function makeFreeCard (g, tagClass, tagText, claimable = false) {
+function makeFreeCard (g, tagClass, tagText, claimable = false, hideable = true) {
   const card = document.createElement('div')
   const claimed = claimable && state.claimed.includes(g.id)
   card.className = claimed ? 'game-card claimed' : 'game-card'
@@ -1030,7 +1030,9 @@ function makeFreeCard (g, tagClass, tagText, claimable = false) {
       </div>
     </div></div>`
   card.appendChild(makeCardOpenButton(g.source, g.url, g.title, [g.endDate && endDateLabel(g.endDate), claimed && 'Claimed'].filter(Boolean).join('. ')))
-  card.appendChild(makeCardActions(g.source, g.url, g.appId, g.title))
+  const actions = makeCardActions(g.source, g.url, g.appId, g.title)
+  if (hideable) actions.appendChild(makeHideButton(g.title))
+  card.appendChild(actions)
   if (claimable) card.appendChild(makeClaimButton(g, claimed))
   card.querySelector('.game-title').setAttribute('title', g.title)
   return card
@@ -1555,7 +1557,10 @@ function hideTitle (title, button) {
   if (state.page === 'settings') renderHiddenGames()
   if (list) {
     const next = list.querySelectorAll('.hide-title')
-    ;(next[Math.min(index, next.length - 1)] ?? list.closest('.page').querySelector('input[type="search"]'))?.focus()
+    // Free now has no search box: fall back to another section's Hide, then the page heading
+    const page = list.closest('.page')
+    const heading = Object.assign(page.querySelector('h1'), { tabIndex: -1 })
+    ;(next[Math.min(index, next.length - 1)] ?? page.querySelector('input[type="search"], .hide-title') ?? heading).focus()
   }
 }
 
