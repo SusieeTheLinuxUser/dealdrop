@@ -104,21 +104,64 @@ fn remove(path: &Path) -> Result<(), String> {
     }
 }
 
-/// At startup, point an existing entry at this copy of the app: an AppImage update (Gear Lever,
-/// AppImageUpdate) changes the file name, and a moved app would otherwise leave the entry starting
-/// nothing while the toggle still shows On. Rewrites only what differs. Release builds only, so
-/// `cargo tauri dev` never points the entry at a dev binary.
-pub fn refresh() {
-    if !cfg!(debug_assertions) && get() {
-        if let Err(e) = set(true) { eprintln!("autostart refresh failed: {e}"); }
+/// Desktop-entry `Exec=` line back to the path `exec_arg` quoted; None if it isn't one of ours.
+#[cfg(any(target_os = "linux", test))]
+fn exec_path(line: &str) -> Option<String> {
+    let mut rest = line.strip_prefix("Exec=\"")?;
+    let mut out = String::new();
+    loop {
+        if let Some(r) = rest.strip_prefix(r"\\\\") { out.push('\\'); rest = r; }
+        else if let Some(r) = rest.strip_prefix(r"\\").or_else(|| rest.strip_prefix("%")) {
+            let c = r.chars().next()?;
+            out.push(c); rest = &r[c.len_utf8()..];
+        } else {
+            let c = rest.chars().next()?;
+            if c == '"' { return Some(out); }
+            out.push(c); rest = &rest[c.len_utf8()..];
+        }
     }
 }
+
+/// The entry with only its `Exec=` line pointed at `exe`, when the app it records is gone (an AppImage
+/// update renames the file). Everything else is kept, e.g. `Hidden=true` or
+/// `X-GNOME-Autostart-enabled=false` from the desktop's own autostart settings. A recorded app that
+/// still exists is left alone, so trying another copy doesn't take the entry over.
+#[cfg(any(target_os = "linux", test))]
+fn repaired_entry(text: &str, exe: &str, exists: impl Fn(&str) -> bool) -> Option<String> {
+    let old = text.lines().find_map(exec_path)?;
+    if old == exe || exists(&old) || exe.starts_with("/tmp/.mount_") { return None; }
+    let exec = format!("Exec={} {HIDDEN}", exec_arg(exe));
+    Some(text.lines().map(|l| if l.starts_with("Exec=") { exec.as_str() } else { l }).collect::<Vec<_>>().join("\n") + "\n")
+}
+
+/// Held across reading and writing the entry, so the startup repair and the Settings toggle can't interleave.
+#[cfg(target_os = "linux")]
+static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// At startup, repair an entry whose app is gone (Linux: AppImage updates rename the file), which
+/// would otherwise start nothing while the toggle still shows On. Release builds only, so
+/// `cargo tauri dev` never points it at a dev binary. Windows (MSI) and macOS (/Applications) install
+/// to a fixed path, and a Mac app run from the DMG or a translocated path must not take it over.
+#[cfg(target_os = "linux")]
+pub fn refresh() {
+    if cfg!(debug_assertions) { return; }
+    let _lock = LOCK.lock();
+    let Some(path) = config_home().map(|c| desktop_path(&c)) else { return };
+    let (Ok(text), Ok(exe)) = (std::fs::read_to_string(&path), exe()) else { return };
+    if let Some(fixed) = repaired_entry(&text, &exe, |p| Path::new(p).exists()) {
+        if let Err(e) = write(&path, fixed) { eprintln!("autostart refresh failed: {e}"); }
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn refresh() {}
 
 #[cfg(target_os = "linux")]
 pub fn get() -> bool { config_home().is_some_and(|c| desktop_path(&c).exists()) }
 
 #[cfg(target_os = "linux")]
 pub fn set(on: bool) -> Result<(), String> {
+    let _lock = LOCK.lock();
     let config = config_home().ok_or("Couldn't find your home folder")?;
     let icon = config.join("dealdrop").join("autostart-icon.png");
     if !on { return remove(&desktop_path(&config)).and(remove(&icon)); }
@@ -154,8 +197,6 @@ pub fn get() -> bool { reg(&["query", RUN, "/v", "DealDrop"]).map(|o| o.status.s
 pub fn set(on: bool) -> Result<(), String> {
     let out = if on {
         let cmd = format!("\"{}\" {HIDDEN}", exe()?);
-        // Already set to this command: nothing to write.
-        if reg(&["query", RUN, "/v", "DealDrop"]).is_ok_and(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).contains(&cmd)) { return Ok(()); }
         reg(&["add", RUN, "/v", "DealDrop", "/t", "REG_SZ", "/d", &cmd, "/f"])
     } else {
         reg(&["delete", RUN, "/v", "DealDrop", "/f"])
@@ -178,6 +219,20 @@ mod tests {
             assert!(text.lines().any(|l| l == line), "missing {line}");
         }
         assert_eq!(exec_arg(r#"/a "b" $c `d` \e 100%"#), r#""/a \\"b\\" \\$c \\`d\\` \\\\e 100%%""#);
+    }
+
+    #[test]
+    fn a_missing_app_is_repaired_and_desktop_settings_are_kept() {
+        for p in ["/home/me/Apps/DealDrop_0.8.0_amd64.AppImage", r#"/a "b" $c `d` \e 100%"#, "/ünï/çødé"] {
+            assert_eq!(exec_path(&format!("Exec={} --hidden", exec_arg(p))).as_deref(), Some(p));
+        }
+        let old = desktop_entry("/apps/DealDrop_0.8.0_amd64.AppImage", Path::new("/i.png")).replace("enabled=true", "enabled=false") + "Hidden=true\n";
+        let new = "/apps/DealDrop_0.9.0_amd64.AppImage";
+        let fixed = repaired_entry(&old, new, |_| false).unwrap();
+        assert_eq!(fixed, old.replace("0.8.0", "0.9.0")); // only Exec= changed; the user's "off" stays
+        assert!(repaired_entry(&old, new, |_| true).is_none()); // the recorded app still exists: not ours to take
+        assert!(repaired_entry(&old, "/tmp/.mount_x/dealdrop", |_| false).is_none());
+        assert!(repaired_entry("[Desktop Entry]\nExec=other\n", new, |_| false).is_none());
     }
 
     #[test]
