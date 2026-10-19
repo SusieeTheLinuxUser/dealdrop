@@ -165,10 +165,13 @@ fn show_main(app: &AppHandle) {
 /// Tray menu shortcuts whose labels carry the latest counts.
 struct TrayItems { free: MenuItem<tauri::Wry>, wishlist: MenuItem<tauri::Wry> }
 
-/// Free games + free weekends, and wishlist games at least 20% off.
+/// Free games + free weekends that aren't hidden, and wishlist games at least 20% off.
+/// Matches the sidebar badges except claimed games (the UI keeps those, the tray can't see them).
+/// Hidden games stay in the wishlist count because the Wishlist page and its badge still list them.
 /// Keep tray counts and sidebar badges fixed at 20%; only notifications use the preference.
-fn tray_counts(s: &Snapshot) -> (usize, usize) {
-    (s.free_games.len() + s.free_weekends.len(), s.wishlist.iter().filter(|w| discount(w) >= 20).count())
+fn tray_counts(s: &Snapshot, hidden: &[String]) -> (usize, usize) {
+    let free = s.free_games.iter().chain(&s.free_weekends).filter(|g| !is_hidden(hidden, &g.title)).count();
+    (free, s.wishlist.iter().filter(|w| discount(w) >= 20).count())
 }
 
 /// "DealDrop: 3 free games · 1 wishlist game on sale"; zero parts are left out.
@@ -185,7 +188,8 @@ fn with_count(label: &str, n: usize) -> String {
 }
 
 fn update_tray(app: &AppHandle, snap: &Snapshot) {
-    let (free, sale) = tray_counts(snap);
+    let hidden = app.state::<AppState>().read(|d| d.settings.hidden.clone());
+    let (free, sale) = tray_counts(snap, &hidden);
     if let Some(t) = app.tray_by_id("main") { let _ = t.set_tooltip(Some(tray_tooltip(free, sale))); }
     if let Some(items) = app.try_state::<TrayItems>() {
         let _ = items.free.set_text(with_count("Free now", free));
@@ -645,13 +649,16 @@ fn accounts(st: &AppState) -> Accounts {
 fn get_settings(st: State<AppState>) -> Settings { st.read(|d| d.settings.clone()) }
 
 #[tauri::command]
-fn save_settings(st: State<AppState>, settings: Settings) {
+fn save_settings(app: AppHandle, st: State<AppState>, settings: Settings) {
     let mut settings = settings;
     settings.hidden = normalize_hidden(settings.hidden);
     settings.wishlist_min_cut = clamp_cut(settings.wishlist_min_cut, &[10, 20, 30, 50, 75]);
     settings.big_deal_min_cut = clamp_cut(settings.big_deal_min_cut, &[50, 60, 75, 85, 90]);
     let changed = st.edit(|d| { let c = d.settings.check_interval != settings.check_interval; d.settings = settings; c });
     if changed { st.wake.notify_one(); }
+    // hiding a game changes the tray counts now, not at the next poll
+    let snap = st.snapshot.lock().unwrap().clone();
+    if let Some(snap) = snap { update_tray(&app, &snap); }
 }
 
 #[tauri::command]
@@ -943,7 +950,7 @@ mod tests {
     }
 
     #[test]
-    fn tray_text_counts_like_the_badges() {
+    fn tray_text_counts_unhidden_free_games_and_wishlist_sales() {
         assert_eq!(tray_tooltip(0, 0), "DealDrop");
         assert_eq!(tray_tooltip(3, 5), "DealDrop: 3 free games · 5 wishlist games on sale");
         assert_eq!(tray_tooltip(1, 0), "DealDrop: 1 free game");
@@ -952,12 +959,14 @@ mod tests {
         assert_eq!(with_count("Wishlist", 0), "Wishlist");
         let wish = |discount| WishItem { price_info: Some(Price { discount, ..Default::default() }), ..Default::default() };
         let snap = super::Snapshot {
-            free_games: vec![Free::default(), Free::default()],
-            free_weekends: vec![Free::default()],
-            wishlist: vec![wish(20), wish(19), WishItem::default(), wish(75)],
+            free_games: vec![Free::default(), Free::default(), Free { title: "Hades  II".into(), ..Default::default() }],
+            free_weekends: vec![Free::default(), Free { title: "hades ii".into(), ..Default::default() }],
+            wishlist: vec![wish(20), wish(19), WishItem::default(), WishItem { name: "Hades II".into(), ..wish(75) }],
             ..Default::default()
         };
-        assert_eq!(tray_counts(&snap), (3, 2));
+        assert_eq!(tray_counts(&snap, &[]), (5, 2));
+        // hidden free games drop out; the Wishlist page still lists hidden games, so they still count there
+        assert_eq!(tray_counts(&snap, &["Hades II".into()]), (3, 2));
     }
 
     #[test]

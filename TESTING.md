@@ -110,7 +110,7 @@ One pass on Linux (KDE Plasma, Wayland) for everything in CHANGELOG.md [Unreleas
 - [ ] Optional force test: quit DealDrop, `sudo timedatectl set-ntp false && sudo timedatectl set-time '2026-12-16 12:00:00'`, start it and **Refresh all** → "Steam Winter Sale starts tomorrow" / "Dec 17 – Jan 4. Time to check your wishlist." Refresh again: nothing. Restore with `sudo timedatectl set-ntp true`; quit and delete `lastSaleSoonKey` to re-test. Also see §5 **Sale heads-up**.
 
 ### Tray: counts and shortcuts (1 min)
-- [ ] Right-click the tray icon: **Open DealDrop**, **Free now (N)**, **Wishlist (N)**, **Refresh all**, **Quit**. N is free games plus free weekends, and wishlist games at 20%+ off; at zero the label has no "(0)". The counts update after Refresh all.
+- [ ] Right-click the tray icon: **Open DealDrop**, **Free now (N)**, **Wishlist (N)**, **Refresh all**, **Quit**. N is free games plus free weekends (hidden games left out, claimed ones still counted: the tray can't see claims), and wishlist games at 20%+ off (hidden ones included, as on the Wishlist page); at zero the label has no "(0)". The counts update after Refresh all, and right away when you hide or unhide a free game.
 - [ ] With the window closed to the tray, **Free now** / **Wishlist** opens it on that page.
 - [ ] *(Windows/macOS)* Hovering the icon shows "DealDrop: 3 free games · 1 wishlist game on sale" (or just "DealDrop" at zero). Linux tray icons (AppIndicator) don't support tooltips, so KDE shows no counts on hover.
 
