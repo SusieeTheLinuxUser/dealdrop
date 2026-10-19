@@ -102,7 +102,7 @@ One pass on Linux (KDE Plasma, Wayland) for everything in CHANGELOG.md [Unreleas
 
 ### Notification thresholds (1½ min)
 - [ ] Settings → Notifications: **Wishlist game on sale** has a dropdown `at 10%+ off` … `75%` (default 20%); **Big deal** has 50/60/75/85/90 (default 75%). Each dropdown is greyed out while its toggle is off.
-- [ ] Turn **Big deal** on at **50%+**, then **Refresh all**: one notification, "N deals over 50% off" (or "🔥 X% off: Title" for a single deal). A second refresh doesn't repeat it. Turn it back off.
+- [ ] Turn **Big deal** on at **50%+**, then **Refresh all**: one notification, "N deals at 50%+ off" (or "🔥 X% off: Title" for a single deal). A second refresh doesn't repeat it. Turn it back off.
 - [ ] Set the wishlist threshold to **10%** and refresh: wishlist games 10–19% off you haven't been notified about produce a notification (nothing if there are none). Both choices survive a restart.
 
 ### "Steam sale starts tomorrow" (½ min)

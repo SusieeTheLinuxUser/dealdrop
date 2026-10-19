@@ -613,7 +613,7 @@ fn notify_big_deals(app: &AppHandle, st: &AppState, deals: &[Deal]) {
         notify(app, &format!("🔥 {}% off: {}", d.cut, d.title), &format!("{} — ${:.2}", d.shop, d.price));
     } else if !fresh.is_empty() {
         let names: Vec<&str> = fresh.iter().take(4).map(|d| d.title.as_str()).collect();
-        notify(app, &format!("{} deals over {}% off", fresh.len(), min_cut), &(names.join(", ") + if fresh.len() > 4 { "…" } else { "" }));
+        notify(app, &format!("{} deals at {}%+ off", fresh.len(), min_cut), &(names.join(", ") + if fresh.len() > 4 { "…" } else { "" }));
     }
     // Hysteresis stays 15 points below the selected notification threshold.
     st.edit(|s| remember_big_deals(&mut s.seen_deal_ids, deals, &fresh, min_cut));

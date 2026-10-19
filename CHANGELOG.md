@@ -8,7 +8,7 @@ All notable changes to DealDrop are documented in this file.
 - Long wishlists (public Steam wishlists can hold 10,000+ games) show 100 games at a time with a "Show more games" button, so the Wishlist page opens and searches quickly; Ctrl+K still jumps to any game.
 - Hot deals show the Steam user rating ("92% · Very Positive", just the percent in a narrow window) and can be sorted by "Best rated".
 - Fixed: refreshing an Epic sign-in no longer renames the account to "Epic user" or drops the refresh token when Epic leaves them out of the response (which forced a new sign-in later).
-- Wishlist games that went on sale since you last looked are tagged "New", with a dot on the Wishlist sidebar item until you've looked; a game that goes back to full price and sells again counts as new again.
+- Wishlist games that went on sale since you last looked are tagged "New", with a dot on the Wishlist sidebar item until you've looked; a game whose discount changes (or that goes back to full price and sells again) counts as new again.
 - A notification the day before a Steam major sale starts ("Steam Winter Sale starts tomorrow"); toggle in Settings → Notifications.
 - Daylight theme: all text meets WCAG AA contrast (FREE, weekend and discount tags, cheaper-store prices, Steam badges, hints, counts and dates are a little darker).
 - Search everything with Ctrl+K (⌘K on macOS): one box finds games across Free now, Store sales, Hot deals and Wishlist; Enter jumps to the game on its page.
@@ -16,14 +16,14 @@ All notable changes to DealDrop are documented in this file.
 - Fixed: very large Steam wishlists no longer trip CheapShark's rate limit; GOG wishlist prices in other currencies show their currency and are no longer compared with US-dollar prices.
 - Wishlist games on sale at their all-time low (CheapShark) show a "Lowest ever" badge; USD prices only.
 - Settings can choose wishlist sale and big-deal notification thresholds.
-- Hide games by title across free games, hot deals, store sales, and notifications; manage hidden titles in Settings.
+- Hide games by title across free games, hot deals, store sales, and notifications (hidden wishlist games stay listed but send no sale alerts); manage hidden titles in Settings.
 - Hot deals and Store sales tag deals you haven't seen yet as "New", with a dot on the sidebar item until you've looked.
 - Hot deals show a "Lowest ever" badge when their price matches CheapShark's historical low.
 - CI runs the unit tests and renderer self-check on every push and pull request.
 - GOG and Epic CheapShark deals open in their installed launcher after an exact-title lookup, with the CheapShark link as fallback.
 - Hot deals can be filtered by store (Steam, GOG, Fanatical…), with a count per store; the choice is remembered.
 - Free now: mark giveaways as claimed; claimed games are dimmed, sorted last and left out of the sidebar count.
-- Tray icon: the tooltip shows how many free games and wishlist sales there are, and the menu has "Free now" and "Wishlist" shortcuts (with counts) that open those pages.
+- Tray icon: the menu has "Free now" and "Wishlist" shortcuts (with counts) that open those pages; on Windows and macOS the tooltip shows the same counts (Linux tray icons have no tooltips).
 - Settings → Notifications: "Start DealDrop when I log in" (off by default) starts it hidden in the tray.
 - Free now: a "Coming next on Epic" section lists the next free Epic games with the date they turn free (no notification, not counted in the badge).
 - Accessibility: after Hide or Unhide, keyboard focus moves to the next row instead of being lost; clearer button names (Unhide, Sign out, launcher choices) and selected states on theme, interval and launcher choices; "New", "Lowest ever" and "Claimed" readable in the Daylight theme; free games say when they end and whether they are claimed to screen readers.
