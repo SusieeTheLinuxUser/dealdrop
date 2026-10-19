@@ -8,6 +8,8 @@ All notable changes to DealDrop are documented in this file.
 - Wishlist price targets: a game's **Target** button sets "tell me at or below $X"; one notification when its price (or a cheaper offer elsewhere) reaches it, again only after it rises above or the target changes. USD prices only.
 - Fixed: "Reset settings to defaults" keeps your hidden games and price targets (it resets appearance, alerts and interval, as the button says).
 - Fixed: a background refresh no longer closes an open price-target editor (and loses what you typed); the list updates when you close it.
+- Fixed: in a narrow window the Wishlist sidebar item no longer shrinks its icon and "New" dot or spills its on-sale count out of the badge when both are shown.
+- Fixed: in a narrow window (720 px or less) the Wishlist "On sale now" rows hide the struck-through original price so the game title has room next to the Target button; screen readers still hear it.
 - Fixed: an unreadable `config.json` (e.g. cut short by a crash) is moved to `config.bad.json` instead of being overwritten with defaults on the next save, so sign-ins and settings can be recovered by hand; saves are flushed to disk before replacing the old file.
 - Fixed: if a Steam sale starts or ends while Settings is open, the theme chips update right away (the "· live" sale chip appears or goes) instead of after leaving the page; keyboard focus stays on the theme chip.
 - Fixed: while CheapShark is rate-limiting, "Copy error" lists the cooldown once (under Hot deals) instead of repeating it for wishlist prices.
