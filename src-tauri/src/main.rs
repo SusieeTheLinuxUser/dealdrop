@@ -592,10 +592,15 @@ fn free_notice(fresh: &[&Free], weekend: bool) -> Option<Notice> {
     }
 }
 
+/// Record every listed game, hidden ones too, so unhiding one later does not announce it as new.
+fn remember_free(seen: &mut HashSet<String>, games: &[Free]) {
+    seen.extend(games.iter().map(|g| g.id.clone()));
+}
+
 fn notify_new_free(app: &AppHandle, st: &AppState, games: &[Free], weekend: bool) {
-    let fresh = st.read(|d| fresh_free(games, &d.seen_free_ids, &d.settings.hidden));
-    if fresh.is_empty() { return; }
-    st.edit(|d| d.seen_free_ids.extend(fresh.iter().map(|g| g.id.clone())));
+    let (fresh, unseen) = st.read(|d| (fresh_free(games, &d.seen_free_ids, &d.settings.hidden), games.iter().any(|g| !d.seen_free_ids.contains(&g.id))));
+    if !unseen { return; }
+    st.edit(|d| remember_free(&mut d.seen_free_ids, games));
     if let Some(n) = free_notice(&fresh, weekend) { notify(app, &n.title, &n.body); }
 }
 
@@ -633,17 +638,18 @@ fn wishlist_notice(fresh: &[&WishItem]) -> Option<Notice> {
     }
 }
 
-/// Record what we just notified. Forget a game once its discount falls under 5% so the next
+/// Record every sale at the cut (what we just notified, plus hidden games so unhiding one does not
+/// announce an old sale). Forget a game once its discount falls under 5% so the next
 /// sale notifies again. A deeper cut while it stays at 5% or more does not.
-fn remember_wishlist(seen: &mut HashSet<String>, items: &[WishItem], fresh: &[&WishItem]) {
-    seen.extend(fresh.iter().map(|w| sale_key(w)));
+fn remember_wishlist(seen: &mut HashSet<String>, items: &[WishItem], min_cut: u32) {
+    seen.extend(items.iter().filter(|w| discount(w) >= min_cut).map(sale_key));
     for w in items { if discount(w) < 5 { seen.remove(&sale_key(w)); } }
 }
 
 fn notify_wishlist(app: &AppHandle, st: &AppState, items: &[WishItem]) {
-    let fresh = st.read(|d| fresh_wishlist(items, &d.seen_sale_ids, &d.settings.hidden, d.settings.wishlist_min_cut));
+    let (fresh, min_cut) = st.read(|d| (fresh_wishlist(items, &d.seen_sale_ids, &d.settings.hidden, d.settings.wishlist_min_cut), d.settings.wishlist_min_cut));
     if let Some(n) = wishlist_notice(&fresh) { notify(app, &n.title, &n.body); }
-    st.edit(|d| remember_wishlist(&mut d.seen_sale_ids, items, &fresh));
+    st.edit(|d| remember_wishlist(&mut d.seen_sale_ids, items, min_cut));
 }
 
 /// Price compared with a target: the cheaper offer elsewhere if any (the link the UI opens), else the store's own.
@@ -716,11 +722,12 @@ fn notify_big_deals(app: &AppHandle, st: &AppState, deals: &[Deal]) {
         notify(app, &format!("{} deals at {}%+ off", fresh.len(), min_cut), &(names.join(", ") + if fresh.len() > 4 { "…" } else { "" }));
     }
     // Hysteresis stays 15 points below the selected notification threshold.
-    st.edit(|s| remember_big_deals(&mut s.seen_deal_ids, deals, &fresh, min_cut));
+    st.edit(|s| remember_big_deals(&mut s.seen_deal_ids, deals, min_cut));
 }
 
-fn remember_big_deals(seen: &mut HashSet<String>, deals: &[Deal], fresh: &[&Deal], min_cut: u32) {
-    seen.extend(fresh.iter().map(|d| d.id.clone()));
+/// Every deal at the cut is recorded, hidden ones too, so unhiding one does not announce it as new.
+fn remember_big_deals(seen: &mut HashSet<String>, deals: &[Deal], min_cut: u32) {
+    seen.extend(deals.iter().filter(|d| d.cut >= min_cut).map(|d| d.id.clone()));
     for d in deals { if d.cut < min_cut.saturating_sub(15) { seen.remove(&d.id); } }
 }
 
@@ -1028,7 +1035,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{civil_from_days, days_from_civil, sale_soon_notice, sale_starting_tomorrow, SALES, clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, keep_prices, carry_cheapest, normalize_hidden, normalize_targets, target_hits, target_notice, price_failure, CS_BLOCKED, normalize_title, remember_big_deals, remember_wishlist, restore_by_prefix, safe_https, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, load_db, Acct, Deal, Free, Price, Prime, Settings, WishItem};
+    use super::{civil_from_days, days_from_civil, sale_soon_notice, sale_starting_tomorrow, SALES, clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, keep_prices, carry_cheapest, normalize_hidden, normalize_targets, target_hits, target_notice, price_failure, CS_BLOCKED, normalize_title, remember_big_deals, remember_free, remember_wishlist, restore_by_prefix, safe_https, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, load_db, Acct, Deal, Free, Price, Prime, Settings, WishItem};
     use std::collections::{HashMap, HashSet};
 
     #[test]
@@ -1222,6 +1229,29 @@ mod tests {
     }
 
     #[test]
+    fn hidden_matches_are_recorded_so_unhiding_does_not_notify() {
+        let hidden = vec!["Hades".to_string()];
+        let free = vec![game("steam-1", "Hades", "steam", "free")];
+        let mut seen = HashSet::new();
+        assert!(fresh_free(&free, &seen, &hidden).is_empty());
+        remember_free(&mut seen, &free);
+        assert!(fresh_free(&free, &seen, &[]).is_empty());
+
+        let wishlist = vec![wish("1", "Hades", Some(40)), wish("2", "Control", Some(10))];
+        let mut seen = HashSet::new();
+        assert!(fresh_wishlist(&wishlist, &seen, &hidden, 20).is_empty());
+        remember_wishlist(&mut seen, &wishlist, 20);
+        assert!(fresh_wishlist(&wishlist, &seen, &[], 20).is_empty());
+        assert!(!seen.contains("steam:2")); // under the cut: a later deeper sale still notifies
+
+        let deals = vec![Deal { id: "1".into(), title: "Hades".into(), cut: 90, ..Default::default() }];
+        let mut seen = HashSet::new();
+        assert!(fresh_big_deals(&deals, &seen, &hidden, 75).is_empty());
+        remember_big_deals(&mut seen, &deals, 75);
+        assert!(fresh_big_deals(&deals, &seen, &[], 75).is_empty());
+    }
+
+    #[test]
     fn new_free_id_notifies_once_then_is_recorded() {
         let games = vec![game("steam-ftk-1", "Hades", "steam", "free")];
         let mut seen = HashSet::new();
@@ -1315,12 +1345,12 @@ mod tests {
         let mut items = vec![wish("10", "Hades", Some(25))];
         let fresh = fresh_wishlist(&items, &seen, &[], 20);
         assert_eq!(fresh.len(), 1);
-        remember_wishlist(&mut seen, &items, &fresh);
+        remember_wishlist(&mut seen, &items, 20);
         items[0].price_info.as_mut().unwrap().discount = 60;
         assert!(fresh_wishlist(&items, &seen, &[], 20).is_empty());
         // Under 5% the id is forgotten, so a later sale notifies again.
         items[0].price_info.as_mut().unwrap().discount = 4;
-        remember_wishlist(&mut seen, &items, &[]);
+        remember_wishlist(&mut seen, &items, 20);
         assert!(!seen.contains("steam:10"));
         items[0].price_info.as_mut().unwrap().discount = 30;
         assert_eq!(fresh_wishlist(&items, &seen, &[], 20).len(), 1);
@@ -1336,7 +1366,7 @@ mod tests {
         let deals = vec![Deal { id: "a".into(), cut: 60, ..Default::default() }, Deal { id: "b".into(), cut: 59, ..Default::default() }];
         assert_eq!(fresh_big_deals(&deals, &HashSet::new(), &[], 75).len(), 0);
         let mut seen = HashSet::from(["a".into(), "b".into()]);
-        remember_big_deals(&mut seen, &deals, &[], 75);
+        remember_big_deals(&mut seen, &deals, 75);
         assert!(seen.contains("a"));
         assert!(!seen.contains("b"));
         assert_eq!(fresh_big_deals(&deals, &HashSet::new(), &[], 60).len(), 1);

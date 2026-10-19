@@ -8,6 +8,7 @@ All notable changes to DealDrop are documented in this file.
 - Wishlist price targets: a game's **Target** button sets "tell me at or below $X"; one notification when its price (or a cheaper offer elsewhere) reaches it, again only after it rises above or the target changes. USD prices only.
 - Fixed: wishlist "cheaper elsewhere" stores come from the batched CheapShark game lookup DealDrop already makes, instead of one extra request per game every refresh (up to ~280 at once), the likely cause of CheapShark rate-limiting.
 - Fixed: a price target no longer notifies twice when one refresh misses CheapShark's cheaper offer for the game (a failed lookup, or a long wishlist where the game fell outside the lookups); the last offer is kept while the store's own price is unchanged.
+- Fixed: a game that went free, on sale or into a big deal while hidden no longer notifies as new when you unhide it.
 - Fixed: "Reset settings to defaults" keeps your hidden games and price targets (it resets appearance, alerts and interval, as the button says).
 - Fixed: a background refresh no longer closes an open price-target editor (and loses what you typed); the list updates when you close it.
 - Fixed: in a narrow window the Wishlist sidebar item no longer shrinks its icon and "New" dot or spills its on-sale count out of the badge when both are shown.
