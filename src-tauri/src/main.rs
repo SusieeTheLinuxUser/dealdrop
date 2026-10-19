@@ -133,7 +133,7 @@ impl AppState {
             o.write(true).create(true).truncate(true);
             #[cfg(unix)]
             { use std::os::unix::fs::OpenOptionsExt; o.mode(0o600); }
-            if o.open(&tmp).and_then(|mut f| std::io::Write::write_all(&mut f, text.as_bytes())).is_ok() {
+            if o.open(&tmp).and_then(|mut f| { std::io::Write::write_all(&mut f, text.as_bytes())?; f.sync_all() }).is_ok() {
                 // mode() is ignored when config.tmp already exists; rename would publish that mode.
                 #[cfg(unix)]
                 {
@@ -900,7 +900,14 @@ async fn wishlist_game_deals(app_id: String, name: String) -> Value {
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 
 fn load_db(path: &PathBuf) -> Db {
-    std::fs::read_to_string(path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+    let Ok(text) = std::fs::read_to_string(path) else { return Db::default() };
+    serde_json::from_str(&text).unwrap_or_else(|e| {
+        // Keep the unreadable file (sign-in tokens, settings) instead of overwriting it on the next save.
+        let bad = path.with_extension("bad.json");
+        eprintln!("config.json is unreadable ({e}); moved it to {}", bad.display());
+        let _ = std::fs::rename(path, bad);
+        Db::default()
+    })
 }
 
 fn main() {
@@ -1004,8 +1011,22 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{civil_from_days, days_from_civil, sale_soon_notice, sale_starting_tomorrow, SALES, clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, keep_prices, normalize_hidden, normalize_targets, target_hits, target_notice, price_failure, CS_BLOCKED, normalize_title, remember_big_deals, remember_wishlist, restore_by_prefix, safe_https, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, Acct, Deal, Free, Price, Prime, Settings, WishItem};
+    use super::{civil_from_days, days_from_civil, sale_soon_notice, sale_starting_tomorrow, SALES, clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, keep_prices, normalize_hidden, normalize_targets, target_hits, target_notice, price_failure, CS_BLOCKED, normalize_title, remember_big_deals, remember_wishlist, restore_by_prefix, safe_https, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, load_db, Acct, Deal, Free, Price, Prime, Settings, WishItem};
     use std::collections::{HashMap, HashSet};
+
+    #[test]
+    fn unreadable_config_is_kept_aside() {
+        let dir = std::env::temp_dir().join(format!("dealdrop-load-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.json");
+        std::fs::write(&path, "{ not json").unwrap();
+        let db = load_db(&path);
+        assert!(db.steam_id.is_none() && !db.primed);
+        assert!(!path.exists());
+        assert_eq!(std::fs::read_to_string(dir.join("config.bad.json")).unwrap(), "{ not json");
+        assert!(load_db(&path).steam_id.is_none()); // missing file: defaults, nothing moved
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn sale_calendar_matches_the_ui() {

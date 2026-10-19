@@ -6,6 +6,7 @@ All notable changes to DealDrop are documented in this file.
 - Keyboard: **J / K** move to the next / previous item on Hot deals, Store sales, Wishlist and Free now (Enter opens it); listed under `?`.
 - Optional **Free DLC & loot** section on Free now (Settings → Free now, off by default): in-game items and DLC giveaways from GamerPower, hideable and searchable, never notified or counted in the badge.
 - Wishlist price targets: a game's **Target** button sets "tell me at or below $X"; one notification when its price (or a cheaper offer elsewhere) reaches it, again only after it rises above or the target changes. USD prices only.
+- Fixed: an unreadable `config.json` (e.g. cut short by a crash) is moved to `config.bad.json` instead of being overwritten with defaults on the next save, so sign-ins and settings can be recovered by hand; saves are flushed to disk before replacing the old file.
 - Fixed: if a Steam sale starts or ends while Settings is open, the theme chips update right away (the "· live" sale chip appears or goes) instead of after leaving the page; keyboard focus stays on the theme chip.
 - Fixed: while CheapShark is rate-limiting, "Copy error" lists the cooldown once (under Hot deals) instead of repeating it for wishlist prices.
 - Fixed: if the Steam sale check fails right after DealDrop starts during a sale (e.g. offline at login), the theme you picked is kept; it used to drop to your base theme and then switch back to the sale theme on the next good check.
