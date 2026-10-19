@@ -1381,6 +1381,7 @@ function swatch (cols) { return `<span class="swatch">${cols.map(c => `<i style=
 function renderThemeGrid () {
   const s = state.settings
   const grid = document.getElementById('theme-grid')
+  const focused = grid.contains(document.activeElement) && document.activeElement.dataset.key
   grid.innerHTML = ''
   const entries = Object.entries(BASE_THEMES).map(([k, v]) => [k, v, false])
   const live = state.liveSale?.key
@@ -1389,6 +1390,7 @@ function renderThemeGrid () {
     const b = document.createElement('button')
     b.className = 'theme-chip' + (s.theme === key ? ' active' : '') + (isSale ? ' sale' : '')
     b.innerHTML = `${swatch(th.sw)}${th.name}${isSale ? ' · live' : ''}`
+    b.dataset.key = key
     b.setAttribute('aria-pressed', String(s.theme === key))
     b.addEventListener('click', () => {
       s.theme = key
@@ -1398,6 +1400,8 @@ function renderThemeGrid () {
     })
     grid.appendChild(b)
   })
+  // keep keyboard focus on the same theme, or on the active one if that chip is gone (sale ended)
+  if (focused) (grid.querySelector(`[data-key="${focused}"]`) ?? grid.querySelector('.active'))?.focus()
 }
 
 // ─── Settings page ────────────────────────────────────────────────────────────
@@ -1858,8 +1862,11 @@ function applyData (data) {
   state.dealsError   = data.dealsError   ?? null
   state.sourceErrors = data.sourceErrors ?? []
   state.sales        = { steam: [], gog: [], epic: [], ...(data.sales ?? {}) }
+  const saleWas = state.liveSale?.key
   state.liveSale     = data.liveSale ?? null
   syncSaleTheme()
+  // Settings isn't re-rendered by a poll, but its "· live" chip must follow a sale starting or ending
+  if (state.page === 'settings' && state.liveSale?.key !== saleWas) renderThemeGrid()
   state.wishlist     = data.wishlist ?? []
   state.wishlistErrors  = data.wishlistErrors ?? {}
   state.wishlistPrivate = !!data.wishlistPrivate

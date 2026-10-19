@@ -3,6 +3,7 @@
 All notable changes to DealDrop are documented in this file.
 
 ## [Unreleased]
+- Fixed: if a Steam sale starts or ends while Settings is open, the theme chips update right away (the "· live" sale chip appears or goes) instead of after leaving the page; keyboard focus stays on the theme chip.
 - Fixed: while CheapShark is rate-limiting, "Copy error" lists the cooldown once (under Hot deals) instead of repeating it for wishlist prices.
 - Fixed: if the Steam sale check fails right after DealDrop starts during a sale (e.g. offline at login), the theme you picked is kept; it used to drop to your base theme and then switch back to the sale theme on the next good check.
 - Fixed: after CheapShark rate-limits DealDrop (HTTP 429), every CheapShark request pauses until it allows them again (its Retry-After, else 15 min doubling up to 2 h) instead of retrying each poll and prolonging the block; hot deals and wishlist prices keep their last good data meanwhile.
