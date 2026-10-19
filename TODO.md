@@ -2,7 +2,11 @@
 
 ## Next up
 
-Nothing queued.
+Left over from the 2026-10-18/19 overnight work on `dev` (waiting for the maintainer's review):
+
+- **Optional cleanup (~220 lines, no behaviour change):** merge `keep_prices` into `carry_cheapest`; a constant instead of the `local_steam_id()` test helper in `launchers.rs`; an `X-DealDrop-Exe` key instead of unescaping `Exec=` in `autostart.rs`; `loadJson`/`saveJson` for localStorage in `app.js`; `..Default::default()` in the parsers; parse each CheapShark body once; simpler sale-soon date math; shared focus/dialog helpers, `settingRow`, `makeHideButton`. Do it only after the per-commit review, so reverts stay clean.
+- **Known low-impact edges:** "Lowest ever" on a wishlist game can vanish for one poll when its `games?ids=` batch fails; a `--hidden` start on Store sales counts the never-shown page as viewed; running an older `DealDrop_*.AppImage` from the same folder points the login entry at it.
+- **Check for real** (see AGENTS.md "Known unverified paths" and TESTING.md §8): tray menu, start at login after an AppImage update, price-target and sale-soon notifications, the loot section, closing to the tray marking "New" seen.
 
 ## Minimize animation on KDE Plasma (Wayland) flies to the pointer
 
