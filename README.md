@@ -13,18 +13,18 @@ Optional store sign-in enables wishlist alerts. No API keys or telemetry; DealDr
 - **Steam sale alerts** — notified the moment a major seasonal sale goes live, plus a heads-up the day before it starts
 - **Free game alerts** — Epic, Steam and GOG giveaways, de-duplicated across sources; mark the ones you've claimed (dimmed, sorted last, left out of the count)
 - **Coming next on Epic** — the next free Epic games and the date they turn free
-- **Free DLC & loot** (optional) — in-game items and DLC giveaways from GamerPower, off by default
+- **Free DLC & loot** (optional) — in-game items and DLC giveaways from GamerPower, off by default; never notified or counted
 - **Steam free-to-keep games** — includes qualifying DLC, clearly tagged as DLC
 - **Free weekend alerts** — Steam free-to-play weekends
 - **Store sales** — current discounts from **Steam, GOG and Epic Games**, browsable per store
 - **Search everything** — Ctrl+K (⌘K on macOS) finds a game across free games, store sales, hot deals and wishlist and jumps to it
 - **Search and sort** — find deals, store sales and wishlist games by title, discount or price; discount chips and wishlist sale-only filters narrow results
 - **Remembered list choices** — last page, sort order and discount toggles stay on this computer; search text is cleared when the app closes
-- **Wishlists from Steam, GOG and Epic** — sign in once for alerts when games drop 20% or more (you choose the discount); the empty Wishlist page offers sign-in buttons when no store is connected
+- **Wishlists from Steam, GOG and Epic** — sign in once for alerts when games drop 20% or more (you choose the discount); the empty Wishlist page offers sign-in buttons when no store is connected; long wishlists show 100 games at a time
 - **Hot deals** — top discounts across 30+ stores (via CheapShark, no key needed) with their Steam rating, filterable by store, sortable by rating, with an optional alert above a discount you choose
 - **"Lowest ever" badge** — hot deals and wishlist games at their all-time low price (CheapShark; USD prices only)
 - **"New" tags** — hot deals, store sales and wishlist sales you haven't seen yet are tagged New, with a dot on the sidebar item
-- **Hide games** — hide a title from hot deals and store sales; it also drops out of free games and notifications; unhide in Settings
+- **Hide games** — hide a title from hot deals, store sales or free games; it also drops out of notifications (hidden wishlist games stay listed but send no alerts); unhide in Settings
 - **Wishlist price targets** — set "tell me at or below $X" on a wishlist game for one alert when it (or a cheaper store) gets there (USD prices)
 - **Wishlist links go to the cheapest store** — like deals.gg, a wishlist game that is cheaper elsewhere shows the best offer and opens it
 - **Themes** — 6 built-in themes (Midnight, Lavender, Spooktober, Forest, Graphite, Daylight), optional rounded window corners, plus a **seasonal theme with falling leaves / snow / petals / lanterns that unlocks and switches on automatically while each Steam sale is live** (your own pick is remembered)
@@ -37,13 +37,14 @@ Optional store sign-in enables wishlist alerts. No API keys or telemetry; DealDr
 - **Keyboard-friendly cards** — press Enter on a free game, store sale or hot deal to open its store page; launcher and browser buttons remain available
 - **Responsive layouts** — card grids fill wide windows while keeping rows and text at a readable width
 - **Bundled fonts** — DM Sans and DM Mono load locally, with no third-party font requests
+- **Safe settings** — an unreadable `config.json` is kept aside as `config.bad.json` instead of being overwritten
 - Native Rust backend (Tauri) — small AppImage, low memory
 
 ---
 
 ## Install
 
-v0.7.9 ships all three builds. Download the file for your OS from [Releases](../../releases): Linux AppImage, Windows `.msi`, or universal macOS `.dmg` (Intel and Apple Silicon).
+Every release ships all three builds. Download the file for your OS from [Releases](../../releases): Linux AppImage, Windows `.msi`, or universal macOS `.dmg` (Intel and Apple Silicon).
 
 ### Windows (.msi)
 

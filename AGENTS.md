@@ -7,16 +7,23 @@ It polls store APIs, shows free games / store sales / hot deals / wishlists, and
 
 | Path | What |
 |---|---|
-| `src-tauri/src/main.rs` | App state, persistence (`config.json` in the OS config dir: `~/.config/dealdrop` / `%APPDATA%\dealdrop` / `~/Library/Application Support/dealdrop`), poll loop, notifications, tray, Tauri commands |
-| `src-tauri/src/sources.rs` | Every no-account HTTP source (Steam, GOG, Epic free, GamerPower, CheapShark) + live smoke tests |
+| `src-tauri/src/main.rs` | App state, persistence (`config.json` in the OS config dir: `~/.config/dealdrop` / `%APPDATA%\dealdrop` / `~/Library/Application Support/dealdrop`), poll loop, notifications, tray, Tauri commands (see Backend notes) |
+| `src-tauri/src/sources.rs` | Every no-account HTTP source (Steam, GOG, Epic free, GamerPower giveaways + loot, CheapShark) + offline parser fixtures + live smoke tests |
 | `src-tauri/src/stores.rs` | Sign-in window + Steam/GOG/Epic auth, GOG & Epic wishlists, Epic sales |
-| `src-tauri/src/autostart.rs` | "Start when I log in": per-OS entry (XDG autostart file / `Run` registry value / LaunchAgent) that runs the app with `--hidden` (tray only); the OS entry is the only record of the setting |
+| `src-tauri/src/autostart.rs` | "Start when I log in": per-OS entry (XDG autostart file / `Run` registry value / LaunchAgent) that runs the app with `--hidden` (tray only); the OS entry is the only record of the setting. `refresh()` (Linux, release builds only, on a thread at startup) points the entry at the running copy when the app it records is gone, or when both are `DealDrop_*.AppImage` files in one folder (AppImageUpdate keeps the old file); another copy elsewhere doesn't take it over; everything else in the file (e.g. `Hidden=true`) is kept |
 | `src-tauri/src/launchers.rs` | Open-in-launcher table, per-OS install detection, deep links |
 | `.github/workflows/ci.yml` | Every push to `dev`/`main` and every PR → `cargo test` + `node tools/preview/selfcheck.mjs` on Linux, `cargo test` on Windows and macOS |
 | `.github/workflows/release.yml` | Manual dispatch → builds Windows .msi + macOS .dmg and attaches them to an existing release |
 | `renderer/api.js` | `window.api` → Tauri `invoke` bridge (the only place the UI touches the backend) |
 | `renderer/app.js` | All UI rendering. `renderer/index.html`, `renderer/style.css` |
-| `tools/preview/` | Dev-only browser preview harness with a local mock Tauri bridge; never bundled |
+| `tools/preview/` | Dev-only browser preview harness with a local mock Tauri bridge; never bundled. Mock flags: `?stress=1&accounts=1&bigwishlist=1&sale=<key>` (also `errors`, `empty`, `stale`, `onboarded`; see its README). `selfcheck.mjs` asserts the pure helpers in `app.js` |
+
+## Backend notes
+
+- **Persistence:** `load_db` moves an unreadable `config.json` aside to `config.bad.json` (`config.bad2.json`, … never overwriting an earlier one) and starts from defaults. If it can't be moved, `CONFIG_STUCK` is set: nothing is saved that run and the error box says why.
+- **Seen/notify bookkeeping** (`seen_free_ids`, `seen_sale_ids`, `seen_deal_ids` in `Db`): `remember_*` records hidden items as seen too, so unhiding one never notifies it as new. Hidden games are filtered out of notifications (`is_hidden`), not out of bookkeeping.
+- **Price targets:** `Settings.price_targets` (`"store:id"` → USD, `normalize_targets`) and `Db.fired_targets` (key → the target that fired). `target_hits` fires once per target; it re-arms when the price rises above it or the target changes. Reset settings keeps hidden games and targets.
+- **CheapShark:** every request goes through `cheapshark_get`, which shares one 429 cooldown (`CS_COOLDOWN`: Retry-After, else 15 min doubling to 2 h) and fails without touching the network while blocked; the poll keeps last good data, and `price_failure` drops the wishlist copy of the cooldown error so it shows once. Wishlist offers' stores come from the batched `games?ids=` lookup (never one `deals?id=` per item). `attach_cheapest` returns the items it got no answer for, and `carry_cheapest` keeps their last offer/lowest price while the store's own price is unchanged, so a missed lookup doesn't re-arm a price target.
 
 ## Commands
 
@@ -100,4 +107,9 @@ See [TODO.md](TODO.md) (e.g. the KDE minimize animation flying to the pointer in
 - Start at login on Windows (`reg add` of a `Run` value) and macOS (LaunchAgent plist with `RunAtLoad`) has not been run on a real machine (only the plist text is unit-tested; see [TESTING.md](TESTING.md)). Linux was checked by unit test plus the written `.desktop` file.
 - GOG/Epic wishlist sign-in works for the maintainer's accounts but follows the launchers' unofficial OAuth flows; if one breaks, the UI shows the error above the wishlist.
 - Epic's `store/p/<slug>` deep link versus documented `store/product/<slug>` route is unverified. [Heroic issue #3342](https://github.com/Heroic-Games-Launcher/HeroicGamesLauncher/issues/3342) reports `/p/` works in the official Windows client; Linux without the official launcher falls back to the browser. See [TESTING.md](TESTING.md) for manual checks.
+- The tray on a real desktop (menu counts and shortcuts; the Windows/macOS tooltip). Linux AppIndicator has no tooltips.
+- Autostart at a real login, and its `refresh()` after a real AppImage update (Gear Lever / AppImageUpdate); only `repaired_entry` is unit-tested.
+- Price-target and "sale starts tomorrow" notifications seen for real (only `target_hits` / `sale_starting_tomorrow` are unit-tested; the next sale heads-up is 2026-12-16 UTC).
+- The Free DLC & loot section in the real app (checked in the preview and by the GamerPower parser fixture only).
+- `visibilitychange` (closing to the tray marks the open page's "New" tags seen) in WebKitGTK: unverified that hiding the window fires it.
 - Sale-theme switching is unit-tested (`nextTheme` in `app.js`, asserted by `tools/preview/selfcheck.mjs`) and preview-checkable with `?sale=<key>`, but Steam spotlight banner detection (`detect_steam_sale`) during a real sale is still unverified.
