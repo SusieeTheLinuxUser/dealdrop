@@ -286,6 +286,13 @@ fn failure(name: &str, err: &str) -> String {
     format!("{name}: {}", err.chars().take(400).collect::<String>())
 }
 
+/// "Wishlist prices: <reason>", or None when hot deals already report the same CheapShark cooldown
+/// (the "N min" can differ between the two calls, so match the cooldown, not the text).
+fn price_failure(err: &str, deals_error: Option<&str>) -> Option<String> {
+    let cooldown = |e: &str| e.starts_with(CS_BLOCKED);
+    (!(cooldown(err) && deals_error.is_some_and(cooldown))).then(|| failure("Wishlist prices", err))
+}
+
 /// Fetch one wishlist store; on failure keep the last good items for that store.
 fn keep_or_fail(res: R<Vec<WishItem>>, store: &str, prev: &Snapshot, errors: &mut HashMap<String, String>) -> Vec<WishItem> {
     match res {
@@ -463,7 +470,7 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
 
     if let Err(e) = attach_cheapest(&mut wishlist).await {
         eprintln!("[wishlist prices] {e}");
-        source_errors.lock().unwrap().push(failure("Wishlist prices", &e));
+        source_errors.lock().unwrap().extend(price_failure(&e, deals_error.as_deref()));
         keep_prices(&mut wishlist, &prev.wishlist);
     }
     if settings.notify_wishlist_sale { notify_wishlist(app, st, &wishlist); }
@@ -916,7 +923,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{civil_from_days, days_from_civil, sale_soon_notice, sale_starting_tomorrow, SALES, clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, keep_prices, normalize_hidden, normalize_title, remember_big_deals, remember_wishlist, restore_by_prefix, safe_https, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, Acct, Deal, Free, Price, Prime, Settings, WishItem};
+    use super::{civil_from_days, days_from_civil, sale_soon_notice, sale_starting_tomorrow, SALES, clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, keep_prices, normalize_hidden, price_failure, CS_BLOCKED, normalize_title, remember_big_deals, remember_wishlist, restore_by_prefix, safe_https, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, Acct, Deal, Free, Price, Prime, Settings, WishItem};
     use std::collections::HashSet;
 
     #[test]
@@ -1004,6 +1011,15 @@ mod tests {
     fn failure_text_is_capped() {
         let msg = failure("Epic sales", &"x".repeat(1000));
         assert_eq!(msg.chars().count(), "Epic sales: ".len() + 400);
+    }
+
+    #[test]
+    fn cheapshark_cooldown_is_reported_once() {
+        let cd = |m| format!("{CS_BLOCKED}; trying again in {m} min (14:01 UTC)");
+        assert_eq!(price_failure(&cd(14), Some(&cd(15))), None);
+        assert_eq!(price_failure(&cd(14), None).unwrap(), format!("Wishlist prices: {}", cd(14)));
+        assert!(price_failure(&cd(14), Some("HTTP 500")).is_some());
+        assert!(price_failure("HTTP 500", Some(&cd(14))).is_some());
     }
 
     #[test]

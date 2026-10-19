@@ -704,10 +704,13 @@ fn cooldown_after(prev_backoff: u64, retry_after: Option<&str>, now: u64) -> (u6
     (now + wait, backoff)
 }
 
+/// Start of the cooldown error, so the poll can tell it apart from other CheapShark failures.
+pub const CS_BLOCKED: &str = "CheapShark is rate-limiting requests";
+
 /// The error every CheapShark call returns while blocked; `None` once `until` has passed.
 fn blocked_msg(until: u64, now: u64) -> Option<String> {
     (until > now).then(|| format!(
-        "CheapShark is rate-limiting requests; trying again in {} min ({:02}:{:02} UTC)",
+        "{CS_BLOCKED}; trying again in {} min ({:02}:{:02} UTC)",
         (until - now).div_ceil(60), until / 3600 % 24, until / 60 % 60,
     ))
 }
