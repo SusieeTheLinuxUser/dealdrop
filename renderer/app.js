@@ -852,7 +852,13 @@ function makeTargetBtn (w, row) {
 
 function closeTargetEditor (editor, btn) {
   editor.parentElement.classList.remove('editing'); editor.remove()
-  btn.setAttribute('aria-expanded', 'false'); btn.focus()
+  btn.setAttribute('aria-expanded', 'false')
+  if (!state.redrawPending) return btn.focus()
+  // a poll arrived while the editor was open: show its data now
+  state.redrawPending = false
+  const list = btn.closest('.deals-list, .wishlist-list')?.id
+  navigate(state.page)
+  document.getElementById(list)?.querySelector(`[data-target-key="${CSS.escape(btn.dataset.targetKey)}"]`)?.focus()
 }
 
 function makeTargetEditor (w, btn) {
@@ -865,6 +871,7 @@ function makeTargetEditor (w, btn) {
     const list = btn.closest('.deals-list, .wishlist-list')?.id
     state.settings.priceTargets = targets
     window.api.saveSettings(state.settings)
+    state.redrawPending = false
     renderWishlist()
     document.getElementById(list)?.querySelector(`[data-target-key="${CSS.escape(key)}"]`)?.focus()
     announceStatus(message)
@@ -2003,9 +2010,10 @@ function applyData (data) {
   renderErrors()
   SEEN_PAGES.forEach(page => { if (!state.seen[page]) markSeen(page) }) // first run: record, don't tag
   updateBadges()
-  // Re-render the visible page — but never the settings page, so a background
-  // poll can't yank toggles/inputs out from under the user
-  if (state.page !== 'settings') navigate(state.page)
+  // Re-render the visible page — but never the settings page or an open price-target
+  // editor (redrawn when it closes), so a background poll can't yank inputs out from under the user
+  if (document.querySelector('.target-editor')) state.redrawPending = true
+  else if (state.page !== 'settings') navigate(state.page)
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
