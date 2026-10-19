@@ -67,7 +67,7 @@ One pass on Linux (KDE Plasma, Wayland) for everything in CHANGELOG.md [Unreleas
 
 ### "Lowest ever" (1 min)
 - [ ] Hot deals: some rows show a **Lowest ever** tag after the discount (price equals CheapShark's historical low).
-- [ ] Wishlist: discounted games at their all-time low show **Lowest ever** in both the "On sale" and the full list. Only USD prices are compared: Steam (up to 250 games, most discounted first) and Epic can show it, GOG only if your GOG account's currency is USD; Epic/GOG games are looked up by exact title, only the first 30 of them. A non-USD GOG price reads e.g. `5.00 EUR` and never gets the tag.
+- [ ] Wishlist: discounted games at their all-time low show **Lowest ever** in both the "On sale" and the full list. Only USD prices are compared: Steam (up to 250 games, most discounted first) and Epic can show it, GOG only if your GOG account's currency is USD; Epic/GOG games are looked up by exact title, 30 at most, also most discounted first. A non-USD GOG price reads e.g. `5.00 EUR` and never gets the tag.
 
 ### Hot deals: Steam rating and "Best rated" (½ min)
 - [ ] Hot deals rows show the Steam rating, e.g. `92% · Very Positive` (just `92%` when the window is narrow); hovering shows "Steam reviews: 92% positive (Very Positive)". Deals without Steam reviews show nothing.

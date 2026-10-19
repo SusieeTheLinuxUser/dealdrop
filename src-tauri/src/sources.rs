@@ -825,15 +825,15 @@ pub async fn attach_cheapest(items: &mut [WishItem]) -> R<()> {
     let usd = |w: &WishItem| w.price_info.as_ref().is_some_and(|p| p.currency.as_deref() == Some("USD"));
     // ponytail: at most 250 Steam games (10 requests), discounted first; huge wishlists got CheapShark 429s.
     // Rotate or cache per app id if users want "cheaper elsewhere" on every item of a 1000+ wishlist.
-    let mut steam_idx: Vec<usize> = (0..items.len()).filter(|&i| items[i].app_id.is_some() && usd(&items[i])).collect();
-    steam_idx.sort_by_key(|&i| std::cmp::Reverse(items[i].price_info.as_ref().map_or(0, |p| p.discount)));
-    steam_idx.truncate(250);
+    let steam_idx = most_discounted(items, |w| w.app_id.is_some() && usd(w), 250);
     for chunk in steam_idx.chunks(25) {
         let ids: Vec<&str> = chunk.iter().filter_map(|&i| items[i].app_id.as_deref()).collect();
         let Ok(v) = cheapshark_json(&format!("https://www.cheapshark.com/api/1.0/games?steamAppID={}", ids.join(","))).await else { continue };
         found.extend(cheapshark_matches(items, chunk, &v));
     }
-    let other_idx: Vec<usize> = (0..items.len()).filter(|&i| items[i].app_id.is_none() && usd(&items[i])).take(30).collect();
+    // GOG/Epic: one request per title, so 30 at most, discounted first (only those can get "Lowest ever";
+    // the rest can still get "cheaper elsewhere" if the cap leaves room).
+    let other_idx = most_discounted(items, |w| w.app_id.is_none() && usd(w), 30);
     let lookups = futures::future::join_all(other_idx.iter().map(|&i| {
         let url = format!("https://www.cheapshark.com/api/1.0/games?title={}&exact=1&limit=1", urlenc(&items[i].name));
         async move { (i, cheapshark_json(&url).await.ok()) }
@@ -865,6 +865,14 @@ pub async fn attach_cheapest(items: &mut [WishItem]) -> R<()> {
         }
     }
     cheapshark_blocked().map_or(Ok(()), Err)
+}
+
+/// Indexes of the items `keep` accepts, biggest discount first (list order among equals), at most `cap`.
+fn most_discounted(items: &[WishItem], keep: impl Fn(&WishItem) -> bool, cap: usize) -> Vec<usize> {
+    let mut idx: Vec<usize> = (0..items.len()).filter(|&i| keep(&items[i])).collect();
+    idx.sort_by_key(|&i| std::cmp::Reverse(items[i].price_info.as_ref().map_or(0, |p| p.discount)));
+    idx.truncate(cap);
+    idx
 }
 
 /// (item index, cheapest price, cheapestDealID, gameID)
@@ -1201,6 +1209,16 @@ mod unit {
         assert_eq!(items[0].lowest, Some(1.99));
         assert_eq!(items[1].lowest, None);
         assert_eq!(items[2].lowest, None);
+    }
+
+    #[test]
+    fn wishlist_lookups_take_the_most_discounted_first() {
+        use super::{Price, WishItem};
+        let item = |epic: bool, discount| WishItem { app_id: (!epic).then(|| "1".into()), price_info: Some(Price { discount, ..Default::default() }), ..Default::default() };
+        // a discounted Epic game late in the list still gets one of the capped lookups
+        let items = vec![item(true, 0), item(false, 90), item(true, 0), item(true, 50), item(true, 0), item(true, 75)];
+        assert_eq!(super::most_discounted(&items, |w| w.app_id.is_none(), 3), vec![5, 3, 0]);
+        assert_eq!(super::most_discounted(&items, |w| w.app_id.is_none(), 30), vec![5, 3, 0, 2, 4]);
     }
 
     #[test]
