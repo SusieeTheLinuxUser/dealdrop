@@ -125,6 +125,7 @@ impl AppState {
     fn edit<T>(&self, f: impl FnOnce(&mut Db) -> T) -> T {
         let mut db = self.db.lock().unwrap();
         let out = f(&mut db);
+        if CONFIG_STUCK.get().is_some() { return out; } // never overwrite a config.json we couldn't read or move aside
         if let Some(dir) = self.path.parent() { let _ = std::fs::create_dir_all(dir); }
         if let Ok(text) = serde_json::to_string_pretty(&*db) {
             let tmp = self.path.with_extension("tmp");
@@ -360,6 +361,7 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
     let prev = st.snapshot.lock().unwrap().clone().unwrap_or_default();
 
     let source_errors = Mutex::new(Vec::<String>::new());
+    if let Some(why) = CONFIG_STUCK.get() { source_errors.lock().unwrap().push(failure("Settings aren't being saved", why)); }
 
     // 1. Steam major sale (always checked: it also drives the sale themes)
     let live_sale = match detect_steam_sale().await {
@@ -935,10 +937,18 @@ fn load_db(path: &PathBuf) -> Db {
         .find(|p| !p.exists()).unwrap();
     match std::fs::rename(path, &bad) {
         Ok(()) => eprintln!("config.json is unreadable ({why}); moved it to {}", bad.display()),
-        Err(e) => eprintln!("config.json is unreadable ({why}) and couldn't be moved to {} ({e}); fix or remove it", bad.display()),
+        Err(e) => {
+            let msg = format!("{} couldn't be read ({why}) or moved aside ({e}). Fix or remove it, then restart DealDrop.", path.display());
+            eprintln!("{msg}");
+            let _ = CONFIG_STUCK.set(msg);
+        }
     }
     Db::default()
 }
+
+/// Set when config.json is unreadable and couldn't be moved aside (e.g. locked by antivirus or a sync
+/// tool): this run keeps its settings in memory only, and the error box says so.
+static CONFIG_STUCK: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
 fn main() {
     tauri::Builder::default()
@@ -1042,8 +1052,27 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{civil_from_days, days_from_civil, sale_soon_notice, sale_starting_tomorrow, SALES, clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, keep_prices, carry_cheapest, normalize_hidden, normalize_targets, target_hits, target_notice, price_failure, CS_BLOCKED, normalize_title, remember_big_deals, remember_free, remember_wishlist, restore_by_prefix, safe_https, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, load_db, Acct, Deal, Free, Price, Prime, Settings, WishItem};
+    use super::{civil_from_days, days_from_civil, sale_soon_notice, sale_starting_tomorrow, SALES, clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, keep_prices, carry_cheapest, normalize_hidden, normalize_targets, target_hits, target_notice, price_failure, CS_BLOCKED, normalize_title, remember_big_deals, remember_free, remember_wishlist, restore_by_prefix, safe_https, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, load_db, CONFIG_STUCK, Acct, Deal, Free, Price, Prime, Settings, WishItem};
     use std::collections::{HashMap, HashSet};
+
+    #[cfg(unix)]
+    #[test]
+    fn a_config_that_cant_be_moved_aside_stops_saving() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("dealdrop-stuck-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.json");
+        std::fs::write(&path, "{ not json").unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let writable = std::fs::write(dir.join("probe"), "").is_ok(); // root ignores the mode: nothing to test
+        if !writable {
+            assert!(load_db(&path).steam_id.is_none());
+            assert!(path.exists() && CONFIG_STUCK.get().is_some_and(|m| m.contains("restart DealDrop")));
+        }
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn unreadable_config_is_kept_aside() {
