@@ -90,6 +90,7 @@ One pass on Linux (KDE Plasma, Wayland) for everything in CHANGELOG.md [Unreleas
 ### "New" tags and sidebar dots (2 min)
 - [ ] Force them: in the inspector Console run `localStorage.setItem('dealdrop-seen', JSON.stringify({deals:[],storesales:[],wishlist:[]})); location.reload()`. Small dots appear on **Hot deals**, **Store sales** and **Wishlist** (if any wishlist game is discounted; next to its count badge), and rows/cards show **New**.
 - [ ] Open Hot deals: the tags stay while you're there. Go to another page: the Hot deals dot is gone; come back: no New tags. Same for Store sales (one dot covers all store tabs) and Wishlist.
+- [ ] Force again, open Store sales, look only at the Steam tab and leave: the Store sales dot stays (GOG/Epic sales are still new). Come back and open GOG: its cards still show **New**.
 - [ ] Force again, open Hot deals, close the window to the tray (X) and reopen from the tray: that page's tags are gone.
 - [ ] A fresh install (or **Reset settings**) shows no New tags on its first load.
 
@@ -98,6 +99,7 @@ One pass on Linux (KDE Plasma, Wayland) for everything in CHANGELOG.md [Unreleas
 - [ ] Store sales: a card's **Hide** does the same. The hidden title (case and spacing ignored) also disappears from Free now and Store sales if it's listed there, and never appears in notifications. The Wishlist still lists it (its wishlist sale alert is suppressed).
 - [ ] Free now: giveaway and free-weekend cards have **Hide** ("Coming next" cards don't). Hiding one moves focus to the next card's Hide, then to the other section's, and to the "Free now" heading once nothing is left; the sidebar badge drops by one.
 - [ ] Settings → **Hidden games** shows "N hidden" and one row per title. **Unhide** brings the game back in Hot deals and focus moves to the Unhide now in its place; **Unhide all** empties the list, focus goes to the "Games you hide…" text.
+- [ ] Hide a game that is free (or on sale on your wishlist) right now, press **R**, then unhide it and press **R** again: no notification for it (it was already listed while hidden).
 
 ### Ctrl+K search (2 min)
 - [ ] Press **Ctrl+K** on any page, also while typing in a page's search box: a "Search free games, sales, deals and wishlist" box opens. Type a few letters: up to 20 results, titles starting with the text first, each with where it is (`Hot deals · GOG`, `Store sales · Steam`, `Wishlist · Epic`, `Coming next · Epic Games`…) and a price.
@@ -125,6 +127,7 @@ One pass on Linux (KDE Plasma, Wayland) for everything in CHANGELOG.md [Unreleas
 - [ ] Run the built AppImage from where it will stay. Settings → Notifications → turn on **Start DealDrop when I log in**.
 - [ ] `cat ~/.config/autostart/dealdrop.desktop`: `Exec="/path/to/DealDrop_….AppImage" --hidden` with the AppImage's own path (not `/tmp/.mount_…`), and `Icon=/home/<you>/.config/dealdrop/autostart-icon.png`. It also shows in System Settings → Autostart with the DealDrop icon (not a generic one).
 - [ ] Log out and in: only the tray icon appears, no window. Tray → Open DealDrop shows it; starting the AppImage again while it runs shows the window too.
+- [ ] With it on, rename or move the AppImage (as an update does) and start it from the new place: the `Exec=` line now shows the new path.
 - [ ] Turn it off: the file and `autostart-icon.png` are gone. Delete the file by hand instead and reopen Settings: the toggle is off.
 - [ ] Don't turn it on from `cargo tauri dev`: the entry would point at `target/debug/dealdrop`, which needs the dev server, so it would start blank at login.
 - [ ] *(Windows/macOS)* See §2 **Start at login**.
