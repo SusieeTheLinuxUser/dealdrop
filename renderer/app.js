@@ -128,6 +128,7 @@ const state = {
   launchers:    {},   // store -> { options:[{key,label}], chosen:{key,label}|null } from the backend
   salesTab:     'steam',
   salesViewed:  new Set(), // Store sales ids shown since the page was last marked seen
+  redrawPending: false, // a poll arrived while a price-target editor was open; redraw when it closes
   wishlistTab:  'all',
   wishlistErrors: {},
   wishlist:     [],

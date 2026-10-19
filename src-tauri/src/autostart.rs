@@ -255,7 +255,7 @@ mod tests {
         assert_eq!(path, base.join("autostart/dealdrop.desktop"));
         write(&path, desktop_entry("/opt/Deal Drop/dealdrop", &base.join("dealdrop/autostart-icon.png"))).unwrap();
         assert!(std::fs::read_to_string(&path).unwrap().contains("Exec=\"/opt/Deal Drop/dealdrop\" --hidden"));
-        // Same text again (the startup refresh) does not touch the file: it works even read-only.
+        // Writing the same text again (turning it on twice) does not touch the file: it works even read-only.
         let text = std::fs::read(&path).unwrap();
         let mut perms = std::fs::metadata(&path).unwrap().permissions();
         perms.set_readonly(true);
