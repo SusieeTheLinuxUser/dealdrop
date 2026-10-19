@@ -127,7 +127,7 @@ const state = {
   liveSale:     null,
   launchers:    {},   // store -> { options:[{key,label}], chosen:{key,label}|null } from the backend
   salesTab:     'steam',
-  salesViewed:  new Set(), // Store sales tabs shown since the page was last marked seen
+  salesViewed:  new Set(), // Store sales ids shown since the page was last marked seen
   wishlistTab:  'all',
   wishlistErrors: {},
   wishlist:     [],
@@ -1126,10 +1126,11 @@ function seenIds (page, visibleOnly = false) {
   if (page === 'wishlist') return state.wishlist.filter(w => w.priceInfo?.discount > 0 && (!visibleOnly || !hiddenTitle(w.name))).map(wishlistKey)
   return (page === 'deals' ? state.deals : Object.values(state.sales).flat()).filter(d => !visibleOnly || !hiddenTitle(d.title)).map(d => d.id)
 }
-// Store sales: the tabs shown get their current ids; the others keep only what was seen before (the format stays a flat id list)
+// Store sales: sales that were on screen become seen; the rest keep only what was seen before, so a tab
+// never opened (or a sale that arrived on a tab after it was left) stays new. The format stays a flat id list.
 function salesSeenIds (sales, viewed, old) {
   const before = new Set(old)
-  return Object.entries(sales).flatMap(([tab, list]) => (list ?? []).map(d => d.id).filter(id => viewed.has(tab) || before.has(id)))
+  return Object.values(sales).flatMap(list => (list ?? []).map(d => d.id).filter(id => viewed.has(id) || before.has(id)))
 }
 const unseen = page => newIds(seenIds(page, true), state.seen[page]) // hidden games don't light the dot
 
@@ -1293,8 +1294,8 @@ function renderStoreSales () {
     state.salesTab, 'Stores', s => { state.salesTab = s; renderStoreSales() })
 
   grid.innerHTML = ''
-  if (state.page === 'storesales') state.salesViewed.add(state.salesTab)
   const list = state.sales[state.salesTab] ?? []
+  if (state.page === 'storesales') list.forEach(d => state.salesViewed.add(d.id))
   const items = filteredSorted(list, 'storesales')
   updateResultCount('storesales', items.length, list.length)
   syncMinDiscount('storesales', 'sales-discount-filters')

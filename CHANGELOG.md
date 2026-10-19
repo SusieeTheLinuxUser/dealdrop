@@ -8,7 +8,7 @@ All notable changes to DealDrop are documented in this file.
 - Wishlist price targets: a game's **Target** button sets "tell me at or below $X"; one notification when its price (or a cheaper offer elsewhere) reaches it, again only after it rises above or the target changes. USD prices only.
 - Fixed: wishlist "cheaper elsewhere" stores come from the batched CheapShark game lookup DealDrop already makes, instead of one extra request per game every refresh (up to ~280 at once), the likely cause of CheapShark rate-limiting.
 - Fixed: a price target no longer notifies twice when one refresh misses CheapShark's cheaper offer for the game (a failed lookup, or a long wishlist where the game fell outside the lookups); the last offer is kept while the store's own price is unchanged.
-- Fixed: leaving Store sales marks only the store tabs you looked at as seen; new GOG or Epic sales keep their "New" tag and dot until you open their tab.
+- Fixed: leaving Store sales marks only the sales you were shown as seen; new GOG or Epic sales (or a sale that arrives on a tab after you left it) keep their "New" tag and dot until you open their tab.
 - Fixed (Linux): "Start when I log in" keeps working after an AppImage update renames the file: if the app the login entry points to is gone, the next start points it at the running copy (it used to start nothing while the toggle showed On). An entry whose app still exists is left alone, and turning DealDrop off in your desktop's own autostart settings is kept.
 - Fixed: a game that went free, on sale or into a big deal while hidden no longer notifies as new when you unhide it.
 - Fixed: "Reset settings to defaults" keeps your hidden games and price targets (it resets appearance, alerts and interval, as the button says).
