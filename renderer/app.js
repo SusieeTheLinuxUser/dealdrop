@@ -16,7 +16,7 @@ const DEFAULT_SETTINGS = {
   notifyMajorSale: true, notifySaleSoon: true, notifyFreeGame: true, notifyFreeWeekend: true,
   notifyWishlistSale: true, wishlistMinCut: 20, notifyBigDeal: false, bigDealMinCut: 75, checkInterval: 60,
   theme: 'midnight', baseTheme: 'midnight', lastSaleTheme: '', rounded: false, effects: true,
-  launcherGog: 'auto', launcherEpic: 'auto', showLoot: false, onboarded: false, hidden: [],
+  launcherGog: 'auto', launcherEpic: 'auto', showLoot: false, onboarded: false, hidden: [], priceTargets: {},
 }
 
 const UI_PREFS_KEY = 'dealdrop-ui'
@@ -794,6 +794,95 @@ function wishlistLowestTag (w) {
     : ''
 }
 
+// ─── Price targets ───────────────────────────────────────────────────────────
+// Same key and USD rule as `sale_key` / `target_price` in main.rs, which sends the notification.
+const targetKey = w => `${w.store}:${w.id}`
+// The price a target is compared with: the cheaper offer elsewhere if any (what opens), else the store's own
+const targetPrice = w => w.priceInfo?.currency === 'USD' ? Math.min(w.priceInfo.final, w.cheapest?.price ?? Infinity) : null
+const targetHit = (w, target) => { const price = targetPrice(w); return target != null && price != null && price <= target + 0.005 }
+// Input value → dollars rounded to cents, or null outside $0.01–$10,000 (the range save_settings keeps)
+function parseTarget (value) {
+  const n = Math.round(Number(value) * 100) / 100
+  return n >= 0.01 && n <= 10000 ? n : null
+}
+
+function wishlistTargetTag (w) {
+  const target = state.settings.priceTargets[targetKey(w)]
+  if (target == null) return ''
+  return targetHit(w, target)
+    ? ` <span class="target-tag hit" aria-hidden="true">Under target ${fmt$(target)}</span><span class="sr-only"> Under your price target of ${fmt$(target)}.</span>`
+    : ` <span class="target-tag" aria-hidden="true">Target ${fmt$(target)}</span><span class="sr-only"> Price target ${fmt$(target)}.</span>`
+}
+
+// "Target" toggles an inline editor at the bottom of `row`: Enter saves, Escape closes
+function makeTargetBtn (w, row) {
+  const btn = document.createElement('button')
+  btn.type = 'button'; btn.className = 'deal-open target-btn'; btn.textContent = 'Target'
+  btn.dataset.targetKey = targetKey(w)
+  btn.setAttribute('aria-label', `Price target for ${w.name}`); btn.setAttribute('aria-expanded', 'false')
+  btn.addEventListener('click', e => {
+    e.stopPropagation()
+    const open = row.querySelector('.target-editor')
+    if (open) return closeTargetEditor(open, btn)
+    const editor = makeTargetEditor(w, btn)
+    row.classList.add('editing'); row.append(editor); btn.setAttribute('aria-expanded', 'true')
+    ;(editor.querySelector('input, button') ?? editor).focus()
+  })
+  return btn
+}
+
+function closeTargetEditor (editor, btn) {
+  editor.parentElement.classList.remove('editing'); editor.remove()
+  btn.setAttribute('aria-expanded', 'false'); btn.focus()
+}
+
+function makeTargetEditor (w, btn) {
+  const key = targetKey(w), current = state.settings.priceTargets[key]
+  const form = document.createElement('form')
+  form.className = 'target-editor'; form.noValidate = true; form.tabIndex = -1
+  form.setAttribute('aria-label', `Price target for ${w.name}`)
+  // the rows are rebuilt, so focus goes back to this game's Target button in the same list
+  const save = (targets, message) => {
+    const list = btn.closest('.deals-list, .wishlist-list')?.id
+    state.settings.priceTargets = targets
+    window.api.saveSettings(state.settings)
+    renderWishlist()
+    document.getElementById(list)?.querySelector(`[data-target-key="${CSS.escape(key)}"]`)?.focus()
+    announceStatus(message)
+  }
+  if (w.priceInfo?.currency === 'USD') {
+    form.innerHTML = '<label class="target-label">Tell me at or below $<input type="number" step="0.01" min="0.01" max="10000" inputmode="decimal"></label><button type="submit" class="target-action">Save</button>'
+    const input = form.querySelector('input')
+    input.setAttribute('aria-label', `Price target for ${w.name}, in US dollars`)
+    if (current != null) input.value = current.toFixed(2)
+    form.addEventListener('submit', e => {
+      e.preventDefault()
+      const value = parseTarget(input.value)
+      if (value == null) {
+        input.setAttribute('aria-invalid', 'true'); note.textContent = 'Enter a price from $0.01 to $10,000.'; input.focus(); return
+      }
+      save({ ...state.settings.priceTargets, [key]: value }, `Price target for ${w.name} set to ${fmt$(value)}.`)
+    })
+  } else {
+    form.innerHTML = '<span class="target-note">Price targets work for USD prices only.</span>'
+  }
+  if (current != null) {
+    const clear = document.createElement('button')
+    clear.type = 'button'; clear.className = 'target-action'; clear.textContent = 'Clear'
+    clear.setAttribute('aria-label', `Clear price target for ${w.name}`)
+    clear.addEventListener('click', () => {
+      const { [key]: _, ...rest } = state.settings.priceTargets
+      save(rest, `Price target for ${w.name} cleared.`)
+    })
+    form.append(clear)
+  }
+  const note = document.createElement('span')
+  note.className = 'target-note'; note.setAttribute('role', 'status')
+  form.append(note)
+  form.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeTargetEditor(form, btn) } })
+  return form
+}
+
 const NEW_TAG = ' <span class="tag-new" aria-hidden="true">New</span><span class="sr-only"> New.</span>'
 
 function makeWishlistSaleRow (w, isNew = false) {
@@ -806,7 +895,7 @@ function makeWishlistSaleRow (w, isNew = false) {
   main.innerHTML = `
     <div>
       <div class="deal-name">${escHtml(w.name)}</div>
-      <div class="deal-store">${storeTag(w.store)}${w.cheapest ? `<span class="cheapest-tag">↘ ${escHtml(w.cheapest.store)} ${fmt$(w.cheapest.price)}</span>` : ''}${isNew ? NEW_TAG : ''}${wishlistLowestTag(w)}</div>
+      <div class="deal-store">${storeTag(w.store)}${w.cheapest ? `<span class="cheapest-tag">↘ ${escHtml(w.cheapest.store)} ${fmt$(w.cheapest.price)}</span>` : ''}${isNew ? NEW_TAG : ''}${wishlistLowestTag(w)}${wishlistTargetTag(w)}</div>
     </div>
     <span class="sr-only">${escHtml(salePriceDescription(p.initial, p.final, p.discount, p.formatted))}</span>
     <span class="deal-orig" aria-hidden="true">${fmt$(p.initial)}</span>
@@ -817,7 +906,7 @@ function makeWishlistSaleRow (w, isNew = false) {
   btn.setAttribute('aria-label', `Open ${w.name} at ${w.cheapest?.store || gameStoreName(w.store)}`)
   btn.addEventListener('click', e => { e.stopPropagation(); openBrowser(bestUrl(w)) })
   main.addEventListener('click', () => openBrowser(bestUrl(w)))
-  row.append(main, btn)
+  row.append(main, makeTargetBtn(w, row), btn)
   return row
 }
 
@@ -845,12 +934,14 @@ function makeWishlistRow (w, isNew = false) {
         : `<span style="color:var(--text2)">${escHtml(p.formatted)}</span>`)
     : ''
   const cheap = w.cheapest ? ` <span class="cheapest-tag">${ARROW_DOWN} cheaper at ${escHtml(w.cheapest.store)}: ${fmt$(w.cheapest.price)}</span>` : ''
-  info.innerHTML = `<div class="wishlist-name">${storeTag(w.store)}${escHtml(w.name)}</div><div class="wishlist-sub">${priceStr}${cheap}${isNew ? NEW_TAG : ''}${wishlistLowestTag(w)}</div>`
+  info.innerHTML = `<div class="wishlist-name">${storeTag(w.store)}${escHtml(w.name)}</div><div class="wishlist-sub">${priceStr}${cheap}${isNew ? NEW_TAG : ''}${wishlistLowestTag(w)}${wishlistTargetTag(w)}</div>`
   info.querySelector('.wishlist-name').setAttribute('title', w.name)
 
   main.append(thumb, info)
   main.addEventListener('click', () => w.store === 'steam' ? selectWishlistGame(w) : openBrowser(bestUrl(w)))
-  row.append(main, makeIconBtns(w))
+  const actions = makeIconBtns(w)
+  if (p) actions.prepend(makeTargetBtn(w, row))
+  row.append(main, actions)
   return row
 }
 

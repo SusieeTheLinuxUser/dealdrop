@@ -52,13 +52,15 @@ struct Settings {
     /// The first-run tour has been completed or skipped.
     onboarded: bool,
     hidden: Vec<String>,
+    /// Wishlist price targets in USD, keyed like `sale_key` ("steam:<id>").
+    price_targets: HashMap<String, f64>,
 }
 impl Default for Settings {
     fn default() -> Self {
         Self { notify_major_sale: true, notify_sale_soon: true, notify_free_game: true, notify_free_weekend: true,
                notify_wishlist_sale: true, wishlist_min_cut: 20, notify_big_deal: false, big_deal_min_cut: 75, check_interval: 60,
                theme: "midnight".into(), base_theme: "midnight".into(), last_sale_theme: String::new(),
-               rounded: false, effects: true, launcher_gog: "auto".into(), launcher_epic: "auto".into(), show_loot: false, onboarded: false, hidden: Vec::new() }
+               rounded: false, effects: true, launcher_gog: "auto".into(), launcher_epic: "auto".into(), show_loot: false, onboarded: false, hidden: Vec::new(), price_targets: HashMap::new() }
     }
 }
 
@@ -80,6 +82,8 @@ struct Db {
     seen_free_ids: HashSet<String>,
     seen_sale_ids: HashSet<String>,
     seen_deal_ids: HashSet<String>,
+    /// Price targets already notified: key → the target that fired (a changed target fires again).
+    fired_targets: HashMap<String, f64>,
     /// The first poll has recorded the free list (absent in old config files, so false).
     primed: bool,
 }
@@ -488,6 +492,7 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
         keep_prices(&mut wishlist, &prev.wishlist);
     }
     if settings.notify_wishlist_sale { notify_wishlist(app, st, &wishlist); }
+    notify_targets(app, st, &wishlist); // setting a target is the opt-in, so no extra toggle
     if settings.notify_big_deal { notify_big_deals(app, st, &deals); }
 
     Snapshot {
@@ -624,6 +629,63 @@ fn notify_wishlist(app: &AppHandle, st: &AppState, items: &[WishItem]) {
     st.edit(|d| remember_wishlist(&mut d.seen_sale_ids, items, &fresh));
 }
 
+/// Price compared with a target: the cheaper offer elsewhere if any (the link the UI opens), else the store's own.
+/// USD only: targets are entered in dollars and CheapShark prices are USD.
+fn target_price(w: &WishItem) -> Option<f64> {
+    let p = w.price_info.as_ref().filter(|p| p.currency.as_deref() == Some("USD"))?;
+    Some(w.cheapest.as_ref().map_or(p.fin, |c| c.price.min(p.fin)))
+}
+
+/// A wishlist item with its price and the target it reached.
+type TargetHit<'a> = (&'a WishItem, f64, f64);
+
+/// Items at or under their target that have not fired for that target yet (with price and target),
+/// and the new fired map: a target re-arms once the price goes back above it or the target changes.
+/// Hidden games never notify; an item missing from this poll (or without a USD price) keeps its state.
+fn target_hits<'a>(items: &'a [WishItem], targets: &HashMap<String, f64>, fired: &HashMap<String, f64>, hidden: &[String])
+    -> (Vec<TargetHit<'a>>, HashMap<String, f64>) {
+    let mut next: HashMap<String, f64> = fired.iter().filter(|(k, v)| targets.get(*k) == Some(v)).map(|(k, v)| (k.clone(), *v)).collect();
+    let mut hits = vec![];
+    for w in items {
+        let key = sale_key(w);
+        let (Some(&target), Some(price)) = (targets.get(&key), target_price(w)) else { continue };
+        if price > target + 0.005 { next.remove(&key); }
+        else if !next.contains_key(&key) && !is_hidden(hidden, &w.name) { next.insert(key, target); hits.push((w, price, target)); }
+    }
+    (hits, next)
+}
+
+fn target_notice(hits: &[TargetHit]) -> Option<Notice> {
+    match hits {
+        [] => None,
+        [(w, price, target)] => {
+            let store = w.cheapest.as_ref().map_or(store_label(&w.store), |c| c.store.as_str()); // set only when cheaper
+            Some(Notice { title: format!("Under your target: {}", w.name), body: format!("{} is ${price:.2} on {store} (target ${target:.2})", w.name) })
+        }
+        many => {
+            let names: Vec<&str> = many.iter().take(4).map(|h| h.0.name.as_str()).collect();
+            Some(Notice { title: format!("{} wishlist games under your target", many.len()), body: names.join(", ") + if many.len() > 4 { "…" } else { "" } })
+        }
+    }
+}
+
+fn notify_targets(app: &AppHandle, st: &AppState, items: &[WishItem]) {
+    let (hits, fired) = st.read(|d| target_hits(items, &d.settings.price_targets, &d.fired_targets, &d.settings.hidden));
+    if let Some(n) = target_notice(&hits) { notify(app, &n.title, &n.body); }
+    st.edit(|d| d.fired_targets = fired);
+}
+
+/// Keep targets from $0.01 to $10,000 (rounded to cents) on "store:id" keys, at most 500.
+fn normalize_targets(targets: HashMap<String, f64>) -> HashMap<String, f64> {
+    let mut ok: Vec<(String, f64)> = targets.into_iter()
+        .map(|(k, v)| (k, (v * 100.0).round() / 100.0))
+        .filter(|(k, v)| v.is_finite() && *v >= 0.01 && *v <= 10_000.0 && k.len() <= 200 && k.contains(':'))
+        .collect();
+    ok.sort_by(|a, b| a.0.cmp(&b.0)); // ponytail: the cap drops by key order, not age; nobody sets 500 targets
+    ok.truncate(500);
+    ok.into_iter().collect()
+}
+
 fn fresh_big_deals<'a>(items: &'a [Deal], seen: &HashSet<String>, hidden: &[String], min_cut: u32) -> Vec<&'a Deal> {
     items.iter().filter(|x| x.cut >= min_cut && !seen.contains(&x.id) && !is_hidden(hidden, &x.title)).collect()
 }
@@ -673,6 +735,7 @@ fn get_settings(st: State<AppState>) -> Settings { st.read(|d| d.settings.clone(
 fn save_settings(app: AppHandle, st: State<AppState>, settings: Settings) {
     let mut settings = settings;
     settings.hidden = normalize_hidden(settings.hidden);
+    settings.price_targets = normalize_targets(settings.price_targets);
     settings.wishlist_min_cut = clamp_cut(settings.wishlist_min_cut, &[10, 20, 30, 50, 75]);
     settings.big_deal_min_cut = clamp_cut(settings.big_deal_min_cut, &[50, 60, 75, 85, 90]);
     // A new interval, or loot just switched on (fetch it now rather than at the next poll)
@@ -941,8 +1004,8 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{civil_from_days, days_from_civil, sale_soon_notice, sale_starting_tomorrow, SALES, clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, keep_prices, normalize_hidden, price_failure, CS_BLOCKED, normalize_title, remember_big_deals, remember_wishlist, restore_by_prefix, safe_https, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, Acct, Deal, Free, Price, Prime, Settings, WishItem};
-    use std::collections::HashSet;
+    use super::{civil_from_days, days_from_civil, sale_soon_notice, sale_starting_tomorrow, SALES, clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, keep_prices, normalize_hidden, normalize_targets, target_hits, target_notice, price_failure, CS_BLOCKED, normalize_title, remember_big_deals, remember_wishlist, restore_by_prefix, safe_https, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, Acct, Deal, Free, Price, Prime, Settings, WishItem};
+    use std::collections::{HashMap, HashSet};
 
     #[test]
     fn sale_calendar_matches_the_ui() {
@@ -1259,5 +1322,58 @@ mod tests {
         let n = free_notice(&fresh_free(&rows, &HashSet::new(), &[]), false).unwrap();
         assert_eq!(n.title, "Free: Hades");
         assert_eq!(n.body, "Hades is free on Steam!");
+    }
+
+    #[test]
+    fn price_targets_fire_once_and_re_arm() {
+        use super::Cheapest;
+        let item = |id: &str, fin: f64, cur: &str| WishItem { store: "steam".into(), id: id.into(), name: format!("Game {id}"),
+            price_info: Some(Price { fin, currency: Some(cur.into()), ..Default::default() }), ..Default::default() };
+        let targets = HashMap::from([("steam:a".to_string(), 10.0)]);
+        let none = HashMap::new();
+        // ids notified and the new fired map
+        let run = |items: Vec<WishItem>, targets: &HashMap<String, f64>, fired: &HashMap<String, f64>, hidden: &[String]| {
+            let (hits, next) = target_hits(&items, targets, fired, hidden);
+            (hits.iter().map(|h| h.0.id.clone()).collect::<Vec<_>>(), next)
+        };
+
+        // hit (at the target counts), then already fired
+        let (hits, fired) = run(vec![item("a", 10.0, "USD")], &targets, &none, &[]);
+        assert_eq!(hits, ["a"]);
+        assert_eq!(fired, HashMap::from([("steam:a".to_string(), 10.0)]));
+        let (hits, still) = run(vec![item("a", 8.0, "USD")], &targets, &fired, &[]);
+        assert!(hits.is_empty() && still == fired);
+        // no hit above the target, which also re-arms it
+        let (hits, rearmed) = run(vec![item("a", 12.0, "USD")], &targets, &fired, &[]);
+        assert!(hits.is_empty() && rearmed.is_empty());
+        assert_eq!(run(vec![item("a", 9.0, "USD")], &targets, &rearmed, &[]).0, ["a"]);
+        // a missing item keeps its fired state
+        assert_eq!(run(vec![], &targets, &fired, &[]).1, fired);
+        // a changed target fires again; a cleared one is forgotten
+        let lower = HashMap::from([("steam:a".to_string(), 9.0)]);
+        assert_eq!(run(vec![item("a", 8.0, "USD")], &lower, &fired, &[]).0, ["a"]);
+        assert!(run(vec![item("a", 8.0, "USD")], &none, &fired, &[]).1.is_empty());
+        // non-USD and hidden games are skipped
+        assert!(run(vec![item("a", 5.0, "EUR")], &targets, &none, &[]).0.is_empty());
+        let (hits, fired) = run(vec![item("a", 5.0, "USD")], &targets, &none, &["game A".into()]);
+        assert!(hits.is_empty() && fired.is_empty());
+        // the cheaper offer elsewhere counts, and the notice names that store
+        let mut w = item("a", 15.0, "USD");
+        w.cheapest = Some(Cheapest { store: "Fanatical".into(), price: 9.5, url: String::new() });
+        let (hits, _) = target_hits(std::slice::from_ref(&w), &targets, &none, &[]);
+        let n = target_notice(&hits).unwrap();
+        assert_eq!((n.title.as_str(), n.body.as_str()), ("Under your target: Game a", "Game a is $9.50 on Fanatical (target $10.00)"));
+    }
+
+    #[test]
+    fn price_targets_are_validated_on_save() {
+        let raw = HashMap::from([
+            ("steam:a".to_string(), 9.999), ("steam:b".into(), 0.0), ("steam:c".into(), -1.0), ("steam:d".into(), f64::NAN),
+            ("steam:e".into(), f64::INFINITY), ("steam:f".into(), 10_000.01), ("nokey".into(), 5.0), ("gog:g".into(), 10_000.0),
+        ]);
+        assert_eq!(normalize_targets(raw), HashMap::from([("steam:a".to_string(), 10.0), ("gog:g".into(), 10_000.0)]));
+        assert_eq!(normalize_targets((0..600).map(|i| (format!("steam:{i}"), 1.0)).collect()).len(), 500);
+        let json = serde_json::to_value(Settings::default()).unwrap();
+        assert_eq!(json["priceTargets"], serde_json::json!({}));
     }
 }

@@ -29,7 +29,8 @@ vm.runInContext([
   between('const PAGE_SIZE', '\n// Rows for the first'),
   between('const BASE_THEMES = {', '\nfunction applyTheme'),
   between('function nextTheme (', '\nfunction syncSaleTheme'),
-  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge, mergeUiPrefs, dealShops, parseClaimed, pruneClaimed, toggleClaimed, claimedLast, normalizeTitle, hiddenTitle, searchRank, parseSeen, newIds, mergeSeen, wishlistKey, seenIds, PAGE_SIZE, pageSlice, nextTheme }',
+  between('const targetKey', '\nfunction wishlistTargetTag'),
+  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge, mergeUiPrefs, dealShops, parseClaimed, pruneClaimed, toggleClaimed, claimedLast, normalizeTitle, hiddenTitle, searchRank, parseSeen, newIds, mergeSeen, wishlistKey, seenIds, PAGE_SIZE, pageSlice, nextTheme, targetKey, targetPrice, targetHit, parseTarget }',
 ].join('\n'), context)
 
 const h = context.helpers
@@ -165,4 +166,16 @@ assert.equal(step('lunar', null, true), 'forest/lunar')                        /
 assert.equal(step('lunar'), 'forest/lunar')
 assert.equal(step('', { theme: 'lunar', baseTheme: 'gone' }), 'midnight/')     // unknown baseTheme falls back to midnight
 
-console.log('Renderer self-check passed (escaping, hidden titles, search ranking, filters, store filter, UI preference merge, claimed games, seen deals, list paging, next sale, refresh age, sale themes).')
+// price targets: cents, $0.01–$10,000; compared with the cheaper offer, USD only
+assert.equal(h.parseTarget('12.345'), 12.35)
+assert.equal(h.parseTarget('10000'), 10000)
+for (const bad of ['', '0', '0.004', '-1', '10000.01', 'abc', 'Infinity']) assert.equal(h.parseTarget(bad), null, bad)
+const targeted = { store: 'gog', id: 'g1', priceInfo: { final: 15, currency: 'USD' }, cheapest: { price: 9.5 } }
+assert.equal(h.targetKey(targeted), 'gog:g1')
+assert.equal(h.targetPrice(targeted), 9.5)
+assert.equal(h.targetHit(targeted, 9.5), true)
+assert.equal(h.targetHit(targeted, 9.49), false)
+assert.equal(h.targetHit({ ...targeted, priceInfo: { final: 5, currency: 'EUR' } }, 10), false)
+assert.equal(h.targetHit(targeted, undefined), false)
+
+console.log('Renderer self-check passed (price targets, escaping, hidden titles, search ranking, filters, store filter, UI preference merge, claimed games, seen deals, list paging, next sale, refresh age, sale themes).')

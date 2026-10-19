@@ -69,6 +69,11 @@ One pass on Linux (KDE Plasma, Wayland) for everything in CHANGELOG.md [Unreleas
 - [ ] Hot deals: some rows show a **Lowest ever** tag after the discount (price equals CheapShark's historical low).
 - [ ] Wishlist: discounted games at their all-time low show **Lowest ever** in both the "On sale" and the full list. Only USD prices are compared: Steam (up to 250 games, most discounted first) and Epic can show it, GOG only if your GOG account's currency is USD; Epic/GOG games are looked up by exact title, 30 at most, also most discounted first. A non-USD GOG price reads e.g. `5.00 EUR` and never gets the tag.
 
+### Wishlist price targets (2 min)
+- [ ] Wishlist: Tab to a USD game's **Target** button, press Enter: "Tell me at or below $" opens under the row with the cursor in the box. Enter `0`: "Enter a price from $0.01 to $10,000." Enter a price just above the game's current (or cheaper-elsewhere) price and press Enter: the row shows a green **Under target $X** tag in both lists and focus is back on Target.
+- [ ] Within one poll (press **R**) one notification arrives: "Under your target: <title>", "<title> is $Y on <store> (target $X)". Press R again and restart the app: no repeat. Change the target to another price still above the current one: it notifies once more.
+- [ ] Target, then Tab to **Clear** and press Enter: the tag goes away. Escape closes the editor without saving. A non-USD GOG game's editor says "Price targets work for USD prices only." The window at 570×420 has no horizontal scrollbar with the editor open.
+
 ### Hot deals: Steam rating and "Best rated" (½ min)
 - [ ] Hot deals rows show the Steam rating, e.g. `92% · Very Positive` (just `92%` when the window is narrow); hovering shows "Steam reviews: 92% positive (Very Positive)". Deals without Steam reviews show nothing.
 - [ ] Sort → **Best rated**: highest rating first, unrated deals last. The choice survives a restart.

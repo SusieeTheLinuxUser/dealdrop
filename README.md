@@ -25,6 +25,7 @@ Optional store sign-in enables wishlist alerts. No API keys or telemetry; DealDr
 - **"Lowest ever" badge** — hot deals and wishlist games at their all-time low price (CheapShark; USD prices only)
 - **"New" tags** — hot deals, store sales and wishlist sales you haven't seen yet are tagged New, with a dot on the sidebar item
 - **Hide games** — hide a title from hot deals and store sales; it also drops out of free games and notifications; unhide in Settings
+- **Wishlist price targets** — set "tell me at or below $X" on a wishlist game for one alert when it (or a cheaper store) gets there (USD prices)
 - **Wishlist links go to the cheapest store** — like deals.gg, a wishlist game that is cheaper elsewhere shows the best offer and opens it
 - **Themes** — 6 built-in themes (Midnight, Lavender, Spooktober, Forest, Graphite, Daylight), optional rounded window corners, plus a **seasonal theme with falling leaves / snow / petals / lanterns that unlocks and switches on automatically while each Steam sale is live** (your own pick is remembered)
 - **Your accounts in the sidebar** — avatar (or store logo), store tag, click to open your profile; a red "Something went wrong" box with a **Copy error** button appears only when a source fails

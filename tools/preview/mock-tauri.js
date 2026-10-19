@@ -15,7 +15,7 @@
     notifyWishlistSale: true, wishlistMinCut: 20, notifyBigDeal: false, bigDealMinCut: 75, checkInterval: 60,
     theme: 'midnight', baseTheme: 'midnight', lastSaleTheme: '',
     rounded: false, effects: true, launcherGog: 'auto', launcherEpic: 'auto', showLoot: false,
-    onboarded: flags.get('onboarded') === '1', hidden: [],
+    onboarded: flags.get('onboarded') === '1', hidden: [], priceTargets: {},
   }
   let autostart = false
   let accounts = {
