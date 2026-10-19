@@ -38,13 +38,18 @@ fn exec_arg(path: &str) -> String {
     s
 }
 
+/// `Icon` is a file path: an AppImage installs no themed `dealdrop` icon, and its mount
+/// (`$APPDIR`) is gone once it exits, so `set` copies the icon next to config.json.
 #[cfg(any(target_os = "linux", test))]
-fn desktop_entry(exe: &str) -> String {
+fn desktop_entry(exe: &str, icon: &Path) -> String {
     format!(
-        "[Desktop Entry]\nType=Application\nName=DealDrop\nExec={} {HIDDEN}\nIcon=dealdrop\nX-GNOME-Autostart-enabled=true\n",
-        exec_arg(exe)
+        "[Desktop Entry]\nType=Application\nName=DealDrop\nExec={} {HIDDEN}\nIcon={}\nX-GNOME-Autostart-enabled=true\n",
+        exec_arg(exe), icon.display()
     )
 }
+
+#[cfg(target_os = "linux")]
+const ICON: &[u8] = include_bytes!("../icons/128x128.png");
 
 /// Matches `identifier` in tauri.conf.json.
 #[cfg(any(target_os = "macos", test))]
@@ -71,11 +76,11 @@ fn launch_agent(exe: &str) -> String {
 "#)
 }
 
+/// `$XDG_CONFIG_HOME` or `~/.config`: holds both `autostart/` and DealDrop's own `dealdrop/`.
 #[cfg(target_os = "linux")]
-fn entry() -> Option<(PathBuf, fn(&str) -> String)> {
-    let config = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from).filter(|p| p.is_absolute())
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))?;
-    Some((desktop_path(&config), desktop_entry))
+fn config_home() -> Option<PathBuf> {
+    std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from).filter(|p| p.is_absolute())
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
 }
 
 #[cfg(target_os = "macos")]
@@ -85,7 +90,7 @@ fn entry() -> Option<(PathBuf, fn(&str) -> String)> {
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos", test))]
-fn write(path: &Path, text: &str) -> Result<(), String> {
+fn write(path: &Path, text: impl AsRef<[u8]>) -> Result<(), String> {
     if let Some(dir) = path.parent() { std::fs::create_dir_all(dir).map_err(|e| format!("Couldn't create {}: {e}", dir.display()))?; }
     std::fs::write(path, text).map_err(|e| format!("Couldn't write {}: {e}", path.display()))
 }
@@ -98,10 +103,22 @@ fn remove(path: &Path) -> Result<(), String> {
     }
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(target_os = "linux")]
+pub fn get() -> bool { config_home().is_some_and(|c| desktop_path(&c).exists()) }
+
+#[cfg(target_os = "linux")]
+pub fn set(on: bool) -> Result<(), String> {
+    let config = config_home().ok_or("Couldn't find your home folder")?;
+    let icon = config.join("dealdrop").join("autostart-icon.png");
+    if !on { return remove(&desktop_path(&config)).and(remove(&icon)); }
+    write(&icon, ICON)?;
+    write(&desktop_path(&config), desktop_entry(&exe()?, &icon))
+}
+
+#[cfg(target_os = "macos")]
 pub fn get() -> bool { entry().is_some_and(|(p, _)| p.exists()) }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(target_os = "macos")]
 pub fn set(on: bool) -> Result<(), String> {
     let (path, text) = entry().ok_or("Couldn't find your home folder")?;
     if on { write(&path, &text(&exe()?)) } else { remove(&path) }
@@ -141,10 +158,10 @@ mod tests {
 
     #[test]
     fn desktop_entry_quotes_the_path() {
-        let text = desktop_entry("/home/me/My Apps/DealDrop_0.8.0_amd64.AppImage");
+        let text = desktop_entry("/home/me/My Apps/DealDrop_0.8.0_amd64.AppImage", Path::new("/home/me/.config/dealdrop/autostart-icon.png"));
         assert!(text.starts_with("[Desktop Entry]\n"));
         assert!(text.contains("\nExec=\"/home/me/My Apps/DealDrop_0.8.0_amd64.AppImage\" --hidden\n"));
-        for line in ["Type=Application", "Name=DealDrop", "Icon=dealdrop", "X-GNOME-Autostart-enabled=true"] {
+        for line in ["Type=Application", "Name=DealDrop", "Icon=/home/me/.config/dealdrop/autostart-icon.png", "X-GNOME-Autostart-enabled=true"] {
             assert!(text.lines().any(|l| l == line), "missing {line}");
         }
         assert_eq!(exec_arg(r#"/a "b" $c `d` \e 100%"#), r#""/a \\"b\\" \\$c \\`d\\` \\\\e 100%%""#);
@@ -163,7 +180,7 @@ mod tests {
         let base = std::env::temp_dir().join(format!("dealdrop-autostart-test-{}", std::process::id()));
         let path = desktop_path(&base);
         assert_eq!(path, base.join("autostart/dealdrop.desktop"));
-        write(&path, &desktop_entry("/opt/Deal Drop/dealdrop")).unwrap();
+        write(&path, desktop_entry("/opt/Deal Drop/dealdrop", &base.join("dealdrop/autostart-icon.png"))).unwrap();
         assert!(std::fs::read_to_string(&path).unwrap().contains("Exec=\"/opt/Deal Drop/dealdrop\" --hidden"));
         remove(&path).unwrap();
         assert!(!path.exists());

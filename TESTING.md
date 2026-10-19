@@ -117,9 +117,9 @@ One pass on Linux (KDE Plasma, Wayland) for everything in CHANGELOG.md [Unreleas
 
 ### Start DealDrop when I log in (2 min, AppImage)
 - [ ] Run the built AppImage from where it will stay. Settings → Notifications → turn on **Start DealDrop when I log in**.
-- [ ] `cat ~/.config/autostart/dealdrop.desktop`: `Exec="/path/to/DealDrop_….AppImage" --hidden` with the AppImage's own path (not `/tmp/.mount_…`). It also shows in System Settings → Autostart.
+- [ ] `cat ~/.config/autostart/dealdrop.desktop`: `Exec="/path/to/DealDrop_….AppImage" --hidden` with the AppImage's own path (not `/tmp/.mount_…`), and `Icon=/home/<you>/.config/dealdrop/autostart-icon.png`. It also shows in System Settings → Autostart with the DealDrop icon (not a generic one).
 - [ ] Log out and in: only the tray icon appears, no window. Tray → Open DealDrop shows it; starting the AppImage again while it runs shows the window too.
-- [ ] Turn it off: the file is gone. Delete the file by hand instead and reopen Settings: the toggle is off.
+- [ ] Turn it off: the file and `autostart-icon.png` are gone. Delete the file by hand instead and reopen Settings: the toggle is off.
 - [ ] Don't turn it on from `cargo tauri dev`: the entry would point at `target/debug/dealdrop`, which needs the dev server, so it would start blank at login.
 - [ ] *(Windows/macOS)* See §2 **Start at login**.
 
