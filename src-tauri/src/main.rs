@@ -924,14 +924,20 @@ async fn wishlist_game_deals(app_id: String, name: String) -> Value {
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 
 fn load_db(path: &PathBuf) -> Db {
-    let Ok(text) = std::fs::read_to_string(path) else { return Db::default() };
-    serde_json::from_str(&text).unwrap_or_else(|e| {
-        // Keep the unreadable file (sign-in tokens, settings) instead of overwriting it on the next save.
-        let bad = path.with_extension("bad.json");
-        eprintln!("config.json is unreadable ({e}); moved it to {}", bad.display());
-        let _ = std::fs::rename(path, bad);
-        Db::default()
-    })
+    let why = match std::fs::read(path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Db::default(),
+        Err(e) => e.to_string(),
+        Ok(bytes) => match serde_json::from_slice(&bytes) { Ok(db) => return db, Err(e) => e.to_string() },
+    };
+    // Keep the unreadable file (sign-in tokens, settings) instead of overwriting it on the next save,
+    // and never replace an earlier one: config.bad.json, config.bad2.json, …
+    let bad = (1..).map(|n| path.with_extension(if n == 1 { "bad.json".into() } else { format!("bad{n}.json") }))
+        .find(|p| !p.exists()).unwrap();
+    match std::fs::rename(path, &bad) {
+        Ok(()) => eprintln!("config.json is unreadable ({why}); moved it to {}", bad.display()),
+        Err(e) => eprintln!("config.json is unreadable ({why}) and couldn't be moved to {} ({e}); fix or remove it", bad.display()),
+    }
+    Db::default()
 }
 
 fn main() {
@@ -1042,6 +1048,7 @@ mod tests {
     #[test]
     fn unreadable_config_is_kept_aside() {
         let dir = std::env::temp_dir().join(format!("dealdrop-load-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("config.json");
         std::fs::write(&path, "{ not json").unwrap();
@@ -1050,6 +1057,10 @@ mod tests {
         assert!(!path.exists());
         assert_eq!(std::fs::read_to_string(dir.join("config.bad.json")).unwrap(), "{ not json");
         assert!(load_db(&path).steam_id.is_none()); // missing file: defaults, nothing moved
+        std::fs::write(&path, b"{\"steamId\":\"\xff\"}").unwrap(); // not UTF-8: also kept, next to the first
+        load_db(&path);
+        assert!(!path.exists() && dir.join("config.bad2.json").exists());
+        assert_eq!(std::fs::read_to_string(dir.join("config.bad.json")).unwrap(), "{ not json");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
