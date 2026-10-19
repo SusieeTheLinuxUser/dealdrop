@@ -575,7 +575,8 @@ function handleShortcutKeydown (e) {
     return
   }
   if (key === ',') { e.preventDefault(); navigate('settings'); return }
-  if ((key === 'j' || key === 'k') && ['wishlist', 'free', 'storesales', 'deals'].includes(state.page)) {
+  // not from inside the price-target editor (its Save/Clear buttons): the editor would stay open behind
+  if ((key === 'j' || key === 'k') && ['wishlist', 'free', 'storesales', 'deals'].includes(state.page) && !e.target.closest?.('.target-editor')) {
     e.preventDefault(); moveListFocus(key === 'j' ? 1 : -1); return
   }
   const pages = ['wishlist', 'free', 'storesales', 'deals', 'sales']
