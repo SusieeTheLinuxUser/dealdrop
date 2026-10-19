@@ -73,6 +73,7 @@ One pass on Linux (KDE Plasma, Wayland) for everything in CHANGELOG.md [Unreleas
 - [ ] Wishlist: Tab to a USD game's **Target** button, press Enter: "Tell me at or below $" opens under the row with the cursor in the box. Enter `0`: "Enter a price from $0.01 to $10,000." Enter a price just above the game's current (or cheaper-elsewhere) price and press Enter: the row shows a green **Under target $X** tag in both lists and focus is back on Target.
 - [ ] Within one poll (press **R**) one notification arrives: "Under your target: <title>", "<title> is $Y on <store> (target $X)". Press R again and restart the app: no repeat. Change the target to another price still above the current one: it notifies once more.
 - [ ] Target, then Tab to **Clear** and press Enter: the tag goes away. Escape closes the editor without saving. A non-USD GOG game's editor says "Price targets work for USD prices only." The window at 570×420 has no horizontal scrollbar with the editor open.
+- [ ] Open a Target editor, type a price, then press **R** (or wait for a poll) with the mouse: the editor and what you typed stay. Press Escape: the list refreshes and focus is on that game's Target button.
 
 ### Hot deals: Steam rating and "Best rated" (½ min)
 - [ ] Hot deals rows show the Steam rating, e.g. `92% · Very Positive` (just `92%` when the window is narrow); hovering shows "Steam reviews: 92% positive (Very Positive)". Deals without Steam reviews show nothing.
@@ -152,6 +153,8 @@ One pass on Linux (KDE Plasma, Wayland) for everything in CHANGELOG.md [Unreleas
 ### Other unreleased changes (optional)
 - [ ] With GOG Galaxy (or an Epic launcher) installed, clicking a GOG/Epic hot deal opens it in the launcher when the exact title is found, otherwise CheapShark's page in the browser. See §4.
 - [ ] A Steam wishlist of 250+ games loads its cheaper-store prices without a CheapShark error in the error box.
+- [ ] Settings → **Reset settings to defaults** (click twice): the theme and alerts reset, but Settings → Hidden games and your wishlist price targets are still there.
+- [ ] Quit DealDrop, copy `~/.config/dealdrop/config.json` somewhere safe, put `{` alone in `config.json`, start DealDrop: it starts like a fresh install and `config.bad.json` holds the broken text. Quit and copy your saved file back.
 - [ ] CheapShark rate limit (only if it happens): Hot deals keeps the last list and the error says "CheapShark is rate-limiting requests; trying again in N min (HH:MM UTC)". Refreshing before that time sends no CheapShark request; after it, Hot deals loads again on its own.
 
 ## 9. Report Results Template
