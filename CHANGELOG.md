@@ -12,7 +12,7 @@ All notable changes to DealDrop are documented in this file.
 - Fixed: "Start when I log in" keeps working after an AppImage update or moving the app: each start points the login entry at the current copy (it used to keep the old file name, so login started nothing while the toggle showed On).
 - Fixed: a game that went free, on sale or into a big deal while hidden no longer notifies as new when you unhide it.
 - Fixed: "Reset settings to defaults" keeps your hidden games and price targets (it resets appearance, alerts and interval, as the button says).
-- Fixed: a background refresh no longer closes an open price-target editor (and loses what you typed); the list updates when you close it.
+- Fixed: a background refresh no longer closes an open price-target editor (and loses what you typed); the list updates when you close it Leaving the Wishlist with an editor open no longer stops other pages from refreshing.
 - Fixed: in a narrow window the Wishlist sidebar item no longer shrinks its icon and "New" dot or spills its on-sale count out of the badge when both are shown.
 - Fixed: in a narrow window (720 px or less) the Wishlist "On sale now" rows hide the struck-through original price so the game title has room next to the Target button; screen readers still hear it.
 - Fixed: an unreadable `config.json` (e.g. cut short by a crash) is moved to `config.bad.json` instead of being overwritten with defaults on the next save, so sign-ins and settings can be recovered by hand; saves are flushed to disk before replacing the old file.

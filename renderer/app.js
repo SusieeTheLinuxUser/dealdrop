@@ -2023,7 +2023,7 @@ function applyData (data) {
   updateBadges()
   // Re-render the visible page — but never the settings page or an open price-target
   // editor (redrawn when it closes), so a background poll can't yank inputs out from under the user
-  if (document.querySelector('.target-editor')) state.redrawPending = true
+  if (document.querySelector(`#page-${state.page} .target-editor`)) state.redrawPending = true
   else if (state.page !== 'settings') navigate(state.page)
 }
 
