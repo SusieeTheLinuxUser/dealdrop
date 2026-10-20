@@ -608,6 +608,10 @@ fn notify_new_free(app: &AppHandle, st: &AppState, games: &[Free], weekend: bool
 
 fn discount(w: &WishItem) -> u32 { w.price_info.as_ref().map_or(0, |p| p.discount) }
 
+/// The cuts Settings offers (`cuts` in app.js).
+const WISHLIST_CUTS: [u32; 5] = [10, 20, 30, 50, 75];
+const BIG_DEAL_CUTS: [u32; 5] = [50, 60, 75, 85, 90];
+
 fn clamp_cut(value: u32, allowed: &[u32]) -> u32 {
     *allowed.iter().min_by_key(|&&cut| (cut.abs_diff(value), cut)).unwrap()
 }
@@ -763,8 +767,8 @@ fn save_settings(app: AppHandle, st: State<AppState>, settings: Settings) {
     let mut settings = settings;
     settings.hidden = normalize_hidden(settings.hidden);
     settings.price_targets = normalize_targets(settings.price_targets);
-    settings.wishlist_min_cut = clamp_cut(settings.wishlist_min_cut, &[10, 20, 30, 50, 75]);
-    settings.big_deal_min_cut = clamp_cut(settings.big_deal_min_cut, &[50, 60, 75, 85, 90]);
+    settings.wishlist_min_cut = clamp_cut(settings.wishlist_min_cut, &WISHLIST_CUTS);
+    settings.big_deal_min_cut = clamp_cut(settings.big_deal_min_cut, &BIG_DEAL_CUTS);
     // A new interval, or loot just switched on (fetch it now rather than at the next poll)
     let changed = st.edit(|d| {
         let c = d.settings.check_interval != settings.check_interval || (settings.show_loot && !d.settings.show_loot);
@@ -934,7 +938,16 @@ fn load_db(path: &PathBuf) -> Db {
     let why = match std::fs::read(path) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Db::default(),
         Err(e) => e.to_string(),
-        Ok(bytes) => match serde_json::from_slice(&bytes) { Ok(db) => return db, Err(e) => e.to_string() },
+        Ok(bytes) => match serde_json::from_slice::<Db>(&bytes) {
+            Ok(mut db) => {
+                // save_settings clamps these; a hand-edited 0 would count unpriced games as on sale.
+                let s = &mut db.settings;
+                s.wishlist_min_cut = clamp_cut(s.wishlist_min_cut, &WISHLIST_CUTS);
+                s.big_deal_min_cut = clamp_cut(s.big_deal_min_cut, &BIG_DEAL_CUTS);
+                return db;
+            }
+            Err(e) => e.to_string(),
+        },
     };
     // Keep the unreadable file (sign-in tokens, settings) instead of overwriting it on the next save,
     // and never replace an earlier one: config.bad.json, config.bad2.json, …
@@ -1095,6 +1108,19 @@ mod tests {
         load_db(&path);
         assert!(!path.exists() && dir.join("config.bad2.json").exists());
         assert_eq!(std::fs::read_to_string(dir.join("config.bad.json")).unwrap(), "{ not json");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn notification_cuts_from_the_config_file_are_clamped() {
+        // A hand-edited 0 would treat unpriced games as on sale (and a single one panicked wishlist_notice).
+        let dir = std::env::temp_dir().join(format!("dealdrop-cuts-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.json");
+        std::fs::write(&path, r#"{"settings":{"wishlistMinCut":0,"bigDealMinCut":7}}"#).unwrap();
+        let db = load_db(&path);
+        assert_eq!((db.settings.wishlist_min_cut, db.settings.big_deal_min_cut), (10, 50));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
