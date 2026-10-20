@@ -147,9 +147,10 @@ fn s(v: &Value) -> Option<String> {
 }
 
 fn unescape(t: &str) -> String {
-    t.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+    // `&amp;` last, so "&amp;lt;" becomes the text "&lt;" and not "<".
+    t.replace("&lt;", "<").replace("&gt;", ">")
         .replace("&quot;", "\"").replace("&#39;", "'").replace("&trade;", "™")
-        .replace("&reg;", "®").replace("&copy;", "©")
+        .replace("&reg;", "®").replace("&copy;", "©").replace("&amp;", "&")
 }
 
 fn re(pat: &'static str, cell: &'static OnceLock<Regex>) -> &'static Regex {
@@ -1056,6 +1057,7 @@ mod unit {
         assert_eq!(super::unescape("&quot;quoted&quot; &amp; &#39;single&#39;"), "\"quoted\" & 'single'");
         assert_eq!(super::unescape("Trade &trade; Mark &reg; 2026 &copy;"), "Trade ™ Mark ® 2026 ©");
         assert_eq!(super::unescape("plain"), "plain");
+        assert_eq!(super::unescape("&amp;lt;b&amp;gt; &amp;amp;"), "&lt;b&gt; &amp;"); // decoded once, not twice
     }
 
     #[test]
