@@ -138,8 +138,19 @@ pub async fn get_text(url: &str) -> R<String> {
     send(client().get(url)).await?.text().await.map_err(|e| e.to_string())
 }
 
+fn num(v: &Value) -> Option<f64> {
+    v.as_f64().or_else(|| v.as_str().and_then(|s| s.trim().parse().ok())).filter(|x| x.is_finite())
+}
+
+/// A number or numeric string; 0 for anything else (and for "NaN"/"inf", which `parse` accepts).
 fn f(v: &Value) -> f64 {
-    v.as_f64().or_else(|| v.as_str().and_then(|s| s.parse().ok())).unwrap_or(0.0)
+    num(v).unwrap_or(0.0)
+}
+
+/// A price: finite and not negative. `None` when missing or garbled, so a bad row is skipped
+/// instead of becoming a $0 one (which would look free and trip price targets).
+fn money(v: &Value) -> Option<f64> {
+    num(v).filter(|x| *x >= 0.0)
 }
 
 fn s(v: &Value) -> Option<String> {
@@ -196,14 +207,16 @@ fn parse_steam_items(v: &Value) -> HashMap<String, SteamItem> {
         let id = it["appid"].as_u64().or(it["id"].as_u64()).map(|n| n.to_string());
         let (Some(id), Some(name)) = (id, s(&it["name"])) else { continue };
         let bo = &it["best_purchase_option"];
-        let price = if bo.is_null() {
-            None
-        } else {
-            let fin = f(&bo["final_price_in_cents"]) / 100.0;
-            let discount = bo["discount_pct"].as_u64().unwrap_or(0) as u32;
-            let initial = if discount > 0 { f(&bo["original_price_in_cents"]) / 100.0 } else { fin };
-            Some(Price { discount, fin, initial, formatted: s(&bo["formatted_final_price"]), currency: Some("USD".into()) })
-        };
+        // No readable final price: no price at all (a $0 here would look free and trip price targets).
+        let price = money(&bo["final_price_in_cents"]).map(|cents| {
+            let fin = cents / 100.0;
+            let discount = bo["discount_pct"].as_u64().unwrap_or(0).min(100) as u32;
+            let initial = if discount == 0 { fin } else {
+                money(&bo["original_price_in_cents"]).map(|c| c / 100.0).filter(|o| *o >= fin)
+                    .unwrap_or(if discount < 100 { fin / (1.0 - discount as f64 / 100.0) } else { fin })
+            };
+            Price { discount, fin, initial, formatted: s(&bo["formatted_final_price"]), currency: Some("USD".into()) }
+        });
         let a = &it["assets"];
         let image = a["asset_url_format"].as_str()
             .zip(a["header"].as_str().or(a["small_capsule"].as_str()))
@@ -451,14 +464,16 @@ fn parse_steam_sales(body: &str) -> R<Vec<Deal>> {
         let chunk = &html[*at..end];
         let (Some(t), Some(d), Some(p)) = (title.captures(chunk), disc.captures(chunk), fin.captures(chunk)) else { continue };
         let cut: u32 = d[1].parse().unwrap_or(0);
-        if cut == 0 { continue; }
-        let price = p[1].parse::<f64>().unwrap_or(0.0) / 100.0;
+        if cut == 0 || cut > 100 { continue; }
+        let Some(price) = p[1].parse::<f64>().ok().filter(|c| c.is_finite()).map(|c| c / 100.0) else { continue };
+        let title = unescape(t[1].trim());
+        if title.is_empty() { continue; }
         let regular = orig.captures(chunk)
             .and_then(|o| o[1].replace(',', "").parse().ok())
             .unwrap_or(if cut >= 100 { 0.0 } else { price / (1.0 - cut as f64 / 100.0) }); // 100% off: no base to divide
         out.push(Deal {
             id: format!("steam-{id}"),
-            title: unescape(t[1].trim()),
+            title,
             shop: "Steam".into(),
             url: format!("https://store.steampowered.com/app/{id}"),
             image: capsule.captures(chunk).map(|c| c[1].to_string()),
@@ -604,7 +619,8 @@ pub fn epic_url(g: &Value) -> String {
 fn gp_title(raw: &str) -> String {
     static NOISE: OnceLock<Regex> = OnceLock::new();
     let noise = re(r"(?i)\s*\((epic games|epic|steam|gog|gog\.com|free game|dlc)[^)]*\)|\s+(steam\s+)?(key\s+)?giveaway$", &NOISE);
-    noise.replace_all(raw, "").trim().to_string()
+    let clean = noise.replace_all(raw, "").trim().to_string();
+    if clean.is_empty() { raw.trim().to_string() } else { clean } // all noise: keep the raw text
 }
 
 pub async fn gamerpower() -> R<Vec<Free>> {
@@ -627,11 +643,13 @@ fn parse_gamerpower(body: &str, prefix: &str, kind: &str) -> R<Vec<Free>> {
             let source = if plat.contains("steam") { "steam" } else if plat.contains("epic") { "epic" }
                 else if plat.contains("gog") { "gog" } else { "other" };
             let end = s(&g["end_date"]).filter(|e| e != "N/A");
+            let title = gp_title(&s(&g["title"])?);
+            if title.is_empty() { return None; }
             Some(Free {
                 id: format!("{prefix}{}", g["id"].as_u64()?),
-                title: gp_title(&s(&g["title"])?),
+                title,
                 source: source.into(),
-                app_id: g["steam_appid"].as_u64().map(|n| n.to_string()),
+                app_id: g["steam_appid"].as_u64().filter(|&n| n != 0).map(|n| n.to_string()),
                 url: s(&g["open_giveaway_url"]).or(s(&g["open_giveaway"])).unwrap_or_else(|| "#".into()),
                 end_date: end,
                 image: s(&g["thumbnail"]),
@@ -675,9 +693,10 @@ fn parse_gog_product(v: &Value, title: &str) -> Option<String> {
 fn parse_gog_sales(body: &str) -> R<Vec<Deal>> {
     let v: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
     Ok(v["products"].as_array().into_iter().flatten().filter_map(|p| {
-        let price = f(&p["price"]["finalMoney"]["amount"]);
-        let regular = f(&p["price"]["baseMoney"]["amount"]);
-        let cut = p["price"]["discount"].as_str()?.trim_start_matches('-').trim_end_matches('%').parse().ok()?;
+        let price = money(&p["price"]["finalMoney"]["amount"])?;
+        let regular = money(&p["price"]["baseMoney"]["amount"])?;
+        let cut: u32 = p["price"]["discount"].as_str()?.trim_start_matches('-').trim_end_matches('%').parse().ok()?;
+        if cut == 0 || cut > 100 { return None; }
         Some(Deal {
             id: format!("gog-{}", s(&p["id"])?),
             title: s(&p["title"])?,
@@ -808,7 +827,7 @@ fn cheapshark_deals_by_game(body: &str) -> HashMap<String, String> {
 fn parse_cheapshark_lowest(body: &str) -> HashMap<String, f64> {
     let Ok(v) = serde_json::from_str::<Value>(body) else { return HashMap::new() };
     v.as_object().into_iter().flatten().filter_map(|(id, game)| {
-        game["cheapestPriceEver"]["price"].as_str()?.parse().ok().map(|price| (id.clone(), price))
+        money(&game["cheapestPriceEver"]["price"]).map(|price| (id.clone(), price))
     }).collect()
 }
 
@@ -816,6 +835,7 @@ fn parse_cheapshark_deals(body: &str, stores: &HashMap<String, String>) -> R<Vec
     let v: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
     Ok(v.as_array().into_iter().flatten().filter_map(|d| {
         let id = s(&d["dealID"])?;
+        let (price, regular) = (money(&d["salePrice"])?, money(&d["normalPrice"])?);
         let rating = Some(f(&d["steamRatingPercent"]).round() as u32).filter(|&r| r > 0 && f(&d["steamRatingCount"]) > 0.0);
         Some(Deal {
             url: format!("https://www.cheapshark.com/redirect?dealID={id}"),
@@ -823,11 +843,10 @@ fn parse_cheapshark_deals(body: &str, stores: &HashMap<String, String>) -> R<Vec
             title: s(&d["title"])?,
             shop: stores.get(s(&d["storeID"])?.as_str()).cloned().unwrap_or_else(|| "store".into()),
             image: s(&d["thumb"]),
-            cut: f(&d["savings"]).round() as u32,
-            price: f(&d["salePrice"]),
-            regular: f(&d["normalPrice"]),
+            cut: f(&d["savings"]).round().clamp(0.0, 100.0) as u32,
+            price, regular,
             lowest: None,
-            app_id: s(&d["steamAppID"]).filter(|x| x != "0"),
+            app_id: s(&d["steamAppID"]).filter(|x| !x.is_empty() && x != "0"),
             rating_text: rating.and(s(&d["steamRatingText"])).filter(|x| !x.is_empty()),
             rating,
         })
@@ -909,7 +928,7 @@ fn cheapshark_matches(items: &[WishItem], idx: &[usize], v: &Value) -> Vec<GameM
             [i] if items[*i].app_id.is_none() => *i,
             _ => *idx.iter().find(|&&i| items[i].app_id.is_some() && items[i].app_id == s(&g["steamAppID"]))?,
         };
-        Some((i, f(&g["cheapest"]), s(&g["cheapestDealID"]), s(&g["gameID"])))
+        Some((i, money(&g["cheapest"])?, s(&g["cheapestDealID"]), s(&g["gameID"])))
     }).collect()
 }
 
@@ -1577,5 +1596,109 @@ mod unit {
         assert!(blocked_msg(now + 900, now + 899).unwrap().contains("in 1 min"));
         assert_eq!(blocked_msg(now + 900, now + 900), None);
         assert_eq!(blocked_msg(0, now), None);
+    }
+
+    #[test]
+    fn prices_are_finite_and_never_negative() {
+        use serde_json::json;
+        for bad in [json!("NaN"), json!("inf"), json!("-inf"), json!("infinity")] {
+            assert_eq!(super::f(&bad), 0.0, "{bad}");
+            assert_eq!(super::money(&bad), None, "{bad}");
+        }
+        assert_eq!(super::money(&json!("-1.50")), None);
+        assert_eq!(super::money(&json!(-3)), None);
+        assert_eq!(super::money(&json!(null)), None);
+        assert_eq!(super::money(&json!("1,234.56")), None); // a thousands separator is a parse failure, not $1
+        assert_eq!(super::money(&json!(" 4.99 ")), Some(4.99));
+        assert_eq!(super::money(&json!(0)), Some(0.0));
+        assert_eq!(super::money(&json!("0.00")), Some(0.0));
+    }
+
+    #[test]
+    fn cheapshark_rows_without_a_real_price_are_skipped() {
+        let stores = std::collections::HashMap::new();
+        let body = r#"[
+            {"dealID":"ok","gameID":"1","title":"Fine","storeID":"1","salePrice":"5.00","normalPrice":"10.00","savings":"50","steamAppID":""},
+            {"dealID":"nosale","gameID":"2","title":"No Sale Price","storeID":"1","normalPrice":"10.00","savings":"50"},
+            {"dealID":"nan","gameID":"3","title":"NaN","storeID":"1","salePrice":"NaN","normalPrice":"10.00","savings":"50"},
+            {"dealID":"neg","gameID":"4","title":"Negative","storeID":"1","salePrice":"-1","normalPrice":"10.00","savings":"50"},
+            {"dealID":"nonormal","gameID":"5","title":"No Normal","storeID":"1","salePrice":"5.00","savings":"50"},
+            {"dealID":"over","gameID":"6","title":"Over","storeID":"1","salePrice":"1.00","normalPrice":"10.00","savings":"150"},
+            {"dealID":"under","gameID":"7","title":"Under","storeID":"1","salePrice":"1.00","normalPrice":"10.00","savings":"-20"}
+        ]"#;
+        let v = super::parse_cheapshark_deals(body, &stores).unwrap();
+        assert_eq!(v.iter().map(|d| d.id.as_str()).collect::<Vec<_>>(), ["ok", "over", "under"]);
+        assert_eq!(v[0].app_id, None); // an empty steamAppID is not an app
+        assert_eq!((v[1].cut, v[2].cut), (100, 0)); // never above 100% or below 0%
+        for d in &v { assert!(d.price.is_finite() && d.price >= 0.0 && d.regular.is_finite()); }
+    }
+
+    #[test]
+    fn cheapshark_lowest_and_cheapest_ignore_non_prices() {
+        use serde_json::json;
+        let m = super::parse_cheapshark_lowest(r#"{"1":{"cheapestPriceEver":{"price":"NaN"}},"2":{"cheapestPriceEver":{"price":"-3.00"}},"3":{"cheapestPriceEver":{"price":"inf"}},"4":{"cheapestPriceEver":{"price":"2.00"}}}"#);
+        assert_eq!(m.len(), 1);
+        assert_eq!(m.get("4"), Some(&2.0));
+        // A games?steamAppID= entry without a usable "cheapest" must not become a $0 cheaper offer
+        let item = super::WishItem { app_id: Some("620".into()), ..Default::default() };
+        let v = json!([{"gameID":"1","steamAppID":"620","cheapestDealID":"d"}, {"gameID":"2","steamAppID":"620","cheapest":"NaN","cheapestDealID":"d"}]);
+        assert!(super::cheapshark_matches(&[item], &[0], &v).is_empty());
+    }
+
+    #[test]
+    fn gog_rows_without_a_real_price_or_cut_are_skipped() {
+        let row = |id: &str, fin: &str, base: &str, disc: &str| format!(
+            r#"{{"id":"{id}","title":"T{id}","storeLink":"https://www.gog.com/en/game/t{id}","price":{{"finalMoney":{{"amount":"{fin}"}},"baseMoney":{{"amount":"{base}"}},"discount":"{disc}"}}}}"#);
+        let body = format!(r#"{{"products":[{},{},{},{},{},{},{},{{"id":"9","title":"No Price","storeLink":"https://www.gog.com/en/game/x","price":{{"discount":"-50%"}}}}]}}"#,
+            row("1", "5.00", "10.00", "-50%"), row("2", "NaN", "10.00", "-50%"), row("3", "5.00", "1,000.00", "-50%"),
+            row("4", "5.00", "10.00", "-150%"), row("5", "10.00", "10.00", "-0%"), row("6", "-5.00", "10.00", "-50%"), row("7", "0.00", "10.00", "-100%"));
+        let v = super::parse_gog_sales(&body).unwrap();
+        assert_eq!(v.iter().map(|d| d.id.as_str()).collect::<Vec<_>>(), ["gog-1", "gog-7"]);
+        assert_eq!((v[1].price, v[1].cut), (0.0, 100)); // a real 100% off stays
+    }
+
+    #[test]
+    fn steam_search_rows_with_a_nonsense_cut_or_price_are_skipped() {
+        let html = r#"
+<a data-ds-appid="1"><span class="title">Over</span><div data-discount="150" data-price-final="500"></div></a>
+<a data-ds-appid="2"><span class="title">Huge</span><div data-discount="50" data-price-final="99999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999"></div></a>
+<a data-ds-appid="3"><span class="title"></span><div data-discount="50" data-price-final="500"></div></a>
+<a data-ds-appid="4"><span class="title">Fine</span><div data-discount="50" data-price-final="500"><div class="discount_original_price">$1,234.56</div></div></a>
+<a data-ds-appid="5"><span class="title">Dot</span><div data-discount="20" data-price-final="800"><div class="discount_original_price">$.</div></div></a>"#;
+        let v = super::parse_steam_sales(&search_body(html)).unwrap();
+        assert_eq!(v.iter().map(|d| d.id.as_str()).collect::<Vec<_>>(), ["steam-4", "steam-5"]);
+        assert_eq!(v[0].regular, 1234.56);
+        assert_eq!(v[1].regular, 10.0); // unparsable original: derived from the cut
+        for d in &v { assert!(d.price.is_finite() && d.regular.is_finite() && d.regular >= d.price); }
+    }
+
+    #[test]
+    fn steam_items_never_invent_a_zero_price() {
+        use serde_json::json;
+        let v = json!({"response": {"store_items": [
+            {"appid":1,"name":"No Price","best_purchase_option":{"discount_pct":50}},
+            {"appid":2,"name":"NaN","best_purchase_option":{"final_price_in_cents":"NaN","discount_pct":0}},
+            {"appid":3,"name":"No Original","best_purchase_option":{"final_price_in_cents":"500","discount_pct":50}},
+            {"appid":4,"name":"Over","best_purchase_option":{"final_price_in_cents":"500","original_price_in_cents":"1000","discount_pct":400}},
+            {"appid":5,"name":"Free Sale","best_purchase_option":{"final_price_in_cents":"0","discount_pct":100}}
+        ]}});
+        let m = super::parse_steam_items(&v);
+        assert!(m["1"].price.is_none() && m["2"].price.is_none());
+        let p = m["3"].price.as_ref().unwrap();
+        assert_eq!((p.discount, p.fin, p.initial), (50, 5.0, 10.0)); // the missing original is derived, not $0
+        assert_eq!(m["4"].price.as_ref().unwrap().discount, 100);
+        let p = m["5"].price.as_ref().unwrap();
+        assert_eq!((p.fin, p.initial), (0.0, 0.0));
+    }
+
+    #[test]
+    fn gamerpower_zero_app_ids_and_noise_only_titles() {
+        let body = r#"[{"id":1,"title":"Foo","status":"Active","platforms":"PC","steam_appid":0},
+                       {"id":2,"title":"(Steam) Giveaway","status":"Active","platforms":"PC, Steam"},
+                       {"id":3,"title":"   ","status":"Active","platforms":"PC"}]"#;
+        let v = super::parse_gamerpower(body, "gp-", "free").unwrap();
+        assert_eq!(v.iter().map(|g| g.id.as_str()).collect::<Vec<_>>(), ["gp-1", "gp-2"]);
+        assert_eq!(v[0].app_id, None); // appid 0 is "not a Steam game"
+        assert_eq!(v[1].title, "(Steam) Giveaway"); // better the raw text than an empty card
     }
 }
