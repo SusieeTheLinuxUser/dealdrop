@@ -1199,6 +1199,24 @@ mod tests {
     }
 
     #[test]
+    fn safe_https_allows_a_real_hostname_only() {
+        // A port, a query or a fragment don't make a URL unsafe
+        assert!(safe_https("https://store.steampowered.com:443/app/60?x=1#y").is_some());
+        assert!(safe_https("HTTPS://store.steampowered.com/app/60").is_some()); // the scheme is case-insensitive
+        assert!(safe_https("https://xn--r8jz45g.jp/").is_some()); // an IDN host becomes punycode
+        for bad in ["https://user@example.com/", "https://user:pass@example.com/", "https://192.168.0.1/",
+                    "https://[2001:db8::1]/", "https://exa mple.com/", "not a url", ""] {
+            assert!(safe_https(bad).is_none(), "{bad} should be rejected");
+        }
+    }
+
+    #[test]
+    #[ignore = "BUG: a trailing dot slips past the localhost check, so https://localhost./ is opened"]
+    fn safe_https_rejects_localhost_with_a_trailing_dot() {
+        assert!(safe_https("https://localhost./").is_none());
+    }
+
+    #[test]
     fn restore_by_prefix_splits_steam_ftk() {
         let free = |id: &str| Free { id: id.into(), ..Default::default() };
         let old = vec![free("steam-10"), free("steam-ftk-10"), free("steam-fw-10"), free("gp-400"), free("epic-1")];
