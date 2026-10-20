@@ -1928,10 +1928,13 @@ async function signInStore (store, button) {
   }
 }
 
+// A redraw would delete an open price-target editor and what was typed in it; it's done when the editor closes
+const deferRedraw = () => document.querySelector(`#page-${state.page} .target-editor`) ? (state.redrawPending = true) : false
+
 function setAccounts (acc) {
   state.accounts = { steam: acc?.steam ?? null, gog: acc?.gog ?? null, epic: acc?.epic ?? null }
   renderAccounts()
-  if (state.page === 'wishlist') renderWishlist()
+  if (state.page === 'wishlist' && !deferRedraw()) renderWishlist()
   if (state.page === 'settings') renderSettingsAccounts()
 }
 
@@ -2029,8 +2032,7 @@ function applyData (data) {
   updateBadges()
   // Re-render the visible page — but never the settings page or an open price-target
   // editor (redrawn when it closes), so a background poll can't yank inputs out from under the user
-  if (document.querySelector(`#page-${state.page} .target-editor`)) state.redrawPending = true
-  else if (state.page !== 'settings') navigate(state.page)
+  if (!deferRedraw() && state.page !== 'settings') navigate(state.page)
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -2053,6 +2055,7 @@ async function init () {
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden || !SEEN_PAGES.includes(state.page)) return
     markSeen(state.page)
+    if (deferRedraw()) return
     ;({ deals: renderDeals, storesales: renderStoreSales, wishlist: renderWishlist })[state.page]()
   })
 
