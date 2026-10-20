@@ -369,6 +369,9 @@ fn should_prime(primed: bool, seen_empty: bool, had_errors: bool) -> Prime {
     else { Prime::Record }
 }
 
+/// What `last_sale_key` stores: the sale's theme key, or a constant when only the generic "sale is on" flag fired.
+fn live_sale_key(live: Option<&LiveSale>) -> &str { live.map_or("steam-sale", |l| l.key.as_str()) }
+
 async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
     let (settings, steam_id, gog, epic) = st.read(|d| {
         (d.settings.clone(), d.steam_id.clone(), d.gog.clone(), d.epic.clone())
@@ -382,11 +385,13 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
     let live_sale = match detect_steam_sale().await {
         Ok((on, live)) => {
             if on {
-                let name = live.as_ref().map_or("Steam Sale".to_string(), |l| l.name.clone());
-                if settings.notify_major_sale && st.read(|d| d.last_sale_key.as_deref() != Some(&name)) {
+                // Keyed on the stable theme key: the banner's display text can change during one sale.
+                let key = live_sale_key(live.as_ref());
+                if settings.notify_major_sale && st.read(|d| d.last_sale_key.as_deref() != Some(key)) {
+                    let name = live.as_ref().map_or("Steam Sale", |l| l.name.as_str());
                     notify(app, "🎉 Steam sale started!", &format!("{name} is live — go grab some deals."));
                 }
-                st.edit(|d| d.last_sale_key = Some(name));
+                st.edit(|d| d.last_sale_key = Some(key.into()));
             } else {
                 st.edit(|d| d.last_sale_key = None);
             }
@@ -1096,7 +1101,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{civil_from_days, days_from_civil, sale_soon_notice, sale_starting_tomorrow, SALES, clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, keep_or_fail, keep_prices, carry_cheapest, normalize_hidden, normalize_targets, target_hits, target_notice, price_failure, CS_BLOCKED, normalize_title, remember_big_deals, remember_free, remember_wishlist, restore_by_prefix, safe_https, sale_key, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, load_db, CONFIG_STUCK, Acct, Db, Deal, Free, Price, Prime, Settings, SteamProfile, Tokens, WishItem, accounts, same_refresh};
+    use super::{LiveSale, civil_from_days, days_from_civil, sale_soon_notice, sale_starting_tomorrow, SALES, clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, keep_or_fail, keep_prices, carry_cheapest, normalize_hidden, normalize_targets, target_hits, target_notice, price_failure, CS_BLOCKED, normalize_title, remember_big_deals, remember_free, remember_wishlist, restore_by_prefix, safe_https, sale_key, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, load_db, CONFIG_STUCK, Acct, Db, Deal, Free, Price, Prime, Settings, SteamProfile, Tokens, WishItem, accounts, same_refresh};
     use std::collections::{HashMap, HashSet};
 
     #[cfg(unix)]
@@ -1751,6 +1756,15 @@ mod tests {
         assert!(db.epic.is_some() && db.gog.is_some() && db.seen_sale_ids.len() == 2);
         super::signed_out(&mut db, "epic");
         assert!(db.epic.is_none() && db.gog.is_some() && db.seen_sale_ids.len() == 1);
+    }
+
+    #[test]
+    fn a_rotated_sale_banner_text_is_still_the_same_sale() {
+        let sale = |key: &str, name: &str| LiveSale { key: key.into(), name: name.into(), url: None };
+        let key = super::live_sale_key;
+        assert_eq!(key(Some(&sale("summer", "Steam Summer Sale"))), key(Some(&sale("summer", "Summer Sale: up to 90% off"))));
+        assert_ne!(key(Some(&sale("summer", "Summer Sale"))), key(Some(&sale("winter", "Winter Sale"))));
+        assert_eq!(key(None), "steam-sale"); // a sale with no themed banner
     }
 
     #[test]
