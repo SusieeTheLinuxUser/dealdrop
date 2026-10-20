@@ -1634,6 +1634,7 @@ async function renderAutostart () {
 // "Open GOG/Epic games in": Auto prefers the store's own client.
 function renderLauncherPrefs () {
   const con = document.getElementById('launcher-prefs')
+  const focused = con.contains(document.activeElement) && document.activeElement.dataset.pref
   con.innerHTML = ''
   ;[['gog', 'launcherGog', 'GOG'], ['epic', 'launcherEpic', 'Epic Games']].forEach(([store, key, name]) => {
     const shortName = name === 'Epic Games' ? 'Epic' : name
@@ -1653,6 +1654,7 @@ function renderLauncherPrefs () {
       const b = document.createElement('button')
       b.className = 'theme-chip' + (state.settings[key] === c.key ? ' active' : '')
       b.textContent = c.label
+      b.dataset.pref = `${store}:${c.key}`
       b.setAttribute('aria-pressed', String(state.settings[key] === c.key))
       b.addEventListener('click', async () => {
         state.settings[key] = c.key
@@ -1664,6 +1666,8 @@ function renderLauncherPrefs () {
     })
     con.appendChild(row)
   })
+  // keep keyboard focus on the same chip, or on that store's active one if it is gone
+  if (focused) (con.querySelector(`[data-pref="${focused}"]`) ?? con.querySelector(`[data-pref^="${focused.split(':')[0]}:"].active`))?.focus()
 }
 
 function renderSettings () {
