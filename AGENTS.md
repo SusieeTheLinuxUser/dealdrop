@@ -14,8 +14,8 @@ It polls store APIs, shows free games / store sales / hot deals / wishlists, and
 | `src-tauri/src/launchers.rs` | Open-in-launcher table, per-OS install detection, deep links |
 | `.github/workflows/ci.yml` | Every push to `dev`/`main` and every PR → `cargo test` + `node tools/preview/selfcheck.mjs` on Linux, `cargo test` on Windows and macOS |
 | `.github/workflows/release.yml` | Manual dispatch → builds Windows .msi + macOS .dmg and attaches them to an existing release |
-| `renderer/api.js` | `window.api` → Tauri `invoke` bridge (the only place the UI touches the backend) |
-| `renderer/app.js` | All UI rendering. `renderer/index.html`, `renderer/style.css` |
+| `renderer/api.js` | `window.api` → Tauri `invoke` bridge (the only place the UI calls backend commands; `app.js` also calls two Tauri window/app APIs directly) |
+| `renderer/app.js` | All UI rendering. `renderer/index.html`, `renderer/style.css`, `renderer/onboarding.js` / `onboarding.css` (first-run guide + tour) |
 | `tools/preview/` | Dev-only browser preview harness with a local mock Tauri bridge; never bundled. Mock flags: `?stress=1&accounts=1&bigwishlist=1&sale=<key>` (also `errors`, `empty`, `stale`, `onboarded`; see its README). `selfcheck.mjs` asserts the pure helpers in `app.js` |
 
 ## Backend notes
@@ -63,7 +63,7 @@ Platform code: launcher detection (`has_scheme` in `launchers.rs`) is per-OS via
 
 ## UI notes
 
-- **Errors:** every source that fails lands in `Snapshot.source_errors` (full text, built by `failure()` in `main.rs`) and the sidebar shows only a red "Something went wrong" box with a **Copy error** button (`renderErrors` / `copyError` in `app.js`), below accounts and above navigation. Never print raw error text in the sidebar; healthy state shows nothing.
+- **Errors:** every source that fails lands in `Snapshot.source_errors` (built by `failure()` in `main.rs`, text capped at 400 chars; hot deals use `deals_error`, wishlists `wishlist_errors`) and the sidebar shows only a red "Something went wrong" box with a **Copy error** button (`renderErrors` / `copyError` in `app.js`), below accounts and above navigation. Never print raw error text in the sidebar; healthy state shows nothing.
 - **Window:** it has no OS frame, so edges/corners are our own `.rz` handles calling `startResizeDragging` (permission `core:window:allow-start-resize-dragging`); corners are bigger than edges so they win. Min size is 570×420; below the content's size the main area scrolls **vertically only**. Never add horizontal scrolling: shrink the sidebar (`clamp()` width) instead.
 - **Accounts:** sidebar rows show the store avatar (Steam, GOG) or the store logo (`logo()` / `LOGO_PATH` in `app.js`, simple-icons, CC0); clicking the name/avatar opens `Acct.profile_url` through `open_in_app` (Steam client if installed, else browser). Epic has no public profile page, so it links to the account page.
 - The titlebar logo is `renderer/logo.png` (a copy of `src-tauri/icons/64x64.png`, same art as the tray icon); keep them in sync if the icon changes.

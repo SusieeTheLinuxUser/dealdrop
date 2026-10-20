@@ -28,7 +28,7 @@ All API calls are made by the **Rust backend**, never the webview. The UI talks 
 
 ## Content Security Policy
 
-Set in `src-tauri/tauri.conf.json`: scripts only from the app itself (no inline scripts, no `eval`), network access only through the Tauri IPC bridge, images from `https:` and fonts from Google Fonts (so Google sees a font request when the app starts). The main window can't navigate away from the bundled UI, only it has access to the Tauri API, and the sign-in windows are limited to `https`.
+Set in `src-tauri/tauri.conf.json`: scripts only from the app itself (no inline scripts, no `eval`), network access only through the Tauri IPC bridge, images from `https:` and fonts only from the app itself (`font-src 'self'`, bundled in `renderer/fonts/`). The main window can't navigate away from the bundled UI, only it has access to the Tauri API, and the sign-in windows are limited to `https`.
 
 ## Releases & dependencies
 

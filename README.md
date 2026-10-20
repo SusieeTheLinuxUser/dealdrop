@@ -85,7 +85,7 @@ Run the dependency-free renderer helper self-check from the repo root with `node
 
 DealDrop is designed so **no secrets ever live in the source code**.
 
-- Sign-in tokens are stored locally in the OS user data dir, never in the repo
+- Sign-in tokens are stored locally in the OS config dir (`~/.config/dealdrop/config.json` on Linux), never in the repo
 - Steam login uses OpenID — DealDrop never sees your password, only your public Steam ID
 - External API calls run in the Rust/Tauri backend; the renderer does not call external APIs
 - No telemetry or analytics; network requests go to Steam, GOG, Epic, GamerPower and CheapShark
