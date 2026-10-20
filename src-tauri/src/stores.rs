@@ -234,7 +234,7 @@ fn parse_gog_wishlist_products(products: &Value, prices: &Value) -> Vec<WishItem
             .find(|i| i["_embedded"]["product"]["id"].as_u64().map(|n| n.to_string()).as_deref() == Some(&id))
             .and_then(|i| {
                 let pr = &i["_embedded"]["prices"][0];
-                let cents = |k: &str| pr[k].as_str()?.split_whitespace().next()?.parse::<f64>().ok().map(|c| c / 100.0);
+                let cents = |k: &str| pr[k].as_str()?.split_whitespace().next()?.parse::<f64>().ok().filter(|c| c.is_finite() && *c >= 0.0).map(|c| c / 100.0);
                 let (base, fin) = (cents("basePrice")?, cents("finalPrice")?);
                 let currency = pr["finalPrice"].as_str().and_then(|p| p.split_whitespace().nth(1)).map(str::to_string);
                 Some(Price {
@@ -356,8 +356,10 @@ fn epic_page(o: &Value) -> String {
 /// (price, regular, percent, formatted) from a GraphQL offer, if it has a price.
 fn epic_price(o: &Value) -> Option<Price> {
     let t = &o["price"]["totalPrice"];
-    let div = 10f64.powi(t["currencyInfo"]["decimals"].as_i64().unwrap_or(2) as i32);
-    let (fin, orig) = (t["discountPrice"].as_f64()? / div, t["originalPrice"].as_f64()? / div);
+    let decimals = t["currencyInfo"]["decimals"].as_i64().unwrap_or(2);
+    if !(0..=6).contains(&decimals) { return None; } // 10^400 is inf: every price would read $0.00
+    let div = 10f64.powi(decimals as i32);
+    let (fin, orig) = (t["discountPrice"].as_f64().filter(|c| *c >= 0.0)? / div, t["originalPrice"].as_f64().filter(|c| *c >= 0.0)? / div);
     Some(Price {
         discount: if orig > 0.0 { ((1.0 - fin / orig) * 100.0).round() as u32 } else { 0 },
         fin, initial: orig,
@@ -747,5 +749,35 @@ mod unit {
         assert!(cb("https://steamcommunity.com/openid/id/1234").is_err());
         assert!(cb("https://steamcommunity.com/openid/id/7656119796028793x").is_err());
         assert!(super::steam_claimed_id(&url::Url::parse("http://localhost/steamcallback").unwrap()).is_err());
+    }
+
+    #[test]
+    fn gog_wishlist_prices_that_are_not_prices_are_ignored() {
+        let products = json!([{"id": 1, "title": "A"}, {"id": 2, "title": "B"}, {"id": 3, "title": "C"}, {"id": 4, "title": "D"}]);
+        let price = |id: u64, base: &str, fin: &str| json!({"_embedded": {"product": {"id": id}, "prices": [{"basePrice": base, "finalPrice": fin}]}});
+        let prices = json!({"_embedded": {"items": [
+            price(1, "1000 USD", "NaN USD"), price(2, "1000 USD", "-500 USD"), price(3, "inf USD", "500 USD"), price(4, "1000 USD", "1500 USD"),
+        ]}});
+        let v = super::parse_gog_wishlist_products(&products, &prices);
+        assert!(v[0].price_info.is_none() && v[1].price_info.is_none() && v[2].price_info.is_none());
+        let up = v[3].price_info.as_ref().unwrap(); // dearer than its base price: no discount, never wraps
+        assert_eq!((up.discount, up.fin, up.initial), (0, 15.0, 10.0));
+    }
+
+    #[test]
+    fn epic_prices_need_a_sane_exponent_and_amounts() {
+        let offer = |fin: serde_json::Value, orig: serde_json::Value, decimals: serde_json::Value| json!(
+            {"price": {"totalPrice": {"discountPrice": fin, "originalPrice": orig, "currencyInfo": {"decimals": decimals}}}});
+        // decimals 400 made 10^400 = inf, so every price read as $0.00 (free)
+        assert!(super::epic_price(&offer(json!(500), json!(1000), json!(400))).is_none());
+        assert!(super::epic_price(&offer(json!(500), json!(1000), json!(-400))).is_none());
+        assert!(super::epic_price(&offer(json!(-500), json!(1000), json!(2))).is_none()); // negative: a 150% discount
+        assert!(super::epic_price(&offer(json!(500), json!(-1000), json!(2))).is_none());
+        let p = super::epic_price(&offer(json!(500), json!(1000), json!(2))).unwrap();
+        assert_eq!((p.discount, p.fin, p.initial), (50, 5.0, 10.0));
+        let yen = super::epic_price(&offer(json!(500), json!(1000), json!(0))).unwrap();
+        assert_eq!((yen.fin, yen.initial), (500.0, 1000.0));
+        let no_decimals = super::epic_price(&json!({"price": {"totalPrice": {"discountPrice": 500, "originalPrice": 1000}}})).unwrap();
+        assert_eq!(no_decimals.fin, 5.0); // Epic omits it: cents
     }
 }
