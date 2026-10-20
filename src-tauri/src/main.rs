@@ -839,7 +839,11 @@ fn open_raw(app: &AppHandle, url: &str) -> bool { app.opener().open_url(url, Non
 /// no embedded credentials (`https://steampowered.com@evil.example`), no IP literals or localhost.
 fn safe_https(raw: &str) -> Option<url::Url> {
     let u = url::Url::parse(raw).ok()?;
-    let host_ok = matches!(u.host(), Some(url::Host::Domain(d)) if d != "localhost" && d.contains('.'));
+    // A trailing dot ("localhost.") is the same host, so look at the name without it.
+    let host_ok = matches!(u.host(), Some(url::Host::Domain(d)) if {
+        let d = d.trim_end_matches('.');
+        d != "localhost" && !d.ends_with(".localhost") && d.contains('.')
+    });
     (u.scheme() == "https" && host_ok && u.username().is_empty() && u.password().is_none()).then_some(u)
 }
 
@@ -1211,9 +1215,11 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "BUG: a trailing dot slips past the localhost check, so https://localhost./ is opened"]
     fn safe_https_rejects_localhost_with_a_trailing_dot() {
-        assert!(safe_https("https://localhost./").is_none());
+        for bad in ["https://localhost./", "https://app.localhost/", "https://app.localhost./"] {
+            assert!(safe_https(bad).is_none(), "{bad} should be rejected");
+        }
+        assert!(safe_https("https://store.steampowered.com./app/60").is_some());
     }
 
     #[test]
