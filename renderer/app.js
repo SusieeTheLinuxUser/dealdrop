@@ -2032,6 +2032,7 @@ function applyData (data) {
   }
   state.lastChecked  = data.lastChecked  ?? Date.now()
   updateRefreshAge()
+  state.fetchError = null // fresh data arrived, so an earlier "Couldn't update" no longer applies
   renderErrors()
   SEEN_PAGES.forEach(page => { if (!state.seen[page]) markSeen(page) }) // first run: record, don't tag
   updateBadges()
