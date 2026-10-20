@@ -4,6 +4,9 @@ All notable changes to DealDrop are documented in this file.
 
 ## [Unreleased]
 
+## [v0.9.1] - 2026-10-20
+- Linux: the AppImage's embedded update info now names the AppImage itself (`DealDrop_*_amd64.AppImage`) instead of its `.zsync` file, so Gear Lever shows a plain file name and compares the release asset's checksum. The `.zsync` is still published so copies installed before this release keep finding updates.
+
 ## [v0.9.0] - 2026-10-20
 - Fixed: a hand-edited check interval in `config.json` is held to 5 minutes..1 day (a huge value could overflow the poll timer), and edited notification cuts are clamped on load (a `0` could crash the poll).
 - Fixed: when `config.json` can't be written (permissions, full disk) the error box says "Settings aren't being saved" instead of silently losing your settings.
