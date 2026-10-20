@@ -1052,7 +1052,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{civil_from_days, days_from_civil, sale_soon_notice, sale_starting_tomorrow, SALES, clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, keep_or_fail, keep_prices, carry_cheapest, normalize_hidden, normalize_targets, target_hits, target_notice, price_failure, CS_BLOCKED, normalize_title, remember_big_deals, remember_free, remember_wishlist, restore_by_prefix, safe_https, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, load_db, CONFIG_STUCK, Acct, Deal, Free, Price, Prime, Settings, WishItem};
+    use super::{civil_from_days, days_from_civil, sale_soon_notice, sale_starting_tomorrow, SALES, clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, keep_or_fail, keep_prices, carry_cheapest, normalize_hidden, normalize_targets, target_hits, target_notice, price_failure, CS_BLOCKED, normalize_title, remember_big_deals, remember_free, remember_wishlist, restore_by_prefix, safe_https, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, load_db, CONFIG_STUCK, Acct, Db, Deal, Free, Price, Prime, Settings, SteamProfile, Tokens, WishItem, accounts, same_refresh};
     use std::collections::{HashMap, HashSet};
 
     #[cfg(unix)]
@@ -1618,5 +1618,73 @@ mod tests {
         let items = vec![wish("10", "Hades", Some(4))];
         remember_wishlist(&mut seen, &items, 20);
         assert!(!seen.contains("steam:10"));
+    }
+
+    /// A state that never touches the disk (these tests only read).
+    fn test_state(db: Db) -> super::AppState {
+        super::AppState {
+            path: std::env::temp_dir().join(format!("dealdrop-test-{}.json", std::process::id())),
+            db: std::sync::Mutex::new(db),
+            snapshot: std::sync::Mutex::new(None),
+            poll_lock: tokio::sync::Mutex::new(()),
+            wake: tokio::sync::Notify::new(),
+        }
+    }
+
+    #[test]
+    fn account_profile_urls_point_at_the_stores_own_pages() {
+        let db = Db {
+            steam_profile: Some(SteamProfile { steam_id: "76561197960287930".into(), name: "Bob".into(), avatar: None }),
+            gog: Some(Tokens { name: "Geralt".into(), ..Default::default() }),
+            epic: Some(Tokens { name: "EpicPerson".into(), ..Default::default() }),
+            ..Default::default()
+        };
+        let acc = accounts(&test_state(db));
+        assert_eq!(acc.steam.as_ref().unwrap().profile_url.as_deref(), Some("https://steamcommunity.com/profiles/76561197960287930"));
+        assert_eq!(acc.gog.as_ref().unwrap().profile_url.as_deref(), Some("https://www.gog.com/u/Geralt"));
+        // Epic has no public profile page
+        assert_eq!(acc.epic.as_ref().unwrap().profile_url.as_deref(), Some("https://www.epicgames.com/account/personal"));
+        // A name with a space is escaped into the URL
+        let db = Db { gog: Some(Tokens { name: "Ann Marie".into(), ..Default::default() }), ..Default::default() };
+        assert_eq!(accounts(&test_state(db)).gog.unwrap().profile_url.as_deref(), Some("https://www.gog.com/u/Ann%20Marie"));
+        // No accounts: no rows
+        let acc = accounts(&test_state(Db::default()));
+        assert!(acc.steam.is_none() && acc.gog.is_none() && acc.epic.is_none());
+    }
+
+    #[test]
+    fn a_refresh_token_belongs_to_the_slot_that_holds_it() {
+        let db = Db {
+            gog: Some(Tokens { refresh_token: "gog-refresh".into(), ..Default::default() }),
+            epic: Some(Tokens { refresh_token: "epic-refresh".into(), ..Default::default() }),
+            ..Default::default()
+        };
+        let st = test_state(db);
+        assert!(same_refresh(&st, true, "gog-refresh"));
+        assert!(!same_refresh(&st, true, "epic-refresh"));
+        assert!(same_refresh(&st, false, "epic-refresh"));
+        assert!(!same_refresh(&st, false, "gog-refresh"));
+    }
+
+    #[test]
+    fn the_config_file_keeps_the_old_key_names() {
+        let db: Db = serde_json::from_value(serde_json::json!({
+            "steamId": "76561197960287930",
+            "seenFreeIds": ["steam-1"],
+            "seenSaleIds": ["steam:2"],
+            "seenDealIds": ["deal-3"],
+            "firedTargets": {"steam:2": 10.0},
+            "settings": {"priceTargets": {"steam:2": 12.0}, "hidden": ["Hades"]},
+            "primed": true,
+        })).unwrap();
+        assert_eq!(db.steam_id.as_deref(), Some("76561197960287930"));
+        assert!(db.seen_free_ids.contains("steam-1") && db.seen_sale_ids.contains("steam:2") && db.seen_deal_ids.contains("deal-3"));
+        assert_eq!(db.fired_targets.get("steam:2"), Some(&10.0));
+        assert_eq!(db.settings.price_targets.get("steam:2"), Some(&12.0));
+        assert_eq!(db.settings.hidden, ["Hades"]);
+        assert!(db.primed);
+        // An old config without the newer keys still loads
+        let db: Db = serde_json::from_value(serde_json::json!({"steamId": "1"})).unwrap();
+        assert!(db.seen_free_ids.is_empty() && db.fired_targets.is_empty() && !db.primed);
     }
 }
