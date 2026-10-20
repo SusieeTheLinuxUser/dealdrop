@@ -112,12 +112,37 @@ struct Snapshot {
     last_checked: u64,
 }
 
+/// Write `text` to `path` (0600: it holds API keys and tokens), swapping it in atomically.
+fn write_config(path: &std::path::Path, text: &str) -> Result<(), String> {
+    let e = |e: std::io::Error| e.to_string();
+    if let Some(dir) = path.parent() { std::fs::create_dir_all(dir).map_err(e)?; }
+    let tmp = path.with_extension("tmp");
+    // Created 0600 from the start (never briefly world-readable), then swapped in atomically.
+    let mut o = std::fs::OpenOptions::new();
+    o.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    { use std::os::unix::fs::OpenOptionsExt; o.mode(0o600); }
+    o.open(&tmp).and_then(|mut f| { std::io::Write::write_all(&mut f, text.as_bytes())?; f.sync_all() }).map_err(e)?;
+    // mode() is ignored when config.tmp already exists; rename would publish that mode.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Err(err) = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600)) {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(e(err));
+        }
+    }
+    std::fs::rename(&tmp, path).map_err(e)
+}
+
 struct AppState {
     path: PathBuf,
     db: Mutex<Db>,
     snapshot: Mutex<Option<Snapshot>>,
     poll_lock: AsyncMutex<()>,
     wake: Notify,
+    /// Why the last config write failed; the next one that works clears it. Shown in the error box like `CONFIG_STUCK`.
+    save_error: Mutex<Option<String>>,
 }
 
 impl AppState {
@@ -126,28 +151,17 @@ impl AppState {
         let mut db = self.db.lock().unwrap();
         let out = f(&mut db);
         if CONFIG_STUCK.get().is_some() { return out; } // never overwrite a config.json we couldn't read or move aside
-        if let Some(dir) = self.path.parent() { let _ = std::fs::create_dir_all(dir); }
-        if let Ok(text) = serde_json::to_string_pretty(&*db) {
-            let tmp = self.path.with_extension("tmp");
-            // Created 0600 from the start (never briefly world-readable), then swapped in atomically.
-            let mut o = std::fs::OpenOptions::new();
-            o.write(true).create(true).truncate(true);
-            #[cfg(unix)]
-            { use std::os::unix::fs::OpenOptionsExt; o.mode(0o600); }
-            if o.open(&tmp).and_then(|mut f| { std::io::Write::write_all(&mut f, text.as_bytes())?; f.sync_all() }).is_ok() {
-                // mode() is ignored when config.tmp already exists; rename would publish that mode.
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    if std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600)).is_err() {
-                        let _ = std::fs::remove_file(&tmp);
-                        return out;
-                    }
-                }
-                let _ = std::fs::rename(&tmp, &self.path);
-            }
-        }
+        self.save(&db);
         out
+    }
+    /// Write the db to disk; a failure is kept in `save_error` (and printed), a success clears it.
+    fn save(&self, db: &Db) {
+        let saved = serde_json::to_string_pretty(db).map_err(|e| e.to_string()).and_then(|text| write_config(&self.path, &text));
+        *self.save_error.lock().unwrap() = saved.err().map(|e| {
+            let msg = format!("{} couldn't be written ({e}). Check the folder's permissions and free space.", self.path.display());
+            eprintln!("{msg}");
+            msg
+        });
     }
     fn read<T>(&self, f: impl FnOnce(&Db) -> T) -> T { f(&self.db.lock().unwrap()) }
 }
@@ -362,7 +376,7 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
     let prev = st.snapshot.lock().unwrap().clone().unwrap_or_default();
 
     let source_errors = Mutex::new(Vec::<String>::new());
-    if let Some(why) = CONFIG_STUCK.get() { source_errors.lock().unwrap().push(failure("Settings aren't being saved", why)); }
+    if let Some(why) = CONFIG_STUCK.get().cloned().or_else(|| st.save_error.lock().unwrap().clone()) { source_errors.lock().unwrap().push(failure("Settings aren't being saved", &why)); }
 
     // 1. Steam major sale (always checked: it also drives the sale themes)
     let live_sale = match detect_steam_sale().await {
@@ -986,6 +1000,7 @@ fn main() {
                 snapshot: Mutex::new(None),
                 poll_lock: AsyncMutex::new(()),
                 wake: Notify::new(),
+                save_error: Mutex::new(None),
             });
             std::thread::spawn(autostart::refresh); // off the startup path: reads the autostart file
 
@@ -1684,7 +1699,29 @@ mod tests {
             snapshot: std::sync::Mutex::new(None),
             poll_lock: tokio::sync::Mutex::new(()),
             wake: tokio::sync::Notify::new(),
+            save_error: std::sync::Mutex::new(None),
         }
+    }
+
+    #[test]
+    fn a_failed_config_write_is_reported_and_the_next_good_one_clears_it() {
+        let dir = std::env::temp_dir().join(format!("dealdrop-save-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let blocker = dir.join("blocker");
+        std::fs::write(&blocker, "a file where the config folder should be").unwrap();
+        let mut st = test_state(Db::default());
+        st.path = blocker.join("config.json");
+        assert!(super::write_config(&st.path, "{}").is_err());
+        let db = Db { steam_id: Some("1".into()), ..Default::default() };
+        st.save(&db);
+        let why = st.save_error.lock().unwrap().clone().unwrap();
+        assert!(why.contains("config.json") && why.contains("couldn't be written"), "{why}");
+        st.path = dir.join("ok").join("config.json");
+        st.save(&db);
+        assert!(st.save_error.lock().unwrap().is_none());
+        assert!(std::fs::read_to_string(&st.path).unwrap().contains("\"1\""));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
