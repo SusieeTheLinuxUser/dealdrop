@@ -1029,6 +1029,55 @@ mod unit {
         assert_eq!(super::gp_title("RIDE 6 Welcome Bikes Pack Steam Key Giveaway"), "RIDE 6 Welcome Bikes Pack");
     }
 
+    #[test]
+    fn gamerpower_titles_keep_their_own_words() {
+        assert_eq!(super::gp_title("Café Noir (Epic Games) Giveaway"), "Café Noir");
+        assert_eq!(super::gp_title("Foo (Steam) Key Giveaway"), "Foo");
+        assert_eq!(super::gp_title("Not A Giveaway Indeed"), "Not A Giveaway Indeed"); // only a trailing giveaway is noise
+        assert_eq!(super::gp_title("Plain Title"), "Plain Title");
+    }
+
+    #[test]
+    fn gamerpower_rows_without_a_title_or_an_id_are_skipped() {
+        let body = r#"[{"title":"No Id","status":"Active","platforms":"PC"},
+                       {"id":5,"title":"No Platform","status":"Active","platforms":"PC"},
+                       {"id":6,"title":"Free Game","status":"Active","platforms":"PC, GOG","end_date":"N/A"}]"#;
+        let v = super::parse_gamerpower(body, "gp-", "free").unwrap();
+        assert_eq!(v.iter().map(|g| g.id.as_str()).collect::<Vec<_>>(), ["gp-5", "gp-6"]);
+        assert_eq!(v[0].source, "other"); // no store in the platform list
+        assert_eq!(v[1].source, "gog");
+        assert!(v[1].end_date.is_none()); // "N/A" is not a date
+    }
+
+    #[test]
+    fn html_entities_in_titles_are_decoded() {
+        assert_eq!(super::unescape("Hades &amp; Co"), "Hades & Co");
+        assert_eq!(super::unescape("&lt;Tag&gt;"), "<Tag>");
+        assert_eq!(super::unescape("&quot;quoted&quot; &amp; &#39;single&#39;"), "\"quoted\" & 'single'");
+        assert_eq!(super::unescape("Trade &trade; Mark &reg; 2026 &copy;"), "Trade ™ Mark ® 2026 ©");
+        assert_eq!(super::unescape("plain"), "plain");
+    }
+
+    #[test]
+    fn titles_are_encoded_before_they_go_into_a_url() {
+        assert_eq!(super::urlenc("Portal 2"), "Portal+2");
+        assert_eq!(super::urlenc("a/b"), "a%2Fb");
+        assert_eq!(super::urlenc("a&b=c"), "a%26b%3Dc");
+        assert_eq!(super::urlenc("ü"), "%C3%BC");
+    }
+
+    #[test]
+    fn prices_are_read_from_numbers_or_strings() {
+        use serde_json::json;
+        assert_eq!(super::f(&json!(5)), 5.0);
+        assert_eq!(super::f(&json!("5.50")), 5.5);
+        assert_eq!(super::f(&json!("n/a")), 0.0);
+        assert_eq!(super::f(&json!(null)), 0.0);
+        assert_eq!(super::f(&json!(true)), 0.0);
+        assert_eq!(super::s(&json!("x")).as_deref(), Some("x"));
+        assert_eq!(super::s(&json!(5)), None);
+    }
+
     fn search_body(html: &str) -> String {
         serde_json::json!({"results_html": html}).to_string()
     }
@@ -1080,6 +1129,14 @@ mod unit {
         assert!(v[1].image.is_none());
         assert!(super::parse_steam_sales("{}").is_err());
         assert!(super::parse_steam_sales("not json").is_err());
+    }
+
+    #[test]
+    #[ignore = "BUG: a 100% off row without an original price divides by zero, so the regular price is NaN"]
+    fn steam_sales_never_show_a_nan_regular_price() {
+        let html = r#"<a data-ds-appid="440"><span class="title">Team Fortress 2</span><div data-discount="100" data-price-final="0"></div></a>"#;
+        let v = super::parse_steam_sales(&search_body(html)).unwrap();
+        assert_eq!(v[0].regular, 0.0);
     }
 
     #[test]
