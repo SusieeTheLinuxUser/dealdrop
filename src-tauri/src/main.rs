@@ -1250,6 +1250,15 @@ mod tests {
     }
 
     #[test]
+    fn safe_https_rejects_disguised_ip_and_local_hosts() {
+        // The URL parser turns these into IP literals or "localhost" before the host check sees them
+        for bad in ["https://2130706433/", "https://0x7f.1/", "https://0177.0.0.1/", "https://127.1/", "https://[::ffff:127.0.0.1]/",
+                    "https://local%68ost/", "https:\\\\localhost\\x", "https://LOCALHOST/"] {
+            assert!(safe_https(bad).is_none(), "{bad} should be rejected");
+        }
+    }
+
+    #[test]
     fn restore_by_prefix_splits_steam_ftk() {
         let free = |id: &str| Free { id: id.into(), ..Default::default() };
         let old = vec![free("steam-10"), free("steam-ftk-10"), free("steam-fw-10"), free("gp-400"), free("epic-1")];
