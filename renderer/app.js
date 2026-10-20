@@ -2134,10 +2134,11 @@ async function init () {
   }).catch(() => {})
 
   // ── Load initial state ────────────────────────────────────────────────────
-  Object.assign(state.settings, await window.api.getSettings())
+  // a failed read keeps the defaults (no welcome tour for an unknown user): the app should still draw and poll
+  Object.assign(state.settings, await window.api.getSettings().catch(e => (console.error('[getSettings]', e), { onboarded: true })))
   applyTheme()
   state.launchers = await window.api.launchers().catch(() => state.launchers)
-  setAccounts(await window.api.getAccounts())
+  setAccounts(await window.api.getAccounts().catch(e => (console.error('[getAccounts]', e), null)))
 
   // Listen for background push updates from main process
   window.api.onDataUpdate(data => applyData(data))
