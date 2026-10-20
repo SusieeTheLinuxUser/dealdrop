@@ -136,6 +136,7 @@ const state = {
   accounts:     { steam: null, gog: null, epic: null },
   sourceErrors: [],
   fetchError:   null,
+  dataSig:      '',   // dataSig() of the last applied snapshot
   dataLoaded:   false,
   lastChecked:  null,
   selectedWishlistDeal: null,
@@ -2007,6 +2008,8 @@ async function copyError () {
 
 function applyData (data) {
   data = data || {}
+  const unchanged = state.dataLoaded && dataSig(data) === state.dataSig
+  state.dataSig = dataSig(data)
   state.dataLoaded = true
   // pick up profile changes made during the poll (e.g. a GOG avatar fetched for an older sign-in)
   window.api.getAccounts().then(a => { if (JSON.stringify(a) !== JSON.stringify(state.accounts)) setAccounts(a) })
@@ -2043,7 +2046,10 @@ function applyData (data) {
   updateBadges()
   // Re-render the visible page — but never the settings page or an open price-target
   // editor (redrawn when it closes), so a background poll can't yank inputs out from under the user
-  if (!deferRedraw() && state.page !== 'settings') navigate(state.page)
+  // The same data would only rebuild the rows and drop keyboard focus to <body>, so leave the page alone when focus is in it
+  if (deferRedraw() || state.page === 'settings') return
+  if (unchanged && document.getElementById(`page-${state.page}`)?.contains(document.activeElement)) updateLastCheckedLabels()
+  else navigate(state.page)
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -2055,6 +2061,9 @@ function escHtml (str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
 }
+
+// What a poll delivered, without the time it was checked: equal signatures mean nothing on screen would change
+const dataSig = data => JSON.stringify({ ...data, lastChecked: 0 })
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 
