@@ -31,7 +31,8 @@ vm.runInContext([
   between('function nextTheme (', '\nfunction syncSaleTheme'),
   between('const targetKey', '\nfunction wishlistTargetTag'),
   between('const nextIndex', '\n// Moves focus between'),
-  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge, mergeUiPrefs, dealShops, parseClaimed, pruneClaimed, toggleClaimed, claimedLast, normalizeTitle, hiddenTitle, searchRank, parseSeen, newIds, mergeSeen, wishlistKey, seenIds, salesSeenIds, PAGE_SIZE, pageSlice, nextTheme, targetKey, targetPrice, targetHit, parseTarget , nextIndex }',
+  between('const fmt$ =', '\n// CSP forbids inline onerror'),
+  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge, mergeUiPrefs, dealShops, parseClaimed, pruneClaimed, toggleClaimed, claimedLast, normalizeTitle, hiddenTitle, searchRank, parseSeen, newIds, mergeSeen, wishlistKey, seenIds, salesSeenIds, PAGE_SIZE, pageSlice, nextTheme, targetKey, targetPrice, targetHit, parseTarget , nextIndex, fmt$, salePriceDescription, timeLeft, endsFirst, endDateLabel, startDateLabel, fmtChecked, gameStoreName, srcIcon }',
 ].join('\n'), context)
 
 const h = context.helpers
@@ -196,4 +197,52 @@ assert.equal(h.nextIndex(4, 5, 1), 4)     // stops at the ends
 assert.equal(h.nextIndex(0, 5, -1), 0)
 assert.equal(h.nextIndex(-1, 0, 1), -1)   // empty list
 
-console.log('Renderer self-check passed (price targets, escaping, hidden titles, search ranking, filters, store filter, UI preference merge, claimed games, seen deals, list paging, next sale, refresh age, sale themes, J/K navigation).')
+// Money and dates as they are shown on a card
+assert.equal(h.fmt$(0), 'Free')
+assert.equal(h.fmt$(4.999), '$5.00')
+assert.equal(h.fmt$('n/a'), 'Free')
+assert.equal(h.salePriceDescription(19.99, 4.99, 75, ''), 'Was $19.99, now $4.99, 75% off')
+assert.equal(h.salePriceDescription(19.99, 4.99, 75, '$4.99'), 'Was $19.99, now $4.99, 75% off')
+assert.equal(h.salePriceDescription(19.99, 4.99, 75, '4.99 EUR'), 'Was $19.99, now 4.99 EUR, 75% off')
+assert.equal(h.salePriceDescription(0, 0, 100, ''), 'Was Free, now Free, 100% off')
+
+// How long a giveaway still has: days, then hours, then "soon"
+const later = ms => new Date(Date.now() + ms).toISOString()
+assert.equal(h.timeLeft(''), '')
+assert.equal(h.timeLeft(later(-1000)), 'ended')
+assert.equal(h.timeLeft(later(2.5 * 86400000)), '2d left')
+assert.equal(h.timeLeft(later(3.5 * 3600000)), '3h left')
+assert.equal(h.timeLeft(later(30 * 60000)), 'ending soon')
+assert.equal(h.endDateLabel(later(-1000)), 'Ended')
+assert.equal(h.endDateLabel(later(30 * 60000)), 'Ends soon')
+assert.equal(h.endDateLabel(later(2.5 * 86400000)), 'Ends in 2d')
+assert.equal(h.endDateLabel(later(3.5 * 3600000)), 'Ends in 3h')
+
+// The soonest end date first; a row without one goes last
+const dated = [{ id: 'a', endDate: '2026-10-20T00:00:00Z' }, { id: 'b', endDate: '' }, { id: 'c', endDate: '2026-10-22T00:00:00Z' }, { id: 'd', endDate: 'nope' }]
+assert.equal(JSON.stringify(h.endsFirst(dated).map(x => x.id)), '["a","c","b","d"]')
+assert.equal(JSON.stringify(dated.map(x => x.id)), '["a","b","c","d"]') // the list is not sorted in place
+
+// An upcoming giveaway: the date is only in the label, so the format is the browser's
+assert.equal(h.startDateLabel(''), 'Free soon')
+assert.equal(h.startDateLabel('nope'), 'Free soon')
+assert.equal(h.startDateLabel('2020-01-01T00:00:00Z'), 'Free now')
+assert.equal(h.startDateLabel('2030-01-01T00:00:00Z').startsWith('Free from '), true)
+
+assert.equal(h.fmtChecked(0), '')
+assert.equal(h.fmtChecked(Date.now()), 'updated just now')
+assert.match(h.fmtChecked(Date.now() - 30000), /^updated 3[01]s ago$/) // the clock may tick between the two reads
+assert.equal(h.fmtChecked(Date.now() - 5 * 60000), 'updated 5m ago')
+assert.equal(h.fmtChecked(Date.now() - 3 * 3600000), 'updated 3h ago')
+
+assert.equal(h.gameStoreName('steam'), 'Steam')
+assert.equal(h.gameStoreName('gog'), 'GOG')
+assert.equal(h.gameStoreName('epic'), 'Epic Games')
+assert.equal(h.gameStoreName('other'), 'other')
+assert.equal(h.gameStoreName(), 'Store')
+assert.equal(h.srcIcon('steam'), '🎮')
+assert.equal(h.srcIcon('epic'), '🕹️')
+assert.equal(h.srcIcon('gog'), '⚔️')
+assert.equal(h.srcIcon('other'), '🎮')
+
+console.log('Renderer self-check passed (price targets, escaping, hidden titles, search ranking, filters, store filter, UI preference merge, claimed games, seen deals, list paging, next sale, refresh age, sale themes, J/K navigation, money and date labels).')
