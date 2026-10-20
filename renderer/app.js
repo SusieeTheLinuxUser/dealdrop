@@ -1000,10 +1000,15 @@ async function selectWishlistGame (w) {
   const empty = { loading: false, appId: w.appId, gameName: w.name, steam: null, cheapest: null, checkedAt: Date.now() }
   state.selectedWishlistDeal = { ...empty, loading: true }
   renderWishlist()
+  // a later click (or a poll that dropped the game) owns the panel now; drop this answer
+  const current = () => String(state.selectedWishlistDeal?.appId) === String(w.appId)
   try {
-    state.selectedWishlistDeal = { loading: false, ...(await window.api.fetchWishlistGameDeals({ appId: w.appId, name: w.name })) }
+    const deal = await window.api.fetchWishlistGameDeals({ appId: w.appId, name: w.name })
+    if (!current()) return
+    state.selectedWishlistDeal = { loading: false, ...deal }
   } catch (e) {
     console.error('[wishlist-deal-panel]', e)
+    if (!current()) return
     state.selectedWishlistDeal = empty
   }
   renderWishlist()
