@@ -159,10 +159,18 @@ pub fn s(v: &Value) -> Option<String> {
 }
 
 fn unescape(t: &str) -> String {
-    // `&amp;` last, so "&amp;lt;" becomes the text "&lt;" and not "<".
-    t.replace("&lt;", "<").replace("&gt;", ">")
-        .replace("&quot;", "\"").replace("&#39;", "'").replace("&trade;", "™")
-        .replace("&reg;", "®").replace("&copy;", "©").replace("&amp;", "&")
+    static ENTITY: OnceLock<Regex> = OnceLock::new();
+    // One pass, so "&amp;lt;" becomes the text "&lt;" and not "<". Unknown entities stay as they are.
+    re(r"&(#[xX][0-9a-fA-F]{1,6}|#[0-9]{1,7}|[a-zA-Z]{2,6});", &ENTITY).replace_all(t, |c: &regex::Captures| {
+        let e = &c[1];
+        let ch = match e.strip_prefix('#') {
+            Some(n) => match n.strip_prefix(['x', 'X']) { Some(h) => u32::from_str_radix(h, 16), None => n.parse() }.ok()
+                .and_then(char::from_u32).filter(|ch| !ch.is_control()),
+            None => match e { "lt" => Some('<'), "gt" => Some('>'), "quot" => Some('"'), "amp" => Some('&'), "apos" => Some('\''),
+                "nbsp" => Some(' '), "trade" => Some('™'), "reg" => Some('®'), "copy" => Some('©'), _ => None },
+        };
+        ch.map_or_else(|| c[0].to_string(), String::from)
+    }).into_owned()
 }
 
 fn re(pat: &'static str, cell: &'static OnceLock<Regex>) -> &'static Regex {
@@ -1800,5 +1808,14 @@ pub(crate) mod unit {
         let title = "🎮".repeat(50_000);
         let v = super::parse_steam_sales(&search_body(&format!("<a data-ds-appid=\"1\"><span class=\"title\">{title}</span><div data-discount=\"10\" data-price-final=\"100\"></div></a>"))).unwrap();
         assert_eq!(v[0].title.chars().count(), 50_000);
+    }
+
+    #[test]
+    fn numeric_and_named_entities_decode_once() {
+        assert_eq!(super::unescape("Assassin&#039;s Creed &#x27;X&#X27; &apos;Y&apos;"), "Assassin's Creed 'X' 'Y'");
+        assert_eq!(super::unescape("Caf&#233; &#x1F3AE; &nbsp;Go"), "Café 🎮  Go");
+        assert_eq!(super::unescape("&#38;lt; &#x26;amp;"), "&lt; &amp;"); // an entity that decodes to "&" is not decoded again
+        assert_eq!(super::unescape("a &bogus; b &#; &#xZZ; &#99999999; &#0; &#1; & &amp"), "a &bogus; b &#; &#xZZ; &#99999999; &#0; &#1; & &amp");
+        assert_eq!(super::unescape("&#xD800; &#55296;"), "&#xD800; &#55296;"); // surrogates are not characters
     }
 }
