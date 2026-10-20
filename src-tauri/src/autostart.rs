@@ -249,6 +249,35 @@ mod tests {
     }
 
     #[test]
+    fn the_launch_agent_escapes_the_app_path() {
+        let text = launch_agent("/Applications/Deal & <Drop>.app/Contents/MacOS/DealDrop");
+        assert!(text.contains("/Applications/Deal &amp; &lt;Drop&gt;.app/Contents/MacOS/DealDrop"));
+        assert!(!text.contains("<Drop>"));
+    }
+
+    #[test]
+    fn only_our_own_exec_line_is_read_back() {
+        assert_eq!(exec_path(r#"Exec="/apps/DealDrop.AppImage" --hidden"#).as_deref(), Some("/apps/DealDrop.AppImage"));
+        assert!(exec_path("Exec=/apps/DealDrop.AppImage").is_none()); // not quoted
+        assert!(exec_path("Exec=").is_none());
+        assert!(exec_path("Exec").is_none());
+        assert!(exec_path(" X-Exec=\"/apps/x\"").is_none());
+    }
+
+    #[test]
+    fn the_entry_is_only_repointed_when_the_app_it_records_is_gone() {
+        let old = desktop_entry("/apps/DealDrop_0.8.0_amd64.AppImage", Path::new("/i.png"));
+        // The running copy is the one the entry already names
+        assert!(repaired_entry(&old, "/apps/DealDrop_0.8.0_amd64.AppImage", |_| true).is_none());
+        // A gone app: the entry follows the running copy, everything else is kept
+        let fixed = repaired_entry(&old, "/opt/dealdrop", |_| false).unwrap();
+        assert!(fixed.contains("Exec=\"/opt/dealdrop\" --hidden"));
+        assert!(fixed.contains("Icon=/i.png"));
+        assert!(fixed.contains("Name=DealDrop"));
+        assert!(fixed.ends_with('\n'));
+    }
+
+    #[test]
     fn autostart_file_is_written_and_removed() {
         let base = std::env::temp_dir().join(format!("dealdrop-autostart-test-{}", std::process::id()));
         let path = desktop_path(&base);
