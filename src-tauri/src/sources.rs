@@ -153,8 +153,9 @@ fn money(v: &Value) -> Option<f64> {
     num(v).filter(|x| *x >= 0.0)
 }
 
-fn s(v: &Value) -> Option<String> {
-    v.as_str().map(str::to_string)
+/// A string that has some text: an id, title, URL or date that is `""` is as good as missing.
+pub fn s(v: &Value) -> Option<String> {
+    v.as_str().filter(|x| !x.trim().is_empty()).map(str::to_string)
 }
 
 fn unescape(t: &str) -> String {
@@ -1032,7 +1033,7 @@ mod live {
 }
 
 #[cfg(test)]
-mod unit {
+pub(crate) mod unit {
     #[test]
     fn appdetails_is_dlc_parses_type() {
         assert_eq!(super::appdetails_is_dlc(r#"{"10":{"success":true,"data":{"type":"game"}}}"#), Some(false));
@@ -1700,5 +1701,104 @@ mod unit {
         assert_eq!(v.iter().map(|g| g.id.as_str()).collect::<Vec<_>>(), ["gp-1", "gp-2"]);
         assert_eq!(v[0].app_id, None); // appid 0 is "not a Steam game"
         assert_eq!(v[1].title, "(Steam) Giveaway"); // better the raw text than an empty card
+    }
+
+    /// Every copy of `v` with one leaf (or one container) swapped for a value of another type.
+    pub(crate) fn mutations(v: &serde_json::Value) -> Vec<serde_json::Value> {
+        use serde_json::{json, Value};
+        let swaps = [json!(null), json!(""), json!("NaN"), json!(-1), json!(1e300), json!(150), json!([]), json!({}), json!("1,234.56"), json!(true)];
+        let mut out = vec![];
+        match v {
+            Value::Array(a) => for (i, x) in a.iter().enumerate() {
+                for m in mutations(x) { let mut c = a.clone(); c[i] = m; out.push(Value::Array(c)); }
+            },
+            Value::Object(o) => for (k, x) in o {
+                for m in mutations(x) { let mut c = o.clone(); c.insert(k.clone(), m); out.push(Value::Object(c)); }
+            },
+            _ => {}
+        }
+        out.extend(swaps.into_iter().filter(|s| s != v));
+        out
+    }
+
+    fn sane_deals(what: &str, deals: &[super::Deal]) {
+        for d in deals {
+            assert!(d.price.is_finite() && d.price >= 0.0 && d.regular.is_finite() && d.regular >= 0.0 && d.cut <= 100, "{what}: {d:?}");
+            assert!(!d.title.is_empty() && !d.id.is_empty(), "{what}: {d:?}");
+        }
+    }
+
+    #[test]
+    fn json_parsers_survive_wrong_types_and_keep_prices_sane() {
+        use serde_json::json;
+        let stores = std::collections::HashMap::from([("1".to_string(), "Steam".to_string())]);
+        let gog = json!({"products": [{"id":"1","title":"W3","storeLink":"https://www.gog.com/en/game/w3","coverHorizontal":"https://i/c.jpg","price":{"finalMoney":{"amount":"5.00"},"baseMoney":{"amount":"10.00"},"discount":"-50%"}}]});
+        for m in mutations(&gog) {
+            sane_deals("gog", &super::parse_gog_sales(&m.to_string()).unwrap());
+            super::parse_gog_product(&m, "W3");
+        }
+        let cs = json!([{"dealID":"A","gameID":"10","title":"Hades","storeID":"1","salePrice":"5.00","normalPrice":"20.00","savings":"75.6","steamAppID":"1145360","thumb":"t","steamRatingText":"Good","steamRatingPercent":"98","steamRatingCount":"250"}]);
+        for m in mutations(&cs) {
+            sane_deals("cheapshark", &super::parse_cheapshark_deals(&m.to_string(), &stores).unwrap());
+            super::cheapshark_deals_by_game(&m.to_string());
+            super::parse_cheapest_deal(&m, &stores);
+            for (_, p, _, _) in super::cheapshark_matches(&[super::WishItem { app_id: Some("1145360".into()), ..Default::default() }], &[0], &m) {
+                assert!(p.is_finite() && p >= 0.0, "{m}");
+            }
+        }
+        let games = json!({"10": {"cheapestPriceEver": {"price": "4.25"}, "deals": [{"dealID": "a", "storeID": "1"}]}});
+        for m in mutations(&games) {
+            assert!(super::parse_cheapshark_lowest(&m.to_string()).values().all(|p| p.is_finite() && *p >= 0.0), "{m}");
+            super::parse_deal_stores(&m.to_string());
+        }
+        let items = json!({"response": {"store_items": [{"appid": 620, "name": "Portal 2",
+            "best_purchase_option": {"final_price_in_cents": "98", "original_price_in_cents": "979", "formatted_final_price": "$0.98", "discount_pct": 90},
+            "assets": {"asset_url_format": "steam/apps/620/${FILENAME}", "header": "header.jpg"}}]}});
+        for m in mutations(&items) {
+            for it in super::parse_steam_items(&m).values() {
+                if let Some(p) = &it.price { assert!(p.fin.is_finite() && p.fin >= 0.0 && p.initial.is_finite() && p.initial >= p.fin && p.discount <= 100, "{m}"); }
+            }
+        }
+        let featured = json!({"large_capsules": [{"id": 1, "name": "Gift", "final_price": 0, "original_price": 1999, "large_capsule_image": "i"}], "featured_win": []});
+        for m in mutations(&featured) { super::parse_steam_featured(&m); }
+        let fdc = json!({"0": {"id": "cat_spotlight", "items": [{"name": "Free Weekend", "url": "https://store.steampowered.com/app/313120"}, {"name": "Autumn Sale", "url": "https://store.steampowered.com/sale/autumn2026"}]},
+            "coming_soon": {"items": [{"id": 42, "discount_percent": 100}]}, "specials": {"items": [{"discount_percent": 60}]}});
+        for m in mutations(&fdc) { super::steam_free_weekend_ids(&m); super::steam_sale_from(&m); }
+        for m in mutations(&json!({"response": {"items": [{"appid": 10, "priority": 1, "date_added": 5}]}})) { super::parse_steam_wishlist_ids(&m); }
+        let epic = json!({"data": {"Catalog": {"searchStore": {"elements": [{"title": "Control", "id": "o1", "productSlug": "control/home",
+            "promotions": {"promotionalOffers": [{"promotionalOffers": [{"startDate": "s", "endDate": "e", "discountSetting": {"discountPercentage": 0}}]}],
+                           "upcomingPromotionalOffers": [{"promotionalOffers": [{"startDate": "s", "discountSetting": {"discountPercentage": 0}}]}]},
+            "keyImages": [{"type": "Thumbnail", "url": "u"}]}]}}}});
+        for m in mutations(&epic) {
+            for g in super::parse_epic_free(&m.to_string()).unwrap().iter().chain(&super::parse_epic_upcoming(&m.to_string()).unwrap()) {
+                assert!(!g.title.is_empty() && g.url.starts_with("https://store.epicgames.com/"), "{m}");
+            }
+        }
+        let gp = json!([{"id": 1, "title": "Hades (Steam) Giveaway", "status": "Active", "platforms": "PC, Steam", "end_date": "2026-10-24 23:59:59", "steam_appid": 5, "open_giveaway_url": "u", "thumbnail": "t"}]);
+        for m in mutations(&gp) {
+            for g in super::parse_gamerpower(&m.to_string(), "gp-", "free").unwrap() { assert!(!g.title.is_empty(), "{m}"); }
+        }
+    }
+
+    #[test]
+    fn html_parsers_survive_every_truncation() {
+        let html = "<a data-ds-appid=\"1091500\"><img src=\"https://cdn/c.jpg\"><span class=\"title\">Hades &amp; Çé 🎮 \u{202e}עברית</span>\n\
+<div data-discount=\"50\" data-price-final=\"50000\"><div class=\"discount_original_price\">$1,000.00</div></div></a>\
+<a data-ds-appid=\"2\"><span class=\"title\">Free</span><div data-price-final=\"0\" data-discount=\"100\"><div class=\"discount_original_price\">$9.99</div></div></a>";
+        for end in (0..=html.len()).filter(|&i| html.is_char_boundary(i)) {
+            let body = search_body(&html[..end]);
+            sane_deals("steam sales", &super::parse_steam_sales(&body).unwrap());
+            for g in super::parse_steam_free_to_keep(&body).unwrap() { assert!(!g.title.is_empty()); }
+        }
+        let json_body = search_body(html);
+        for end in (0..=json_body.len()).filter(|&i| json_body.is_char_boundary(i)) {
+            let cut = &json_body[..end];
+            let _ = (super::parse_steam_sales(cut), super::parse_steam_free_to_keep(cut), super::parse_gog_sales(cut), super::parse_epic_free(cut),
+                     super::parse_epic_upcoming(cut), super::parse_gamerpower(cut, "gp-", "free"), super::read_steam_sale(cut),
+                     super::appdetails_is_dlc(cut), super::parse_steam_profile(cut), super::profile_is_private(cut));
+        }
+        let title = "🎮".repeat(50_000);
+        let v = super::parse_steam_sales(&search_body(&format!("<a data-ds-appid=\"1\"><span class=\"title\">{title}</span><div data-discount=\"10\" data-price-final=\"100\"></div></a>"))).unwrap();
+        assert_eq!(v[0].title.chars().count(), 50_000);
     }
 }

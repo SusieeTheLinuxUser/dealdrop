@@ -386,8 +386,8 @@ fn parse_epic_sales(v: &Value) -> Vec<Deal> {
             let p = epic_price(o)?;
             if p.discount == 0 || p.fin == 0.0 { return None; } // free promos live on the Free page
             Some(Deal {
-                id: format!("epic-{}", o["id"].as_str()?),
-                title: o["title"].as_str()?.into(),
+                id: format!("epic-{}", s(&o["id"])?),
+                title: s(&o["title"])?,
                 shop: "Epic".into(),
                 url: epic_page(o),
                 image: epic_image(o),
@@ -445,8 +445,8 @@ fn parse_epic_wishlist(v: &Value) -> R<Vec<WishItem>> {
         let o = &e["offer"];
         Some(WishItem {
             store: "epic".into(),
-            id: e["offerId"].as_str()?.into(),
-            name: o["title"].as_str()?.into(),
+            id: s(&e["offerId"])?,
+            name: s(&o["title"])?,
             url: epic_page(o),
             image: epic_image(o),
             price_info: epic_price(o),
@@ -779,5 +779,32 @@ mod unit {
         assert_eq!((yen.fin, yen.initial), (500.0, 1000.0));
         let no_decimals = super::epic_price(&json!({"price": {"totalPrice": {"discountPrice": 500, "originalPrice": 1000}}})).unwrap();
         assert_eq!(no_decimals.fin, 5.0); // Epic omits it: cents
+    }
+
+    #[test]
+    fn store_parsers_survive_wrong_types_and_keep_prices_sane() {
+        use crate::sources::unit::mutations;
+        let sane = |what: &str, p: &Option<crate::sources::Price>| {
+            if let Some(p) = p { assert!(p.fin.is_finite() && p.fin >= 0.0 && p.initial.is_finite() && p.initial >= 0.0 && p.discount <= 100, "{what}: {p:?}"); }
+        };
+        let products = json!([{"id": 7, "title": "T", "slug": "t", "images": {"logo2x": "//i/l.jpg"}}]);
+        let prices = json!({"_embedded": {"items": [{"_embedded": {"product": {"id": 7}, "prices": [{"basePrice": "999 USD", "finalPrice": "500 USD"}]}}]}});
+        for m in mutations(&products) { for w in super::parse_gog_wishlist_products(&m, &prices) { sane("gog products", &w.price_info); } }
+        for m in mutations(&prices) { for w in super::parse_gog_wishlist_products(&products, &m) { sane("gog prices", &w.price_info); } }
+        for m in mutations(&json!({"wishlist": {"7": true, "8": 0}})) { super::parse_gog_wishlist_ids(&m); }
+        let offer = json!({"title": "G", "id": "o1", "offerId": "o1", "productSlug": "g/home", "keyImages": [{"type": "Thumbnail", "url": "u"}],
+            "price": {"totalPrice": {"discountPrice": 500, "originalPrice": 1000, "currencyInfo": {"decimals": 2}, "fmtPrice": {"discountPrice": "$5.00"}}}});
+        let sales = json!({"data": {"Catalog": {"searchStore": {"elements": [offer.clone()]}}}});
+        for m in mutations(&sales) {
+            for d in super::parse_epic_sales(&m) { assert!(d.price.is_finite() && d.price >= 0.0 && d.regular >= 0.0 && d.cut <= 100 && !d.title.is_empty(), "{m}"); }
+            super::parse_epic_product(&m["data"]["Catalog"]["searchStore"]["elements"], "G");
+        }
+        let wishlist = json!({"data": {"Wishlist": {"wishlistItems": {"elements": [{"offerId": "o1", "offer": offer}]}}}});
+        for m in mutations(&wishlist) { if let Ok(v) = super::parse_epic_wishlist(&m) { for w in v { sane("epic wishlist", &w.price_info); } } }
+        for m in mutations(&json!({"access_token": "a", "refresh_token": "r", "expires_in": 3600, "displayName": "N"})) {
+            let _ = (super::parse_gog_token(&m, &[], 1), super::parse_epic_token(&m, &[], 1));
+        }
+        for m in mutations(&json!({"username": "u", "country": "DE", "selectedCurrency": {"code": "EUR"}, "avatar": "https://images.gog.com/a"})) { super::parse_gog_user(&m); }
+        assert_eq!(super::expires_at(&json!({"expires_in": u64::MAX}), u64::MAX), u64::MAX);
     }
 }
