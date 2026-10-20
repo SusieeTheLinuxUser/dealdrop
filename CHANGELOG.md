@@ -4,6 +4,9 @@ All notable changes to DealDrop are documented in this file.
 
 ## [Unreleased]
 
+## [v0.9.2] - 2026-10-20
+- Linux: the AppImage's embedded update info is back to naming the `.zsync` file. v0.9.1 dropped it and Gear Lever then no longer detected the update info (Update management showed an empty source); install v0.9.2 to get automatic update detection again.
+
 ## [v0.9.1] - 2026-10-20
 - Linux: the AppImage's embedded update info now names the AppImage itself (`DealDrop_*_amd64.AppImage`) instead of its `.zsync` file, so Gear Lever shows a plain file name and compares the release asset's checksum. The `.zsync` is still published so copies installed before this release keep finding updates.
 

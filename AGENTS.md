@@ -46,7 +46,7 @@ cargo tauri build --bundles appimage                 # → src-tauri/target/rele
 Every release ships **Linux AppImage + Windows .msi + macOS .dmg (universal: Intel + Apple Silicon)**. Never release just one.
 
 1. On `dev`: bump the version in all four places (see Rules); update the docs; commit; then fast-forward `main` to `dev` and push both.
-2. **Linux first:** `RELEASE_NOTES="…" scripts/release-linux.sh` builds the AppImage with embedded update info (Gear Lever reads it: `gh-releases-zsync|…|DealDrop_*_amd64.AppImage`, the asset name without `.zsync`, so it shows a plain file name and compares the asset's sha256; the `.zsync` is still published because copies installed before v0.9.1 embed its name), makes the `.zsync` and publishes both to the release. Needs `zsyncmake` (package `zsync`). The maintainer tests it.
+2. **Linux first:** `RELEASE_NOTES="…" scripts/release-linux.sh` builds the AppImage with embedded update info (Gear Lever / AppImageUpdate read it: `gh-releases-zsync|…|DealDrop_*_amd64.AppImage.zsync`; the string must keep `.zsync`, Gear Lever's detection regex needs it and v0.9.1 broke by dropping it), makes the `.zsync` and publishes both to the release. Needs `zsyncmake` (package `zsync`). The maintainer tests it.
 3. **Only after the Linux build is confirmed working:** `gh workflow run release.yml -f tag=vX.Y.Z` — `.github/workflows/release.yml` builds the Windows .msi and macOS .dmg on GitHub runners and attaches them to that same release. (Windows/macOS can't be built locally on Linux; don't ship them for a build that's known broken.)
 4. Check the release has all three assets before announcing it.
 
