@@ -1304,8 +1304,9 @@ function renderStoreSales () {
 
   grid.innerHTML = ''
   const list = state.sales[state.salesTab] ?? []
-  if (state.page === 'storesales') list.forEach(d => state.salesViewed.add(d.id))
   const items = filteredSorted(list, 'storesales')
+  // only rows on screen count as seen (hidden titles too, so unhiding one isn't new); a search or discount filter hides the rest
+  if (state.page === 'storesales') [...items, ...list.filter(d => hiddenTitle(d.title))].forEach(d => state.salesViewed.add(d.id))
   updateResultCount('storesales', items.length, list.length)
   syncMinDiscount('storesales', 'sales-discount-filters')
   emptyEl.style.display = items.length ? 'none' : 'flex'
