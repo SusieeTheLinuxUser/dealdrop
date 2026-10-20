@@ -454,7 +454,7 @@ fn parse_steam_sales(body: &str) -> R<Vec<Deal>> {
         let price = p[1].parse::<f64>().unwrap_or(0.0) / 100.0;
         let regular = orig.captures(chunk)
             .and_then(|o| o[1].replace(',', "").parse().ok())
-            .unwrap_or(price / (1.0 - cut as f64 / 100.0));
+            .unwrap_or(if cut >= 100 { 0.0 } else { price / (1.0 - cut as f64 / 100.0) }); // 100% off: no base to divide
         out.push(Deal {
             id: format!("steam-{id}"),
             title: unescape(t[1].trim()),
@@ -1132,7 +1132,6 @@ mod unit {
     }
 
     #[test]
-    #[ignore = "BUG: a 100% off row without an original price divides by zero, so the regular price is NaN"]
     fn steam_sales_never_show_a_nan_regular_price() {
         let html = r#"<a data-ds-appid="440"><span class="title">Team Fortress 2</span><div data-discount="100" data-price-final="0"></div></a>"#;
         let v = super::parse_steam_sales(&search_body(html)).unwrap();
