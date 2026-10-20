@@ -235,6 +235,73 @@ assert.match(h.fmtChecked(Date.now() - 30000), /^updated 3[01]s ago$/) // the cl
 assert.equal(h.fmtChecked(Date.now() - 5 * 60000), 'updated 5m ago')
 assert.equal(h.fmtChecked(Date.now() - 3 * 3600000), 'updated 3h ago')
 
+// Edge cases: values the backend should never send must not read as a price, a time or a match
+assert.equal(h.timeLeft('not a date'), '') // an unparseable end date is not "ending soon"
+assert.equal(h.endDateLabel('not a date'), '')
+assert.equal(h.endDateLabel(''), '')
+assert.equal(h.timeLeft(later(86400000 - 1000)), '23h left')
+assert.equal(h.timeLeft(later(86400000 + 1000)), '1d left')
+assert.equal(h.timeLeft(later(3600000 - 1000)), 'ending soon')
+assert.equal(h.fmt$(null), 'Free')
+assert.equal(h.fmt$(undefined), 'Free')
+assert.equal(h.fmt$(NaN), 'Free')
+assert.equal(h.fmt$('4.5'), '$4.50')
+assert.equal(h.fmt$(0.01), '$0.01')
+assert.equal(h.fmt$(1234.5), '$1234.50')
+assert.equal(h.fmt$(10000), '$10000.00')
+assert.equal(h.fmt$(-0), 'Free')
+const nullFinal = { store: 'steam', id: '1', priceInfo: { final: null, currency: 'USD' }, cheapest: null }
+assert.equal(h.targetPrice(nullFinal), null) // NaN serialized as null used to become Math.min(null, …) = 0
+assert.equal(h.targetHit(nullFinal, 10), false)
+assert.equal(h.targetPrice({ priceInfo: { final: 5, currency: 'USD' }, cheapest: { price: null } }), 5)
+assert.equal(h.targetPrice({ priceInfo: null }), null)
+assert.equal(h.targetHit({ priceInfo: { final: 10.005, currency: 'USD' } }, 10), true)
+assert.equal(h.targetHit({ priceInfo: { final: 10.006, currency: 'USD' } }, 10), false)
+assert.equal(h.parseTarget('0.005'), 0.01)
+assert.equal(h.parseTarget(' 5 '), 5)
+for (const bad of [null, undefined, NaN, '1e999', '-0']) assert.equal(h.parseTarget(bad), null, String(bad))
+assert.equal(h.pageSlice(many, 0).left, 250)
+assert.equal(h.pageSlice(many, 250).left, 0)
+assert.equal(h.pageSlice(many, 249).left, 1)
+assert.equal(h.pageSlice(many, Infinity).page.length, 250)
+// unicode in search: lowercasing is per code point, runs of any whitespace collapse, accents are not folded
+const uni = ['Ünïcode Quest', 'ÜNÏCODE', '日本語 ゲーム', 'Straße', 'עברית game', '🎮  Emoji   Game', 'café'].map(title => ({ title }))
+assert.equal(JSON.stringify(h.searchRank(uni, 'ünï').map(g => g.title)), '["Ünïcode Quest","ÜNÏCODE"]')
+assert.equal(JSON.stringify(h.searchRank(uni, '日本語  ゲーム').map(g => g.title)), '["日本語 ゲーム"]')
+assert.equal(JSON.stringify(h.searchRank(uni, 'STRASSE').map(g => g.title)), '[]') // no ß folding
+assert.equal(JSON.stringify(h.searchRank(uni, '🎮 emoji').map(g => g.title)), '["🎮  Emoji   Game"]')
+assert.equal(JSON.stringify(h.searchRank(uni, 'עברית').map(g => g.title)), '["עברית game"]')
+assert.equal(h.searchRank(uni, 'cafe').length, 0)
+assert.equal(h.searchRank([{ title: null }, {}, { title: 5 }], '5').length, 1)
+assert.equal(h.searchRank(uni, 'e', 0).length, 0)
+// the whole title is one match, even when another row holds it twice
+assert.equal(h.searchRank([{ title: 'aa' }, { title: 'aa' }], 'a').length, 2)
+// seen bookkeeping: duplicates collapse, an empty list that did load clears the set, ids compare as exact strings
+assert.equal(JSON.stringify(h.mergeSeen({ deals: ['x'] }, 'deals', [], true)), '{"deals":[]}')
+assert.equal(JSON.stringify([...h.newIds(['10', '1'], ['1'])]), '["10"]')
+assert.equal(JSON.stringify([...h.newIds(['a', 'a'], [])]), '["a"]')
+assert.equal(JSON.stringify(h.parseSeen('{"deals":[]}')), '{"deals":[],"storesales":null,"wishlist":null}')
+assert.equal(JSON.stringify(h.parseSeen('[1]')), '{"deals":null,"storesales":null,"wishlist":null}')
+assert.equal(JSON.stringify(h.parseSeen('"deals"')), '{"deals":null,"storesales":null,"wishlist":null}')
+assert.equal(JSON.stringify(h.parseSeen('null')), '{"deals":null,"storesales":null,"wishlist":null}')
+// refresh age: a clock set back (future timestamp) is "just now"; hours read as minutes
+h.state.lastChecked = Date.now() + 3600000
+h.updateRefreshAge()
+assert.equal(label.textContent, 'Updated just now')
+h.state.lastChecked = Date.now() - 125 * 60_000
+h.updateRefreshAge()
+assert.equal(label.textContent, 'Updated 125 min ago')
+for (const bad of [0, -5, NaN, 'x', null]) { h.state.lastChecked = bad; h.updateRefreshAge(); assert.equal(label.textContent, 'Never', String(bad)) }
+assert.equal(h.fmtChecked(Date.now() + 5000), 'updated just now')
+assert.equal(h.fmtChecked(Date.now() - 59 * 60000), 'updated 59m ago')
+assert.equal(h.fmtChecked(Date.now() - 3600000), 'updated 1h ago')
+// sale price text keeps the store's own formatted price and survives odd inputs
+assert.equal(h.salePriceDescription(1234.5, 0.99, 99, ''), 'Was $1234.50, now $0.99, 99% off')
+assert.equal(h.salePriceDescription(NaN, NaN, 0, null), 'Was Free, now Free, 0% off')
+// J/K from a stale position beyond the list still lands on the last row
+assert.equal(h.nextIndex(9, 3, 1), 2)
+assert.equal(h.nextIndex(9, 3, -1), 2)
+
 assert.equal(h.gameStoreName('steam'), 'Steam')
 assert.equal(h.gameStoreName('gog'), 'GOG')
 assert.equal(h.gameStoreName('epic'), 'Epic Games')

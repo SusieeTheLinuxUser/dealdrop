@@ -316,6 +316,7 @@ const salePriceDescription = (regular, price, discount, formatted) =>
 function timeLeft (dateStr) {
   if (!dateStr) return ''
   const diff = new Date(dateStr) - Date.now()
+  if (Number.isNaN(diff)) return '' // not a date: say nothing rather than "ending soon"
   if (diff <= 0) return 'ended'
   const d = Math.floor(diff / 86400000)
   const h = Math.floor((diff % 86400000) / 3600000)
@@ -336,6 +337,7 @@ function endsFirst (items) {
 
 function endDateLabel (dateStr) {
   const remaining = timeLeft(dateStr)
+  if (!remaining) return ''
   if (remaining === 'ended') return 'Ended'
   if (remaining === 'ending soon') return 'Ends soon'
   return `Ends in ${remaining.replace(/ left$/, '')}`
@@ -820,7 +822,8 @@ function wishlistLowestTag (w) {
 // Same key and USD rule as `sale_key` / `target_price` in main.rs, which sends the notification.
 const targetKey = w => `${w.store}:${w.id}`
 // The price a target is compared with: the cheaper offer elsewhere if any (what opens), else the store's own
-const targetPrice = w => w.priceInfo?.currency === 'USD' ? Math.min(w.priceInfo.final, w.cheapest?.price ?? Infinity) : null
+// A price that arrives as null (NaN in JSON) is not 0, so it never counts as under a target
+const targetPrice = w => w.priceInfo?.currency === 'USD' && Number.isFinite(w.priceInfo.final) ? Math.min(w.priceInfo.final, w.cheapest?.price ?? Infinity) : null
 const targetHit = (w, target) => { const price = targetPrice(w); return target != null && price != null && price <= target + 0.005 }
 // Input value → dollars rounded to cents, or null outside $0.01–$10,000 (the range save_settings keeps)
 function parseTarget (value) {
