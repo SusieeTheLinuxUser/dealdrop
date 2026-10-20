@@ -747,7 +747,8 @@ fn accounts(st: &AppState) -> Accounts {
         steam: d.steam_profile.as_ref().map(|p| Acct { name: p.name.clone(), avatar: p.avatar.clone(),
             profile_url: Some(format!("https://steamcommunity.com/profiles/{}", p.steam_id)) }),
         gog: d.gog.as_ref().map(|t| Acct { name: t.name.clone(), avatar: t.avatar.clone(),
-            profile_url: url::Url::parse("https://www.gog.com/u/").and_then(|u| u.join(&t.name)).ok().map(String::from) }),
+            // One escaped path segment: `join` would follow a name like "//evil.example" off GOG.
+            profile_url: url::Url::parse("https://www.gog.com/u").ok().map(|mut u| { u.path_segments_mut().map(|mut p| { p.push(&t.name); }).ok(); u.into() }) }),
         // Epic has no public profile page; its account page is the closest thing.
         epic: d.epic.as_ref().map(|t| Acct { name: t.name.clone(), avatar: t.avatar.clone(),
             profile_url: Some("https://www.epicgames.com/account/personal".into()) }),
@@ -1665,6 +1666,14 @@ mod tests {
         // A name with a space is escaped into the URL
         let db = Db { gog: Some(Tokens { name: "Ann Marie".into(), ..Default::default() }), ..Default::default() };
         assert_eq!(accounts(&test_state(db)).gog.unwrap().profile_url.as_deref(), Some("https://www.gog.com/u/Ann%20Marie"));
+        // A name can't move the link off GOG's profile path (it is one path segment)
+        for name in ["//evil.example", "https://evil.example/x", "../../account", "a?b#c"] {
+            let db = Db { gog: Some(Tokens { name: name.into(), ..Default::default() }), ..Default::default() };
+            let url = url::Url::parse(&accounts(&test_state(db)).gog.unwrap().profile_url.unwrap()).unwrap();
+            assert_eq!(url.host_str(), Some("www.gog.com"), "{name}");
+            assert_eq!(url.path_segments().unwrap().count(), 2, "{name}: {url}");
+            assert!(url.path().starts_with("/u/") && url.query().is_none() && url.fragment().is_none(), "{name}: {url}");
+        }
         // No accounts: no rows
         let acc = accounts(&test_state(Db::default()));
         assert!(acc.steam.is_none() && acc.gog.is_none() && acc.epic.is_none());
