@@ -1052,7 +1052,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{civil_from_days, days_from_civil, sale_soon_notice, sale_starting_tomorrow, SALES, clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, keep_prices, carry_cheapest, normalize_hidden, normalize_targets, target_hits, target_notice, price_failure, CS_BLOCKED, normalize_title, remember_big_deals, remember_free, remember_wishlist, restore_by_prefix, safe_https, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, load_db, CONFIG_STUCK, Acct, Deal, Free, Price, Prime, Settings, WishItem};
+    use super::{civil_from_days, days_from_civil, sale_soon_notice, sale_starting_tomorrow, SALES, clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, keep_or_fail, keep_prices, carry_cheapest, normalize_hidden, normalize_targets, target_hits, target_notice, price_failure, CS_BLOCKED, normalize_title, remember_big_deals, remember_free, remember_wishlist, restore_by_prefix, safe_https, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, load_db, CONFIG_STUCK, Acct, Deal, Free, Price, Prime, Settings, WishItem};
     use std::collections::{HashMap, HashSet};
 
     #[cfg(unix)]
@@ -1527,5 +1527,96 @@ mod tests {
         assert_eq!(normalize_targets((0..600).map(|i| (format!("steam:{i}"), 1.0)).collect()).len(), 500);
         let json = serde_json::to_value(Settings::default()).unwrap();
         assert_eq!(json["priceTargets"], serde_json::json!({}));
+    }
+
+    #[test]
+    fn price_targets_are_kept_at_their_limits() {
+        let t = |k: &str, v: f64| (k.to_string(), v);
+        // $0.01 and $10,000 are the limits
+        let kept = normalize_targets(HashMap::from([t("steam:lo", 0.01), t("steam:hi", 10_000.0)]));
+        assert_eq!(kept, HashMap::from([t("steam:lo", 0.01), t("steam:hi", 10_000.0)]));
+        // Rounded to cents: $0.014 becomes $0.01, $0.001 falls below the minimum
+        let kept = normalize_targets(HashMap::from([t("steam:a", 0.014), t("steam:b", 0.001)]));
+        assert_eq!(kept, HashMap::from([t("steam:a", 0.01)]));
+        // A key needs a store prefix and stays under 200 characters
+        assert!(normalize_targets(HashMap::from([t("nocolon", 1.0)])).is_empty());
+        let long = format!("steam:{}", "x".repeat(195));
+        assert!(normalize_targets(HashMap::from([t(&long, 1.0)])).is_empty());
+        assert!(!normalize_targets(HashMap::from([t(&long[..200], 1.0)])).is_empty());
+    }
+
+    #[test]
+    fn the_price_target_cap_drops_by_key_order() {
+        let kept = normalize_targets((0..600).map(|i| (format!("steam:{i:04}"), 1.0)).collect());
+        assert_eq!(kept.len(), 500);
+        assert!(kept.contains_key("steam:0000"));
+        assert!(!kept.contains_key("steam:0500"));
+    }
+
+    #[test]
+    fn a_price_target_counts_a_cent_above_the_target() {
+        let item = |fin: f64| WishItem { store: "steam".into(), id: "a".into(), name: "Game a".into(),
+            price_info: Some(Price { fin, currency: Some("USD".into()), ..Default::default() }), ..Default::default() };
+        let targets = HashMap::from([("steam:a".to_string(), 10.0)]);
+        // A cent above the target still counts (prices are compared with a cent of slack)
+        let at = [item(10.005)];
+        let (hits, fired) = target_hits(&at, &targets, &HashMap::new(), &[]);
+        assert_eq!(hits.len(), 1);
+        assert!(fired.contains_key("steam:a"));
+        // More than that: no hit, and the target re-arms
+        let over = [item(10.006)];
+        let (hits, fired) = target_hits(&over, &targets, &fired, &[]);
+        assert!(hits.is_empty() && fired.is_empty());
+    }
+
+    #[test]
+    fn notification_cuts_snap_to_the_nearest_choice() {
+        assert_eq!(clamp_cut(0, &[10, 20, 30, 50, 75]), 10);
+        assert_eq!(clamp_cut(1000, &[10, 20, 30, 50, 75]), 75);
+        assert_eq!(clamp_cut(30, &[10, 20, 30, 50, 75]), 30);
+        assert_eq!(clamp_cut(88, &[50, 60, 75, 85, 90]), 90);
+        assert_eq!(clamp_cut(87, &[50, 60, 75, 85, 90]), 85);
+        assert_eq!(clamp_cut(1000, &[50, 60, 75, 85, 90]), 90);
+    }
+
+    #[test]
+    fn hidden_titles_match_across_case_and_spacing() {
+        assert_eq!(normalize_title("  ÜNÏ\tCödé "), "ünï cödé");
+        assert!(is_hidden(&["Hades II".into()], "HADES  ii"));
+        assert!(!is_hidden(&["Hades".into()], "Hades II"));
+        assert!(!is_hidden(&["".into()], "Hades"));
+        // The same title in another spelling is stored once
+        assert_eq!(normalize_hidden(vec![" Ünï  Cödé ".into(), "ünï cödé".into()]), ["Ünï Cödé"]);
+    }
+
+    #[test]
+    fn a_failed_wishlist_store_keeps_its_last_good_rows() {
+        let gog = |id: &str| WishItem { store: "gog".into(), id: id.into(), name: id.into(), ..Default::default() };
+        let prev = super::Snapshot { wishlist: vec![gog("1"), gog("2")], ..Default::default() };
+        let mut errors = HashMap::new();
+        let rows = keep_or_fail(Err("boom".into()), "gog", &prev, &mut errors);
+        assert_eq!(rows.iter().map(|w| w.id.as_str()).collect::<Vec<_>>(), ["1", "2"]);
+        assert_eq!(errors.get("gog").map(String::as_str), Some("boom"));
+        // A store that answered replaces its rows
+        let mut errors = HashMap::new();
+        let rows = keep_or_fail(Ok(vec![gog("3")]), "gog", &prev, &mut errors);
+        assert_eq!(rows.iter().map(|w| w.id.as_str()).collect::<Vec<_>>(), ["3"]);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn a_wishlist_sale_is_forgotten_below_five_percent() {
+        let mut seen = HashSet::new();
+        let items = vec![wish("10", "Hades", Some(30))];
+        remember_wishlist(&mut seen, &items, 20);
+        assert!(seen.contains("steam:10"));
+        // Still at 5%: remembered
+        let items = vec![wish("10", "Hades", Some(5))];
+        remember_wishlist(&mut seen, &items, 20);
+        assert!(seen.contains("steam:10"));
+        // Under 5%: forgotten, so a later sale notifies again
+        let items = vec![wish("10", "Hades", Some(4))];
+        remember_wishlist(&mut seen, &items, 20);
+        assert!(!seen.contains("steam:10"));
     }
 }
