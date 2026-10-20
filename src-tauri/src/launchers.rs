@@ -102,7 +102,7 @@ pub fn link(store: &str, key: &str, url: &Url, id: Option<&str>) -> Option<Strin
     let host = url.host_str()?;
     if !domains.iter().any(|d| host == *d || host.ends_with(&format!(".{d}"))) { return None; }
     match (store, key) {
-        ("steam", _) => Some(match url.path().split_once("/app/").and_then(|(_, r)| r.split('/').next()).filter(|a| a.bytes().all(|b| b.is_ascii_digit())) {
+        ("steam", _) => Some(match url.path().split_once("/app/").and_then(|(_, r)| r.split('/').next()).filter(|a| !a.is_empty() && a.bytes().all(|b| b.is_ascii_digit())) {
             Some(app) => format!("steam://store/{app}"),
             None => format!("steam://openurl/{url}"),
         }),
@@ -222,7 +222,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "BUG: an empty app id passes the digit check, so /app/ opens steam://store/ instead of the url"]
     fn steam_links_do_not_build_a_deep_link_without_an_app_id() {
         let u = |s: &str| Url::parse(s).unwrap();
         assert_eq!(link("steam", "native", &u("https://store.steampowered.com/app/"), None).unwrap(),
