@@ -851,16 +851,20 @@ async fn epic_login(app: AppHandle) -> Result<Accounts, String> {
     Ok(accounts(&st))
 }
 
+/// Sign out of one store; an unknown store name is ignored.
+fn signed_out(d: &mut Db, store: &str) {
+    match store {
+        "steam" => { d.steam_id = None; d.steam_profile = None; }
+        "gog" => d.gog = None,
+        "epic" => d.epic = None,
+        _ => return,
+    }
+    forget_sales(&mut d.seen_sale_ids, store);
+}
+
 #[tauri::command]
 fn logout(st: State<AppState>, store: String) -> Accounts {
-    st.edit(|d| {
-        match store.as_str() {
-            "steam" => { d.steam_id = None; d.steam_profile = None; }
-            "gog" => d.gog = None,
-            _ => d.epic = None,
-        }
-        forget_sales(&mut d.seen_sale_ids, &store);
-    });
+    st.edit(|d| signed_out(d, &store));
     if let Some(s) = st.snapshot.lock().unwrap().as_mut() { s.wishlist.retain(|w| w.store != store); }
     accounts(&st)
 }
@@ -1737,6 +1741,16 @@ mod tests {
         let mut left: Vec<_> = db.seen_sale_ids.iter().cloned().collect();
         left.sort();
         assert_eq!(left, ["epic:3", "gog:2"]);
+    }
+
+    #[test]
+    fn logging_out_of_an_unknown_store_changes_nothing() {
+        let tokens = || Some(Tokens { name: "Ann".into(), ..Default::default() });
+        let mut db = Db { epic: tokens(), gog: tokens(), seen_sale_ids: ["epic:3", "gog:2"].map(String::from).into(), ..Default::default() };
+        super::signed_out(&mut db, "origin");
+        assert!(db.epic.is_some() && db.gog.is_some() && db.seen_sale_ids.len() == 2);
+        super::signed_out(&mut db, "epic");
+        assert!(db.epic.is_none() && db.gog.is_some() && db.seen_sale_ids.len() == 1);
     }
 
     #[test]
