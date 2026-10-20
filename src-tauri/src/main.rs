@@ -618,7 +618,9 @@ fn clamp_cut(value: u32, allowed: &[u32]) -> u32 {
 }
 
 /// Notification cuts snap to the choices Settings offers; a hand-edited 0 would list every wishlist row as on sale.
+/// The poll interval is held to 5 minutes..a day, so a hand-edited huge value can't overflow the sleep.
 fn snap_cuts(settings: &mut Settings) {
+    settings.check_interval = settings.check_interval.clamp(5, 1440);
     settings.wishlist_min_cut = clamp_cut(settings.wishlist_min_cut, &WISHLIST_CUTS);
     settings.big_deal_min_cut = clamp_cut(settings.big_deal_min_cut, &BIG_DEAL_CUTS);
 }
@@ -1045,7 +1047,7 @@ fn main() {
                     let st = handle.state::<AppState>();
                     let mins = st.read(|d| d.settings.check_interval).max(5);
                     tokio::select! {
-                        _ = tokio::time::sleep(Duration::from_secs(mins * 60)) => {}
+                        _ = tokio::time::sleep(Duration::from_secs(mins.saturating_mul(60))) => {}
                         _ = st.wake.notified() => {}
                     }
                 }
@@ -1857,6 +1859,14 @@ mod tests {
             };
             assert_eq!(got, want, "{primed} {seen_empty} {had_errors}");
         }
+    }
+
+    #[test]
+    fn a_hand_edited_check_interval_is_clamped_to_five_minutes_through_a_day() {
+        let snapped = |m| { let mut s = Settings { check_interval: m, ..Default::default() }; super::snap_cuts(&mut s); s.check_interval };
+        assert_eq!([0, 1, 5, 15, 60, 240, 720, 1440].map(snapped), [5, 5, 5, 15, 60, 240, 720, 1440]);
+        assert_eq!(snapped(1441), 1440);
+        assert_eq!(snapped(u64::MAX), 1440);
     }
 
     #[test]
