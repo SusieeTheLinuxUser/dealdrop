@@ -210,7 +210,8 @@ fn update_tray(app: &AppHandle, snap: &Snapshot) {
 fn dedupe_free(list: Vec<Free>) -> Vec<Free> {
     let mut seen = HashSet::new();
     list.into_iter().filter(|g| {
-        let key: String = g.title.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect();
+        let mut key: String = g.title.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect();
+        if key.is_empty() { key = normalize_title(&g.title); } // "???" and "★★★" are different games
         seen.insert(format!("{}:{key}", g.kind))
     }).collect()
 }
@@ -616,6 +617,12 @@ fn clamp_cut(value: u32, allowed: &[u32]) -> u32 {
     *allowed.iter().min_by_key(|&&cut| (cut.abs_diff(value), cut)).unwrap()
 }
 
+/// Notification cuts snap to the choices Settings offers; a hand-edited 0 would list every wishlist row as on sale.
+fn snap_cuts(settings: &mut Settings) {
+    settings.wishlist_min_cut = clamp_cut(settings.wishlist_min_cut, &WISHLIST_CUTS);
+    settings.big_deal_min_cut = clamp_cut(settings.big_deal_min_cut, &BIG_DEAL_CUTS);
+}
+
 fn sale_key(w: &WishItem) -> String { format!("{}:{}", w.store, w.id) }
 
 /// At the configured cut or more, and not already notified for this sale.
@@ -661,7 +668,7 @@ fn notify_wishlist(app: &AppHandle, st: &AppState, items: &[WishItem]) {
 /// Price compared with a target: the cheaper offer elsewhere if any (the link the UI opens), else the store's own.
 /// USD only: targets are entered in dollars and CheapShark prices are USD.
 fn target_price(w: &WishItem) -> Option<f64> {
-    let p = w.price_info.as_ref().filter(|p| p.currency.as_deref() == Some("USD"))?;
+    let p = w.price_info.as_ref().filter(|p| p.currency.as_deref() == Some("USD") && p.fin.is_finite() && p.fin >= 0.0)?;
     Some(w.cheapest.as_ref().map_or(p.fin, |c| c.price.min(p.fin)))
 }
 
@@ -767,8 +774,7 @@ fn save_settings(app: AppHandle, st: State<AppState>, settings: Settings) {
     let mut settings = settings;
     settings.hidden = normalize_hidden(settings.hidden);
     settings.price_targets = normalize_targets(settings.price_targets);
-    settings.wishlist_min_cut = clamp_cut(settings.wishlist_min_cut, &WISHLIST_CUTS);
-    settings.big_deal_min_cut = clamp_cut(settings.big_deal_min_cut, &BIG_DEAL_CUTS);
+    snap_cuts(&mut settings);
     // A new interval, or loot just switched on (fetch it now rather than at the next poll)
     let changed = st.edit(|d| {
         let c = d.settings.check_interval != settings.check_interval || (settings.show_loot && !d.settings.show_loot);
@@ -939,13 +945,7 @@ fn load_db(path: &PathBuf) -> Db {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Db::default(),
         Err(e) => e.to_string(),
         Ok(bytes) => match serde_json::from_slice::<Db>(&bytes) {
-            Ok(mut db) => {
-                // save_settings clamps these; a hand-edited 0 would count unpriced games as on sale.
-                let s = &mut db.settings;
-                s.wishlist_min_cut = clamp_cut(s.wishlist_min_cut, &WISHLIST_CUTS);
-                s.big_deal_min_cut = clamp_cut(s.big_deal_min_cut, &BIG_DEAL_CUTS);
-                return db;
-            }
+            Ok(mut db) => { snap_cuts(&mut db.settings); return db }
             Err(e) => e.to_string(),
         },
     };
@@ -1748,5 +1748,166 @@ mod tests {
         // An old config without the newer keys still loads
         let db: Db = serde_json::from_value(serde_json::json!({"steamId": "1"})).unwrap();
         assert!(db.seen_free_ids.is_empty() && db.fired_targets.is_empty() && !db.primed);
+    }
+
+    #[test]
+    fn calendar_math_is_exact_across_leap_years_and_centuries() {
+        let leap = |y: i64| y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
+        let len = |y: i64, m: u32| match m { 2 => if leap(y) { 29 } else { 28 }, 4 | 6 | 9 | 11 => 30, _ => 31 };
+        // Walk every day from 1895 to 2405 (covers 1900, 2000, 2100, 2200, 2300 and 2400): each step is the next calendar day.
+        let (mut y, mut m, mut d) = (1895i64, 1u32, 1u32);
+        let mut z = days_from_civil((y, m, d));
+        while y < 2405 {
+            assert_eq!(civil_from_days(z), (y, m, d), "day {z}");
+            z += 1;
+            if d == len(y, m) { d = 1; if m == 12 { m = 1; y += 1 } else { m += 1 } } else { d += 1 }
+            assert_eq!(days_from_civil((y, m, d)), z, "{y}-{m}-{d}");
+        }
+        assert_eq!(days_from_civil((1970, 1, 1)), 0);
+        assert_eq!(days_from_civil((2000, 3, 1)) - days_from_civil((2000, 2, 28)), 2); // 2000 has a Feb 29
+        assert_eq!(days_from_civil((2100, 3, 1)) - days_from_civil((2100, 2, 28)), 1); // 2100 does not
+        assert_eq!(civil_from_days(days_from_civil((2100, 2, 28)) + 1), (2100, 3, 1));
+        assert_eq!(civil_from_days(days_from_civil((2028, 2, 28)) + 1), (2028, 2, 29));
+        assert_eq!(civil_from_days(-1), (1969, 12, 31));
+    }
+
+    #[test]
+    fn every_sale_gets_exactly_one_heads_up_day() {
+        for s in SALES {
+            let start = days_from_civil(super::ymd(s.start));
+            assert!(days_from_civil(super::ymd(s.end)) > start, "{} ends before it starts", s.start);
+            let tomorrow_of = |offset: i64| sale_starting_tomorrow(civil_from_days(start + offset)).map(|x| x.start);
+            assert_eq!(tomorrow_of(-1), Some(s.start), "the day before {}", s.start);
+            assert_eq!([tomorrow_of(-2), tomorrow_of(0), tomorrow_of(1)], [None, None, None], "{}", s.start);
+        }
+        // dates around a year end and a leap day never match by accident
+        assert!(sale_starting_tomorrow((2026, 12, 31)).is_none() && sale_starting_tomorrow((2028, 2, 29)).is_none());
+        assert_eq!(super::ymd("garbage"), (0, 0, 0));
+        assert_eq!(super::sale_soon_notice(&super::Sale { name: "X", start: "bad", end: "bad", est: false }).1, "Jan 0 – Jan 0. Time to check your wishlist.");
+    }
+
+    #[test]
+    fn notification_cuts_break_ties_downward_and_survive_extremes() {
+        assert_eq!(clamp_cut(15, &[10, 20, 30, 50, 75]), 10); // 15 is 5 from both 10 and 20
+        assert_eq!(clamp_cut(40, &[10, 20, 30, 50, 75]), 30);
+        assert_eq!(clamp_cut(u32::MAX, &[10, 20, 30, 50, 75]), 75);
+        assert_eq!(clamp_cut(0, &[50, 60, 75, 85, 90]), 50);
+        assert_eq!(clamp_cut(80, &[50, 60, 75, 85, 90]), 75);
+    }
+
+    #[test]
+    fn price_targets_round_to_cents_at_the_limits() {
+        let kept = |v: f64| normalize_targets(HashMap::from([("steam:a".to_string(), v)])).get("steam:a").copied();
+        assert_eq!(kept(0.004), None); // rounds to $0.00
+        assert_eq!(kept(0.005), Some(0.01));
+        assert_eq!(kept(0.01), Some(0.01));
+        assert_eq!(kept(10_000.0), Some(10_000.0));
+        assert_eq!(kept(10_000.004), Some(10_000.0));
+        assert_eq!(kept(10_000.01), None);
+        assert_eq!(kept(1e300), None); // v * 100 overflows to inf
+        assert_eq!(kept(f64::NEG_INFINITY), None);
+        assert_eq!(kept(-0.0), None);
+        let k = |key: &str| normalize_targets(HashMap::from([(key.to_string(), 5.0)])).len();
+        assert_eq!((k("steam:1"), k(&format!("steam:{}", "9".repeat(194))), k(&format!("steam:{}", "9".repeat(195))), k("")), (1, 1, 0, 0));
+    }
+
+    #[test]
+    fn a_price_that_is_not_a_number_never_hits_a_target() {
+        let item = |fin: f64| WishItem { store: "steam".into(), id: "a".into(), name: "A".into(),
+            price_info: Some(Price { fin, currency: Some("USD".into()), ..Default::default() }), ..Default::default() };
+        let targets = HashMap::from([("steam:a".to_string(), 10.0)]);
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let items = [item(bad)];
+            let (hits, fired) = target_hits(&items, &targets, &HashMap::new(), &[]);
+            assert!(hits.is_empty() && fired.is_empty(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn an_edited_config_cannot_turn_notification_cuts_into_zero() {
+        // wishlistMinCut 0 listed every wishlist row (priced or not) as "on sale", and a priceless one panicked the notice
+        let dir = std::env::temp_dir().join(format!("dealdrop-cuts-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.json");
+        std::fs::write(&path, r#"{"settings":{"wishlistMinCut":0,"bigDealMinCut":3,"checkInterval":0}}"#).unwrap();
+        let s = load_db(&path).settings;
+        assert_eq!((s.wishlist_min_cut, s.big_deal_min_cut), (10, 50));
+        std::fs::write(&path, r#"{"settings":{"wishlistMinCut":30,"bigDealMinCut":85}}"#).unwrap();
+        let s = load_db(&path).settings;
+        assert_eq!((s.wishlist_min_cut, s.big_deal_min_cut), (30, 85));
+        assert_eq!(load_db(&dir.join("missing.json")).settings.wishlist_min_cut, 20);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn symbol_only_titles_are_not_each_others_duplicates() {
+        let free = |id: &str, title: &str| Free { id: id.into(), title: title.into(), kind: "free".into(), ..Default::default() };
+        let out = dedupe_free(vec![free("a", "???"), free("b", "★★★"), free("c", "???"), free("d", "Привет!"), free("e", "привет")]);
+        assert_eq!(out.iter().map(|g| g.id.as_str()).collect::<Vec<_>>(), ["a", "b", "d"]);
+    }
+
+    #[test]
+    fn first_poll_priming_covers_every_state() {
+        for (primed, seen_empty, had_errors) in [(false, true, false), (false, true, true), (false, false, false), (false, false, true), (true, true, false), (true, true, true), (true, false, false), (true, false, true)] {
+            let got = match should_prime(primed, seen_empty, had_errors) { Prime::Notify { mark } => format!("notify{}", if mark { "+mark" } else { "" }), Prime::Record => "record".into(), Prime::Wait => "wait".into() };
+            let want = match (primed, seen_empty, had_errors) {
+                (false, true, false) => "record", (false, true, true) => "wait",
+                (false, ..) => "notify+mark", (true, ..) => "notify",
+            };
+            assert_eq!(got, want, "{primed} {seen_empty} {had_errors}");
+        }
+    }
+
+    #[test]
+    fn big_deal_hysteresis_boundaries() {
+        let deal = |id: &str, cut| Deal { id: id.into(), title: id.into(), cut, ..Default::default() };
+        let deals = [deal("at", 75), deal("under", 74), deal("edge", 60), deal("below", 59)];
+        assert_eq!(fresh_big_deals(&deals, &HashSet::new(), &[], 75).iter().map(|d| d.id.as_str()).collect::<Vec<_>>(), ["at"]);
+        let mut seen: HashSet<String> = ["at", "under", "edge", "below"].map(String::from).into();
+        remember_big_deals(&mut seen, &deals, 75);
+        // a deal that fell 15 points under the cut is forgotten; 14 under is not, so it can't flap
+        assert!(seen.contains("at") && seen.contains("under") && seen.contains("edge") && !seen.contains("below"));
+        let mut seen = HashSet::new();
+        remember_big_deals(&mut seen, &[deal("x", 0)], 10); // cut < 15: saturating_sub, no underflow
+        assert!(seen.is_empty());
+    }
+
+    #[test]
+    fn a_wishlist_sale_is_remembered_at_the_cut_and_forgotten_under_five() {
+        let mut seen = HashSet::new();
+        let list = |off| vec![wish("1", "A", Some(off))];
+        remember_wishlist(&mut seen, &list(20), 20);
+        assert!(seen.contains("steam:1"));
+        remember_wishlist(&mut seen, &list(5), 20);
+        assert!(seen.contains("steam:1")); // exactly 5%: still the same sale
+        assert!(fresh_wishlist(&list(30), &seen, &[], 20).is_empty());
+        remember_wishlist(&mut seen, &list(4), 20);
+        assert!(!seen.contains("steam:1"));
+        assert_eq!(fresh_wishlist(&list(20), &seen, &[], 20).len(), 1); // at the cut counts
+        assert!(fresh_wishlist(&list(19), &seen, &[], 20).is_empty());
+        remember_wishlist(&mut seen, &[WishItem { store: "steam".into(), id: "2".into(), ..Default::default() }], 20); // no price: forgotten, not recorded
+        assert!(seen.is_empty());
+    }
+
+    #[test]
+    fn a_cheaper_offer_is_carried_only_while_the_store_price_and_currency_are_unchanged() {
+        use super::Cheapest;
+        let item = |fin: f64, cur: &str| WishItem { store: "steam".into(), id: "1".into(),
+            price_info: Some(Price { fin, currency: Some(cur.into()), ..Default::default() }), ..Default::default() };
+        let mut old = item(20.0, "USD");
+        old.cheapest = Some(Cheapest { store: "GMG".into(), price: 9.0, url: "u".into() });
+        old.lowest = Some(7.0);
+        let carried = |now: WishItem, unanswered: &[usize]| { let mut v = vec![now]; carry_cheapest(&mut v, std::slice::from_ref(&old), unanswered); v.remove(0) };
+        assert!(carried(item(20.0, "USD"), &[0]).cheapest.is_some());
+        assert!(carried(item(20.0, "EUR"), &[0]).cheapest.is_none());
+        assert!(carried(item(20.01, "USD"), &[0]).cheapest.is_none());
+        assert!(carried(item(20.0, "USD"), &[]).cheapest.is_none()); // answered by CheapShark this poll: nothing carried
+        let mut fresh = item(20.0, "USD");
+        fresh.lowest = Some(5.0);
+        assert_eq!(carried(fresh, &[0]).lowest, Some(5.0)); // a new lowest wins over the old one
+        let mut other = item(20.0, "USD");
+        other.id = "2".into();
+        assert!(carried(other, &[0]).cheapest.is_none()); // a different game
     }
 }
