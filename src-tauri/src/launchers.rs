@@ -185,4 +185,59 @@ mod tests {
         assert_eq!(slug("the_witcher-3/"), Some("the_witcher-3"));
         assert_eq!(slug("bad%2fslug"), None);
     }
+
+    #[test]
+    fn launcher_links_only_follow_the_stores_own_domain() {
+        let u = |s: &str| Url::parse(s).unwrap();
+        // A look-alike host is not the store's domain
+        for bad in ["https://notsteampowered.com/app/60", "https://steampowered.com.evil.example/app/60",
+                    "https://store.epicgames.com.evil.example/en-US/p/x", "https://gog.com.evil.example/en/game/x"] {
+            assert!(link("steam", "native", &u(bad), Some("gog-1")).is_none(), "{bad}");
+        }
+        assert!(link("steam", "native", &u("https://store.steampowered.com.evil.example/app/60"), None).is_none());
+        assert!(link("epic", "native", &u("https://store.epicgames.com.evil.example/en-US/p/x"), None).is_none());
+        assert!(link("gog", "native", &u("https://gog.com.evil.example/en/game/x"), Some("gog-1")).is_none());
+        // An unknown store has no launcher at all
+        assert!(link("humble", "native", &u("https://store.steampowered.com/app/60"), None).is_none());
+        // GOG's deep link needs a numeric id and its native client
+        let gog = u("https://www.gog.com/en/game/the_witcher_3_wild_hunt");
+        assert!(link("gog", "native", &gog, None).is_none());
+        assert!(link("gog", "native", &gog, Some("gog-")).is_none());
+        assert!(link("gog", "browser", &gog, Some("gog-1207664643")).is_none());
+    }
+
+    #[test]
+    fn steam_links_fall_back_to_the_url_for_a_missing_app_id() {
+        let u = |s: &str| Url::parse(s).unwrap();
+        assert_eq!(link("steam", "native", &u("https://store.steampowered.com/app/60abc"), None).unwrap(),
+            "steam://openurl/https://store.steampowered.com/app/60abc");
+        // The community domain is Steam's too
+        assert_eq!(link("steam", "native", &u("https://steamcommunity.com/profiles/7656119"), None).unwrap(),
+            "steam://openurl/https://steamcommunity.com/profiles/7656119");
+        // An Epic offer without a product slug has no deep link
+        assert!(link("epic", "native", &u("https://store.epicgames.com/en-US/browse"), None).is_none());
+        assert!(link("epic", "native", &u("https://store.epicgames.com/en-US/p/"), None).is_none());
+        assert_eq!(link("epic", "native", &u("https://store.epicgames.com/en-US/p/bad-cheese/"), None).unwrap(),
+            "com.epicgames.launcher://store/p/bad-cheese");
+    }
+
+    #[test]
+    #[ignore = "BUG: an empty app id passes the digit check, so /app/ opens steam://store/ instead of the url"]
+    fn steam_links_do_not_build_a_deep_link_without_an_app_id() {
+        let u = |s: &str| Url::parse(s).unwrap();
+        assert_eq!(link("steam", "native", &u("https://store.steampowered.com/app/"), None).unwrap(),
+            "steam://openurl/https://store.steampowered.com/app/");
+    }
+
+    #[test]
+    fn a_store_without_an_installed_launcher_has_nothing_to_choose() {
+        let none = |_: &str| false;
+        let every = |_: &str| true;
+        assert!(resolve_with("gog", "auto", none).options.is_empty());
+        assert!(resolve_with("gog", "auto", none).chosen.is_none());
+        assert!(resolve_with("gog", "native", none).chosen.is_none()); // the wanted launcher isn't installed
+        assert!(resolve_with("humble", "auto", every).options.is_empty());
+        assert!(resolve_with("humble", "auto", every).chosen.is_none());
+        assert_eq!(resolve_with("steam", "auto", every).chosen.as_ref().map(|c| c.key), Some("native"));
+    }
 }
