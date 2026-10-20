@@ -1052,7 +1052,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{civil_from_days, days_from_civil, sale_soon_notice, sale_starting_tomorrow, SALES, clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, keep_or_fail, keep_prices, carry_cheapest, normalize_hidden, normalize_targets, target_hits, target_notice, price_failure, CS_BLOCKED, normalize_title, remember_big_deals, remember_free, remember_wishlist, restore_by_prefix, safe_https, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, load_db, CONFIG_STUCK, Acct, Db, Deal, Free, Price, Prime, Settings, SteamProfile, Tokens, WishItem, accounts, same_refresh};
+    use super::{civil_from_days, days_from_civil, sale_soon_notice, sale_starting_tomorrow, SALES, clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, keep_or_fail, keep_prices, carry_cheapest, normalize_hidden, normalize_targets, target_hits, target_notice, price_failure, CS_BLOCKED, normalize_title, remember_big_deals, remember_free, remember_wishlist, restore_by_prefix, safe_https, sale_key, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, load_db, CONFIG_STUCK, Acct, Db, Deal, Free, Price, Prime, Settings, SteamProfile, Tokens, WishItem, accounts, same_refresh};
     use std::collections::{HashMap, HashSet};
 
     #[cfg(unix)]
@@ -1618,6 +1618,18 @@ mod tests {
         let items = vec![wish("10", "Hades", Some(4))];
         remember_wishlist(&mut seen, &items, 20);
         assert!(!seen.contains("steam:10"));
+    }
+
+    #[test]
+    fn several_price_target_hits_share_one_notice() {
+        let item = |id: &str| WishItem { store: "steam".into(), id: id.into(), name: format!("Game {id}"),
+            price_info: Some(Price { fin: 5.0, currency: Some("USD".into()), ..Default::default() }), ..Default::default() };
+        let items: Vec<WishItem> = (0..5).map(|i| item(&i.to_string())).collect();
+        let targets: HashMap<String, f64> = items.iter().map(|w| (sale_key(w), 10.0)).collect();
+        let (hits, _) = target_hits(&items, &targets, &HashMap::new(), &[]);
+        let n = target_notice(&hits).unwrap();
+        assert_eq!(n.title, "5 wishlist games under your target");
+        assert_eq!(n.body, "Game 0, Game 1, Game 2, Game 3…");
     }
 
     /// A state that never touches the disk (these tests only read).
