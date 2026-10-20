@@ -190,6 +190,7 @@ html,body{background:transparent} /* window is transparent; #app paints the colo
 
 /* ── settings ── */
 .settings-group{display:flex;flex-direction:column;gap:6px}
+.settings-group+.settings-group,.settings-group+.setting-row{margin-top:6px}
 .settings-section{min-width:0;margin:0 0 24px}
 .settings-section-heading{margin:0 0 12px}
 .settings-section-hint{margin:-6px 0 10px}

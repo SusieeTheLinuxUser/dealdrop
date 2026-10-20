@@ -8,4 +8,4 @@ Name={{name}}
 Terminal=false
 Type=Application
 {{#if mime_type}}MimeType={{mime_type}}{{/if}}
-X-AppImage-Version=0.8.0
+X-AppImage-Version=0.9.0

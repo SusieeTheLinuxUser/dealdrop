@@ -3,6 +3,21 @@
 All notable changes to DealDrop are documented in this file.
 
 ## [Unreleased]
+
+## [v0.9.0] - 2026-10-20
+- Fixed: a hand-edited check interval in `config.json` is held to 5 minutes..1 day (a huge value could overflow the poll timer), and edited notification cuts are clamped on load (a `0` could crash the poll).
+- Fixed: when `config.json` can't be written (permissions, full disk) the error box says "Settings aren't being saved" instead of silently losing your settings.
+- Fixed: signing in to Steam no longer makes GOG and Epic wishlist sales notify again; signing out of an unknown store no longer signs you out of Epic.
+- Fixed: the "Steam sale started" notification fires once per sale, even when the banner text changes during it.
+- Fixed: store rows with a missing, NaN or negative price, or a blank id or title, are skipped instead of showing $0; GOG wishlist and Epic prices ignore absurd amounts; a 100% off Steam row without an original price no longer shows a broken regular price.
+- Fixed: HTML entities in titles (`&#039;`, `&apos;`, `&amp;lt;`) decode correctly, and a title made only of symbols is kept.
+- Fixed: an end date that can't be read no longer shows "Ends soon", and a missing price is never a price-target hit.
+- Fixed: links reject `localhost.` and `*.localhost`; a GOG username can't redirect the profile link away from gog.com; an empty Steam app id no longer builds a broken `steam://` link.
+- Fixed: a slow answer for a wishlist game you clicked earlier no longer overwrites the deal panel; hiding the window or refreshing an account no longer redraws the wishlist under an open price-target editor.
+- Fixed: a successful refresh clears an earlier "Couldn't update" error; store sales hidden by a filter keep their "New" tag; a failed settings or accounts read at startup keeps the defaults.
+- Fixed: choosing a launcher in Settings, or a refresh that brings the same data, no longer drops keyboard focus.
+- Settings: the Notifications rows are spaced evenly.
+
 - Keyboard: **J / K** move to the next / previous item on Hot deals, Store sales, Wishlist and Free now (Enter opens it); listed under `?`.
 - Optional **Free DLC & loot** section on Free now (Settings → Free now, off by default): in-game items and DLC giveaways from GamerPower, hideable and searchable, never notified or counted in the badge.
 - Wishlist price targets: a game's **Target** button sets "tell me at or below $X"; one notification when its price (or a cheaper offer elsewhere) reaches it, again only after it rises above or the target changes. USD prices only.
