@@ -460,6 +460,29 @@ mod unit {
     use serde_json::json;
 
     #[test]
+    fn epic_images_and_pages_fall_back_through_the_slugs() {
+        use serde_json::json;
+        // The wide image wins over the tall one over the thumbnail
+        let o = json!({"keyImages": [
+            {"type": "Thumbnail", "url": "https://cdn.example/t.jpg"},
+            {"type": "OfferImageTall", "url": "https://cdn.example/tall.jpg"},
+            {"type": "OfferImageWide", "url": "https://cdn.example/wide.jpg"}]});
+        assert_eq!(super::epic_image(&o).as_deref(), Some("https://cdn.example/wide.jpg"));
+        assert_eq!(super::epic_image(&json!({"keyImages": [{"type": "OfferImageTall", "url": "https://cdn.example/tall.jpg"}]})).as_deref(),
+            Some("https://cdn.example/tall.jpg"));
+        assert!(super::epic_image(&json!({})).is_none());
+        assert!(super::epic_image(&json!({"keyImages": [{"type": "Unknown", "url": "https://cdn.example/u.jpg"}]})).is_none());
+        // The page follows the first slug that is there
+        assert_eq!(super::epic_page(&json!({"offerMappings": [{"pageSlug": "from-offer"}], "productSlug": "from-product"})),
+            "https://store.epicgames.com/en-US/p/from-offer");
+        assert_eq!(super::epic_page(&json!({"catalogNs": {"mappings": [{"pageSlug": "from-ns"}]}, "productSlug": "from-product"})),
+            "https://store.epicgames.com/en-US/p/from-ns");
+        assert_eq!(super::epic_page(&json!({"productSlug": "from-product"})), "https://store.epicgames.com/en-US/p/from-product");
+        assert_eq!(super::epic_page(&json!({"productSlug": "[]", "urlSlug": "from-url"})), "https://store.epicgames.com/en-US/p/from-url");
+        assert_eq!(super::epic_page(&json!({})), "https://store.epicgames.com/en-US/browse");
+    }
+
+    #[test]
     fn gog_wishlist_ids_skip_off_entries() {
         let v = json!({"wishlist": {"10": true, "20": false, "30": 0, "40": 1}});
         let mut ids = super::parse_gog_wishlist_ids(&v);
