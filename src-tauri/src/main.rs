@@ -814,16 +814,21 @@ async fn check_now(app: AppHandle) -> Snapshot { poll(&app).await }
 #[tauri::command]
 fn get_accounts(st: State<AppState>) -> Accounts { accounts(&st) }
 
+/// A new Steam account starts with a clean slate of Steam sales; GOG and Epic keep theirs.
+fn steam_signed_in(d: &mut Db, id: String, name: String, avatar: Option<String>) {
+    d.steam_id = Some(id.clone());
+    d.steam_profile = Some(SteamProfile { steam_id: id, name, avatar });
+    forget_sales(&mut d.seen_sale_ids, "steam");
+}
+
+fn forget_sales(seen: &mut HashSet<String>, store: &str) { seen.retain(|k| !k.starts_with(&format!("{store}:"))); }
+
 #[tauri::command]
 async fn steam_login(app: AppHandle) -> Result<Accounts, String> {
     let st = app.state::<AppState>();
     let id = stores::steam_login(&app).await?;
     let (name, avatar) = steam_profile(&id).await;
-    st.edit(|d| {
-        d.steam_id = Some(id.clone());
-        d.steam_profile = Some(SteamProfile { steam_id: id, name, avatar });
-        d.seen_sale_ids.clear();
-    });
+    st.edit(|d| steam_signed_in(d, id, name, avatar));
     *st.snapshot.lock().unwrap() = None;
     Ok(accounts(&st))
 }
@@ -854,7 +859,7 @@ fn logout(st: State<AppState>, store: String) -> Accounts {
             "gog" => d.gog = None,
             _ => d.epic = None,
         }
-        d.seen_sale_ids.retain(|k| !k.starts_with(&format!("{store}:")));
+        forget_sales(&mut d.seen_sale_ids, &store);
     });
     if let Some(s) = st.snapshot.lock().unwrap().as_mut() { s.wishlist.retain(|w| w.store != store); }
     accounts(&st)
@@ -1722,6 +1727,16 @@ mod tests {
         assert!(st.save_error.lock().unwrap().is_none());
         assert!(std::fs::read_to_string(&st.path).unwrap().contains("\"1\""));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn signing_in_to_steam_forgets_only_the_steam_sales() {
+        let mut db = Db { seen_sale_ids: ["steam:1", "gog:2", "epic:3"].map(String::from).into(), ..Default::default() };
+        super::steam_signed_in(&mut db, "76561198000000000".into(), "Ann".into(), None);
+        assert_eq!(db.steam_id.as_deref(), Some("76561198000000000"));
+        let mut left: Vec<_> = db.seen_sale_ids.iter().cloned().collect();
+        left.sort();
+        assert_eq!(left, ["epic:3", "gog:2"]);
     }
 
     #[test]
