@@ -261,22 +261,9 @@ fn days_from_civil((y, m, d): (i64, u32, u32)) -> i64 {
     era * 146_097 + yoe * 365 + yoe / 4 - yoe / 100 + doy - 719_468
 }
 
-/// Inverse of `days_from_civil`.
-fn civil_from_days(z: i64) -> (i64, u32, u32) {
-    let z = z + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let (d, m) = ((doy - (153 * mp + 2) / 5 + 1) as u32, if mp < 10 { mp + 3 } else { mp - 9 } as u32);
-    (yoe + era * 400 + i64::from(m <= 2), m, d)
-}
-
-/// The sale whose first day is the day after `today`.
-fn sale_starting_tomorrow(today: (i64, u32, u32)) -> Option<&'static Sale> {
-    let tomorrow = days_from_civil(today) + 1;
-    SALES.iter().find(|s| days_from_civil(ymd(s.start)) == tomorrow)
+/// The sale whose first day is the day after `today` (days since 1970-01-01).
+fn sale_starting_tomorrow(today: i64) -> Option<&'static Sale> {
+    SALES.iter().find(|s| days_from_civil(ymd(s.start)) == today + 1)
 }
 
 /// ("Steam Winter Sale starts tomorrow", "Dec 17 – Jan 4. Time to check your wishlist.")
@@ -404,7 +391,7 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
     // 1b. Heads-up the day before a major sale (from the SALES calendar, once per sale).
     // ponytail: UTC date, not the user's local one (std has no time zones), so it can fire a few hours early/late.
     if settings.notify_sale_soon {
-        if let Some(sale) = sale_starting_tomorrow(civil_from_days((now_ms() / 86_400_000) as i64)) {
+        if let Some(sale) = sale_starting_tomorrow((now_ms() / 86_400_000) as i64) {
             if st.read(|d| d.last_sale_soon_key.as_deref() != Some(sale.start)) {
                 let (title, body) = sale_soon_notice(sale);
                 notify(app, &title, &body);
@@ -1101,7 +1088,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{LiveSale, civil_from_days, days_from_civil, sale_soon_notice, sale_starting_tomorrow, SALES, clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, keep_or_fail, keep_prices, carry_cheapest, normalize_hidden, normalize_targets, target_hits, target_notice, price_failure, CS_BLOCKED, normalize_title, remember_big_deals, remember_free, remember_wishlist, restore_by_prefix, safe_https, sale_key, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, load_db, CONFIG_STUCK, Acct, Db, Deal, Free, Price, Prime, Settings, SteamProfile, Tokens, WishItem, accounts, same_refresh};
+    use super::{LiveSale, days_from_civil, sale_soon_notice, sale_starting_tomorrow, SALES, clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, keep_or_fail, keep_prices, carry_cheapest, normalize_hidden, normalize_targets, target_hits, target_notice, price_failure, CS_BLOCKED, normalize_title, remember_big_deals, remember_free, remember_wishlist, restore_by_prefix, safe_https, sale_key, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, load_db, CONFIG_STUCK, Acct, Db, Deal, Free, Price, Prime, Settings, SteamProfile, Tokens, WishItem, accounts, same_refresh};
     use std::collections::{HashMap, HashSet};
 
     #[cfg(unix)]
@@ -1170,17 +1157,14 @@ mod tests {
 
     #[test]
     fn sale_heads_up_only_the_day_before() {
-        assert_eq!(sale_starting_tomorrow((2026, 12, 16)).map(|s| s.start), Some("2026-12-17"));
-        assert!(sale_starting_tomorrow((2026, 12, 17)).is_none()); // already started
-        assert!(sale_starting_tomorrow((2026, 12, 15)).is_none());
-        assert!(sale_starting_tomorrow((2026, 10, 18)).is_none());
-        assert_eq!(sale_starting_tomorrow((2026, 9, 30)).map(|s| s.name), Some("Autumn Sale")); // month boundary
+        let on = |ymd| sale_starting_tomorrow(days_from_civil(ymd));
+        assert_eq!(on((2026, 12, 16)).map(|s| s.start), Some("2026-12-17"));
+        assert!(on((2026, 12, 17)).is_none()); // already started
+        assert!(on((2026, 12, 15)).is_none());
+        assert!(on((2026, 10, 18)).is_none());
+        assert_eq!(on((2026, 9, 30)).map(|s| s.name), Some("Autumn Sale")); // month boundary
         assert_eq!(days_from_civil((2026, 12, 31)) + 1, days_from_civil((2027, 1, 1))); // year boundary
-        for d in [-1, 0, 20_000, days_from_civil((2026, 12, 31)), days_from_civil((2028, 2, 29))] {
-            assert_eq!(days_from_civil(civil_from_days(d)), d);
-        }
-        assert_eq!(civil_from_days(0), (1970, 1, 1));
-        let winter = sale_starting_tomorrow((2026, 12, 16)).unwrap();
+        let winter = on((2026, 12, 16)).unwrap();
         assert_eq!(sale_soon_notice(winter), ("Steam Winter Sale starts tomorrow".into(), "Dec 17 – Jan 4. Time to check your wishlist.".into()));
         assert!(sale_soon_notice(SALES.last().unwrap()).1.starts_with("Expected to start tomorrow (Oct 7 – Oct 14"));
     }
@@ -1840,17 +1824,14 @@ mod tests {
         let (mut y, mut m, mut d) = (1895i64, 1u32, 1u32);
         let mut z = days_from_civil((y, m, d));
         while y < 2405 {
-            assert_eq!(civil_from_days(z), (y, m, d), "day {z}");
             z += 1;
             if d == len(y, m) { d = 1; if m == 12 { m = 1; y += 1 } else { m += 1 } } else { d += 1 }
             assert_eq!(days_from_civil((y, m, d)), z, "{y}-{m}-{d}");
         }
         assert_eq!(days_from_civil((1970, 1, 1)), 0);
+        assert_eq!(days_from_civil((1969, 12, 31)), -1);
         assert_eq!(days_from_civil((2000, 3, 1)) - days_from_civil((2000, 2, 28)), 2); // 2000 has a Feb 29
         assert_eq!(days_from_civil((2100, 3, 1)) - days_from_civil((2100, 2, 28)), 1); // 2100 does not
-        assert_eq!(civil_from_days(days_from_civil((2100, 2, 28)) + 1), (2100, 3, 1));
-        assert_eq!(civil_from_days(days_from_civil((2028, 2, 28)) + 1), (2028, 2, 29));
-        assert_eq!(civil_from_days(-1), (1969, 12, 31));
     }
 
     #[test]
@@ -1858,12 +1839,12 @@ mod tests {
         for s in SALES {
             let start = days_from_civil(super::ymd(s.start));
             assert!(days_from_civil(super::ymd(s.end)) > start, "{} ends before it starts", s.start);
-            let tomorrow_of = |offset: i64| sale_starting_tomorrow(civil_from_days(start + offset)).map(|x| x.start);
+            let tomorrow_of = |offset: i64| sale_starting_tomorrow(start + offset).map(|x| x.start);
             assert_eq!(tomorrow_of(-1), Some(s.start), "the day before {}", s.start);
             assert_eq!([tomorrow_of(-2), tomorrow_of(0), tomorrow_of(1)], [None, None, None], "{}", s.start);
         }
         // dates around a year end and a leap day never match by accident
-        assert!(sale_starting_tomorrow((2026, 12, 31)).is_none() && sale_starting_tomorrow((2028, 2, 29)).is_none());
+        assert!(sale_starting_tomorrow(days_from_civil((2026, 12, 31))).is_none() && sale_starting_tomorrow(days_from_civil((2028, 2, 29))).is_none());
         assert_eq!(super::ymd("garbage"), (0, 0, 0));
         assert_eq!(super::sale_soon_notice(&super::Sale { name: "X", start: "bad", end: "bad", est: false }).1, "Jan 0 – Jan 0. Time to check your wishlist.");
     }
