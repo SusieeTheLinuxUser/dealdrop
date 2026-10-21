@@ -121,6 +121,7 @@ const state = {
   launchers:    {},   // store -> { options:[{key,label}], chosen:{key,label}|null } from the backend
   salesTab:     'steam',
   salesViewed:  new Set(), // Store sales ids shown since the page was last marked seen
+  pageShown:    false, // the open page has been painted with the window on screen (a `--hidden` start renders it unseen)
   redrawPending: false, // a poll arrived while a price-target editor was open; redraw when it closes
   wishlistTab:  'all',
   wishlistErrors: {},
@@ -1140,6 +1141,7 @@ const unseen = page => newIds(seenIds(page, true), state.seen[page]) // hidden g
 // Called when the user leaves the page or hides the window, not on render, so the tags stay while they look
 function markSeen (page) {
   if (!SEEN_PAGES.includes(page) || !state.dataLoaded) return
+  if (state.seen[page] && !state.pageShown) return // never on screen: not viewed (first run still records everything)
   // First run (nothing stored yet) records every store's sales; later only the tabs the user looked at
   const ids = page === 'storesales' && state.seen.storesales ? salesSeenIds(state.sales, state.salesViewed, state.seen.storesales) : seenIds(page)
   if (page === 'storesales') state.salesViewed = new Set()
@@ -1843,8 +1845,10 @@ function resetSettings () {
 function navigate (page, persist = true) {
   if (state.page === 'settings' && page !== 'settings') clearResetSettingsConfirmation()
   const changed = state.page !== page
-  if (changed) markSeen(state.page)
+  if (changed) { markSeen(state.page); state.pageShown = false }
   state.page = page
+  // rAF only runs once a frame is painted, i.e. while the window is on screen, whichever of show/navigate arrives first
+  requestAnimationFrame(() => { state.pageShown = true })
   if (persist) persistUiPrefs()
   if (changed) {
     const main = document.querySelector('.main-content')
@@ -2064,8 +2068,10 @@ async function init () {
   document.getElementById('btn-close').addEventListener('click', () => window.api.close())
   // Hiding the window counts as leaving the page; re-render so the tags are gone when it comes back
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden || !SEEN_PAGES.includes(state.page)) return
+    if (!document.hidden) { requestAnimationFrame(() => { state.pageShown = true }); return }
+    if (!SEEN_PAGES.includes(state.page)) return
     markSeen(state.page)
+    state.pageShown = false
     if (deferRedraw()) return
     ;({ deals: renderDeals, storesales: renderStoreSales, wishlist: renderWishlist })[state.page]()
   })
