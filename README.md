@@ -77,6 +77,8 @@ cargo tauri build --bundles appimage        # Linux AppImage
 cargo tauri build                           # Windows MSI or macOS DMG on that OS
 ```
 
+Run `./target/release/dealdrop --tui` for the read-only terminal view of free games, hot deals, and store sales. It needs an interactive terminal; Windows release builds have no console, so use a debug build there.
+
 Run the dependency-free renderer helper self-check from the repo root with `node tools/preview/selfcheck.mjs`.
 
 ---

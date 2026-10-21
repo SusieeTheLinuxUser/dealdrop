@@ -12,6 +12,7 @@ It polls store APIs, shows free games / store sales / hot deals / wishlists, and
 | `src-tauri/src/stores.rs` | Sign-in window + Steam/GOG/Epic auth, GOG & Epic wishlists, Epic sales |
 | `src-tauri/src/autostart.rs` | "Start when I log in": per-OS entry (XDG autostart file / `Run` registry value / LaunchAgent) that runs the app with `--hidden` (tray only); the OS entry is the only record of the setting. `refresh()` (Linux, release builds only, on a thread at startup) points the entry at the running copy when the app it records is gone, or when both are `DealDrop_*.AppImage` files in one folder (AppImageUpdate keeps the old file) and the running one's filename version isn't older (compared as numbers; unparsable = allowed); another copy elsewhere doesn't take it over; everything else in the file (e.g. `Hidden=true`) is kept |
 | `src-tauri/src/launchers.rs` | Open-in-launcher table, per-OS install detection, deep links |
+| `src-tauri/src/tui.rs` | Optional read-only terminal UI (`dealdrop --tui`) for public free games, hot deals, and store sales |
 | `.github/workflows/ci.yml` | Every push to `dev`/`main` and every PR → `cargo test` + `node tools/preview/selfcheck.mjs` on Linux, `cargo test` on Windows and macOS |
 | `.github/workflows/release.yml` | Manual dispatch → builds Windows .msi + macOS .dmg and attaches them to an existing release |
 | `renderer/api.js` | `window.api` → Tauri `invoke` bridge (the only place the UI calls backend commands; `app.js` also calls two Tauri window/app APIs directly) |
@@ -34,6 +35,7 @@ cargo check                                          # fast compile check
 cargo test -- --ignored --nocapture --test-threads=1 # live API smoke tests (needs network)
 cargo tauri dev                                      # run the app (needs `cargo install tauri-cli`)
 cargo tauri build --bundles appimage                 # → src-tauri/target/release/bundle/appimage/
+./target/release/dealdrop --tui                      # terminal UI (Windows release builds have no console)
 ```
 
 ## Branches

@@ -4,6 +4,7 @@ mod autostart;
 mod launchers;
 mod sources;
 mod stores;
+mod tui;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -998,6 +999,14 @@ fn load_db(path: &PathBuf) -> Db {
 static CONFIG_STUCK: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
 fn main() {
+    if std::env::args().any(|arg| arg == "--tui") {
+        if let Err(error) = tui::run() {
+            eprintln!("DealDrop TUI: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
     tauri::Builder::default()
         // A second launch shows the window, unless it is the login autostart (`--hidden`)
         .plugin(tauri_plugin_single_instance::init(|app, argv, _| {
