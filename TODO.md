@@ -5,7 +5,7 @@
 Left over from the 2026-10-18/19 overnight work (shipped in v0.9.0):
 
 - **Cleanup done 2026-10-21** (date math, test SteamID, parser defaults, `loadJson`/`saveJson`, `makeHideButton`). Deliberately left: merging `keep_prices` into `carry_cheapest` (risks re-arming price targets); an `X-DealDrop-Exe` key in `autostart.rs` (changes the on-disk entry and still needs the `Exec=` reader for old ones); parsing CheapShark bodies once (mostly test churn); `settingRow`/dialog helpers (save about a line each).
-- **Check for real** (see AGENTS.md "Known unverified paths" and TESTING.md §8): tray menu, start at login from the Flatpak, the Flatpak updating itself, price-target and sale-soon notifications, the loot section, closing to the tray marking "New" seen.
+- **Check for real** (see AGENTS.md "Known unverified paths" and TESTING.md §8): the tray on a real panel (its D-Bus side is checked by `tools/e2e/tray.mjs`), start at login from the Flatpak, the Flatpak updating itself, price-target and sale-soon notifications, the loot section, closing to the tray marking "New" seen.
 
 ## Minimize animation on KDE Plasma (Wayland) flies to the pointer
 

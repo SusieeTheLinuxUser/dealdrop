@@ -5,11 +5,14 @@ Runs the **real release app** (WebKitGTK webview, Rust backend, live store APIs)
 ```bash
 tools/e2e/run.sh tools/e2e/hidden-start.mjs     # --hidden start doesn't mark unseen pages seen
 tools/e2e/run.sh tools/e2e/signin-title.mjs     # sign-in window titles show the site
+tools/e2e/run.sh tools/e2e/tray.mjs           # tray menu + counts + shortcut, icon file, new-free-game notification
 DEALDROP_BIN=tools/e2e/flatpak.sh tools/e2e/run.sh tools/e2e/flatpak.mjs   # the installed Flatpak: host config/storage/autostart, update button
 DEALDROP_BIN=/path/to/dealdrop tools/e2e/run.sh <check.mjs> [app args...]
 ```
 
 `flatpak.sh` runs `flatpak run com.dealdrop.desktop` from your real per-user installation (install the bundle first: `flatpak install --user src-tauri/target/flatpak/DealDrop_*.flatpak`); everything it writes still lands in the throwaway home. `E2E_SCREENSHOT=/tmp/x.png` saves a screenshot of the window with the update button. Inside the private bus there is no `org.freedesktop.Flatpak` service, so `flatpak-spawn --host` (installing an update, launcher detection) can't be exercised here.
+
+`tray.mjs` starts `fake-desktop.py` (Python + GObject introspection) on the private bus: a StatusNotifierWatcher like Plasma's and a notification server that log what the app sends. It works with either `DEALDROP_BIN`.
 
 Needs `WebKitWebDriver` (webkit2gtk-4.1), `kwin_wayland`, `dbus-run-session`, `qdbus6`, `node`, and a release build (`cd src-tauri && cargo tauri build --no-bundle`). Exit status is 0 when every check passed.
 
