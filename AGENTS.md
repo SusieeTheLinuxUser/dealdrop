@@ -10,11 +10,14 @@ It polls store APIs, shows free games / store sales / hot deals / wishlists, and
 | `src-tauri/src/main.rs` | App state, persistence (`config.json` in the OS config dir: `~/.config/dealdrop` / `%APPDATA%\dealdrop` / `~/Library/Application Support/dealdrop`), poll loop, notifications, tray, Tauri commands (see Backend notes) |
 | `src-tauri/src/sources.rs` | Every no-account HTTP source (Steam, GOG, Epic free, GamerPower giveaways + loot, CheapShark) + offline parser fixtures + live smoke tests |
 | `src-tauri/src/stores.rs` | Sign-in window + Steam/GOG/Epic auth, GOG & Epic wishlists, Epic sales |
-| `src-tauri/src/autostart.rs` | "Start when I log in": per-OS entry (XDG autostart file / `Run` registry value / LaunchAgent) that runs the app with `--hidden` (tray only); the OS entry is the only record of the setting. `refresh()` (Linux, release builds only, on a thread at startup) points the entry at the running copy when the app it records is gone, or when both are `DealDrop_*.AppImage` files in one folder (AppImageUpdate keeps the old file) and the running one's filename version isn't older (compared as numbers; unparsable = allowed); another copy elsewhere doesn't take it over; everything else in the file (e.g. `Hidden=true`) is kept |
+| `src-tauri/src/autostart.rs` | "Start when I log in": per-OS entry (XDG autostart file / `Run` registry value / LaunchAgent) that runs the app with `--hidden` (tray only); the OS entry is the only record of the setting. In the Flatpak the Linux entry is `Exec=flatpak run com.dealdrop.desktop --hidden`. `refresh()` (Linux, release builds only, on a thread at startup) repoints an entry whose quoted app path is gone; the Flatpak always takes over a quoted (AppImage-era) entry; everything else in the file (e.g. `Hidden=true`) is kept |
+| `src-tauri/src/update.rs` | Flatpak detection (`/.flatpak-info`), `use_host_dirs` (points `XDG_CONFIG_HOME`/`XDG_DATA_HOME` back at the host's folders so config.json and webview storage are the AppImage-era files) and the self-update: `flatpak-spawn --host flatpak install --user/--system --reinstall --bundle`, then a host helper waits for this instance (`flatpak ps`) to exit and runs `flatpak run` |
+| `flatpak/` | `com.dealdrop.desktop.yml` (manifest: GNOME 51 runtime, builds with the Rust SDK extension and network; libayatana-appindicator from the `shared-modules` git submodule for the tray), the desktop file |
 | `src-tauri/src/launchers.rs` | Open-in-launcher table, per-OS install detection, deep links |
 | `src-tauri/src/tui.rs` | Optional read-only terminal UI (`dealdrop --tui`) for public free games, hot deals, and store sales |
 | `.github/workflows/ci.yml` | Every push to `dev`/`main` and every PR → `cargo test` + `node tools/preview/selfcheck.mjs` on Linux, `cargo test` on Windows and macOS |
 | `.github/workflows/release.yml` | Manual dispatch → builds Windows .msi + macOS .dmg and attaches them to an existing release |
+| `scripts/release-linux.sh` | Builds the Flatpak bundle `DealDrop_<ver>_x86_64.flatpak` (in `src-tauri/target/flatpak/`) and publishes it to the release (`NO_UPLOAD=1`: build only) |
 | `renderer/api.js` | `window.api` → Tauri `invoke` bridge (the only place the UI calls backend commands; `app.js` also calls two Tauri window/app APIs directly) |
 | `renderer/app.js` | All UI rendering. `renderer/index.html`, `renderer/style.css`, `renderer/onboarding.js` / `onboarding.css` (first-run guide + tour) |
 | `tools/preview/` | Dev-only browser preview harness with a local mock Tauri bridge; never bundled. Mock flags: `?stress=1&accounts=1&bigwishlist=1&sale=<key>` (also `errors`, `empty`, `stale`, `onboarded`; see its README). `selfcheck.mjs` asserts the pure helpers in `app.js` |
@@ -34,7 +37,7 @@ cd src-tauri
 cargo check                                          # fast compile check
 cargo test -- --ignored --nocapture --test-threads=1 # live API smoke tests (needs network)
 cargo tauri dev                                      # run the app (needs `cargo install tauri-cli`)
-cargo tauri build --bundles appimage                 # → src-tauri/target/release/bundle/appimage/
+NO_UPLOAD=1 ../scripts/release-linux.sh             # Flatpak bundle → src-tauri/target/flatpak/
 ./target/release/dealdrop --tui                      # terminal UI (Windows release builds have no console)
 ```
 
@@ -46,10 +49,10 @@ cargo tauri build --bundles appimage                 # → src-tauri/target/rele
 
 ## Releasing — ALWAYS all three platforms
 
-Every release ships **Linux AppImage + Windows .msi + macOS .dmg (universal: Intel + Apple Silicon)**. Never release just one.
+Every release ships **Linux Flatpak + Windows .msi + macOS .dmg (universal: Intel + Apple Silicon)**. The file names matter: the in-app update check (`asset()` in `sources.rs`) only offers a release once this platform's `DealDrop_<ver>_x86_64.flatpak` / `DealDrop_<ver>_x64_en-US.msi` / `DealDrop_<ver>_universal.dmg` is attached. Never release just one.
 
-1. On `dev`: bump the version in all four places (see Rules); update the docs; commit; then fast-forward `main` to `dev` and push both.
-2. **Linux first:** `RELEASE_NOTES="…" scripts/release-linux.sh` builds the AppImage with embedded update info (Gear Lever / AppImageUpdate read it: `gh-releases-zsync|…|DealDrop_*_amd64.AppImage.zsync`; the string must keep `.zsync`, Gear Lever's detection regex needs it and v0.9.1 broke by dropping it), makes the `.zsync` and publishes both to the release. Needs `zsyncmake` (package `zsync`). The maintainer tests it.
+1. On `dev`: bump the version in all three places (see Rules); update the docs; commit; then fast-forward `main` to `dev` and push both.
+2. **Linux first:** `RELEASE_NOTES="…" scripts/release-linux.sh` builds the Flatpak bundle inside the GNOME SDK and publishes it to the release. Needs `flatpak` and `flatpak-builder` (or the `org.flatpak.Builder` Flatpak); the SDK and Rust extension are installed per-user from Flathub. The maintainer tests it. Installed Flatpaks see it on their next check (start, then every 6 h) and offer **Update to vX.Y.Z**.
 3. **Only after the Linux build is confirmed working:** `gh workflow run release.yml -f tag=vX.Y.Z` — `.github/workflows/release.yml` builds the Windows .msi and macOS .dmg on GitHub runners and attaches them to that same release. (Windows/macOS can't be built locally on Linux; don't ship them for a build that's known broken.)
 4. Check the release has all three assets before announcing it.
 
@@ -98,7 +101,9 @@ GOG/Epic CheapShark deal titles are looked up on click only; exact matches open 
 - Each source returns `Result`; the poll keeps the last good data when one fails and surfaces errors in the UI where it matters (hot deals, wishlists).
 - When an upstream API changes, fix it and extend the matching `#[ignore]` live test in `sources.rs`.
 - Wishlist items get `cheapest` from CheapShark (`attach_cheapest`) when another store is strictly cheaper; the UI opens that link first.
-- Version lives in four places: `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, the User-Agent in `sources.rs`, and `X-AppImage-Version` in `src-tauri/dealdrop.desktop` (how Gear Lever shows the version).
+- Version lives in three places: `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, the User-Agent in `sources.rs`. The update check compares the `releases/latest` redirect's `vX.Y.Z` tag with `CARGO_PKG_VERSION`.
+- **Updates:** checked through the `github.com/…/releases/latest` redirect, never the API (60 requests/hour per IP, easily used up behind a shared address). Only the Flatpak installs updates itself, and only from this repository's `releases/download/v<ver>/` URL; the UI never passes a URL to `install_update` (it re-checks). Other builds open the release page.
+- **Flatpak sandbox:** anything that must reach the host goes through `flatpak-spawn --host` (`update::install`, `has_scheme`'s `xdg-mime`); the tray icon file goes in `$XDG_RUNTIME_DIR/app/<id>` (the only runtime folder the host can read). A new host path needs a `--filesystem=` line in the manifest.
 
 ## Known issues
 
@@ -111,7 +116,8 @@ See [TODO.md](TODO.md) (e.g. the KDE minimize animation flying to the pointer in
 - GOG/Epic wishlist sign-in works for the maintainer's accounts but follows the launchers' unofficial OAuth flows; if one breaks, the UI shows the error above the wishlist.
 - Epic's `store/p/<slug>` deep link versus documented `store/product/<slug>` route is unverified. [Heroic issue #3342](https://github.com/Heroic-Games-Launcher/HeroicGamesLauncher/issues/3342) reports `/p/` works in the official Windows client; Linux without the official launcher falls back to the browser. See [TESTING.md](TESTING.md) for manual checks.
 - The tray on a real desktop (menu counts and shortcuts; the Windows/macOS tooltip). Linux AppIndicator has no tooltips.
-- Autostart at a real login, and its `refresh()` after a real AppImage update (Gear Lever / AppImageUpdate); only `repaired_entry` is unit-tested.
+- Autostart at a real login from the Flatpak, and its `refresh()` taking over an AppImage entry; only `repaired_entry` is unit-tested.
+- The Flatpak updating itself from a real release (download, `flatpak install` on the host, restart), including a system-wide install (polkit prompt); see TESTING.md §8 **Updating itself**.
 - Price-target and "sale starts tomorrow" notifications seen for real (only `target_hits` / `sale_starting_tomorrow` are unit-tested; the next sale heads-up is 2026-12-16 UTC).
 - The Free DLC & loot section in the real app (checked in the preview and by the GamerPower parser fixture only).
 - `visibilitychange` (closing to the tray marks the open page's "New" tags seen) in WebKitGTK: unverified that hiding the window fires it. A never-shown `--hidden` window does report `document.hidden` and pauses `requestAnimationFrame` (what `state.pageShown` relies on; checked by `tools/e2e/hidden-start.mjs`, WebKitGTK 2.54).

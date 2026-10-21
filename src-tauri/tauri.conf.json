@@ -26,11 +26,6 @@
       "icons/icon.icns"
     ],
     "category": "Utility",
-    "shortDescription": "Game sale, giveaway & wishlist notifier",
-    "linux": {
-      "deb": {
-        "desktopTemplate": "dealdrop.desktop"
-      }
-    }
+    "shortDescription": "Game sale, giveaway & wishlist notifier"
   }
 }

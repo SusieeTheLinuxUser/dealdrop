@@ -55,7 +55,7 @@ Short manual test checklist for Windows and macOS. Check each item as you verify
 One pass on Linux (KDE Plasma, Wayland) for everything in CHANGELOG.md [Unreleased], about 15 minutes in this order. Items marked *(Windows/macOS)* can't be checked on Linux.
 
 **Before you start**
-- Run `cargo tauri dev` from `src-tauri/` for everything except **Start at login**, which needs a built AppImage (`cargo tauri build --bundles appimage`).
+- Run `cargo tauri dev` from `src-tauri/` for everything except **Start at login** and **Updating itself**, which need the installed Flatpak (`NO_UPLOAD=1 scripts/release-linux.sh`, then `flatpak install --user src-tauri/target/flatpak/DealDrop_*.flatpak`).
 - Dev builds have WebKit's inspector: right-click → **Inspect Element** → Console. It's used once below to force "New" tags.
 - Config file: `~/.config/dealdrop/config.json`. Quit DealDrop from the tray (**Quit**) before editing it, or the app writes over your change. Keep a copy first.
 - Sign in to at least Steam and Epic so the Wishlist has data.
@@ -123,15 +123,20 @@ One pass on Linux (KDE Plasma, Wayland) for everything in CHANGELOG.md [Unreleas
 - [ ] With the window closed to the tray, **Free now** / **Wishlist** opens it on that page.
 - [ ] *(Windows/macOS)* Hovering the icon shows "DealDrop: 3 free games · 1 wishlist game on sale" (or just "DealDrop" at zero). Linux tray icons (AppIndicator) don't support tooltips, so KDE shows no counts on hover.
 
-### Start DealDrop when I log in (2 min, AppImage)
-- [ ] Run the built AppImage from where it will stay. Settings → Notifications → turn on **Start DealDrop when I log in**.
-- [ ] `cat ~/.config/autostart/dealdrop.desktop`: `Exec="/path/to/DealDrop_….AppImage" --hidden` with the AppImage's own path (not `/tmp/.mount_…`), and `Icon=/home/<you>/.config/dealdrop/autostart-icon.png`. It also shows in System Settings → Autostart with the DealDrop icon (not a generic one).
-- [ ] Log out and in: only the tray icon appears, no window. Tray → Open DealDrop shows it; starting the AppImage again while it runs shows the window too.
-- [ ] With it on, quit DealDrop from the tray, rename the AppImage (as an update does) and start the renamed file: the `Exec=` line now shows the new path. Put a second `DealDrop_….AppImage` next to the first (as AppImageUpdate does without `-r`) and start it: `Exec=` points at it. Copy one to another folder instead and start that copy: `Exec=` is unchanged.
-- [ ] Turn DealDrop off in your desktop's own autostart settings (or add `Hidden=true` to the file by hand if yours only offers Remove), quit and rename the AppImage, then start it: `Exec=` shows the new path and the entry is still off.
+### Start DealDrop when I log in (2 min, Flatpak)
+- [ ] In the installed Flatpak: Settings → Notifications → turn on **Start DealDrop when I log in**.
+- [ ] `cat ~/.config/autostart/dealdrop.desktop`: `Exec=flatpak run com.dealdrop.desktop --hidden` and `Icon=/home/<you>/.config/dealdrop/autostart-icon.png`. It also shows in System Settings → Autostart with the DealDrop icon (not a generic one).
+- [ ] Log out and in: only the tray icon appears, no window. Tray → Open DealDrop shows it; starting DealDrop again from the menu while it runs shows the window too.
+- [ ] Coming from the AppImage: with an old `Exec="/path/DealDrop_….AppImage" --hidden` entry (turn it on in v0.9.2), start the Flatpak once: `Exec=` is now the `flatpak run` line and anything else in the file (e.g. `Hidden=true`) is kept.
 - [ ] Turn it off: the file and `autostart-icon.png` are gone. Delete the file by hand instead and reopen Settings: the toggle is off.
 - [ ] Don't turn it on from `cargo tauri dev`: the entry would point at `target/debug/dealdrop`, which needs the dev server, so it would start blank at login.
 - [ ] *(Windows/macOS)* See §2 **Start at login**.
+
+### Updating itself (5 min, Flatpak)
+- [ ] Install a Flatpak built with an older version number (e.g. set `0.0.1` in `tauri.conf.json` and `Cargo.toml`, `NO_UPLOAD=1 scripts/release-linux.sh`, install it). Within a few seconds of starting, the sidebar shows **Update to v<latest>**.
+- [ ] Click it: it says **Updating…**, then DealDrop closes and reopens on the latest release (Settings → About shows the new version). `flatpak list --app` shows one DealDrop, in the same installation (user or system) as before.
+- [ ] Offline (or with a bad download) clicking it shows the red box; **Copy error** includes `Update: …`, and the button works again.
+- [ ] Settings, sign-ins, "New" tags and claimed games survive the update and the AppImage → Flatpak move.
 
 ### Accessibility (1 min)
 - [ ] Focus after Hide/Unhide: covered above.

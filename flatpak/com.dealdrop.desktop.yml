@@ -1,0 +1,54 @@
+# Flatpak bundle attached to every GitHub release (DealDrop_<version>_x86_64.flatpak).
+# Built by scripts/release-linux.sh. The app ID matches `identifier` in tauri.conf.json (the
+# Wayland app_id), so the window, desktop file and tray all line up.
+# Not for Flathub: the build fetches crates over the network, and the app talks to the host's
+# Flatpak (org.freedesktop.Flatpak) to install its own updates.
+id: com.dealdrop.desktop
+runtime: org.gnome.Platform # has webkit2gtk-4.1
+runtime-version: '51'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: dealdrop
+finish-args:
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  - --device=dri
+  - --share=network
+  - --talk-name=org.freedesktop.Notifications
+  - --talk-name=org.kde.StatusNotifierWatcher
+  # Self-update (`flatpak install` on the host) and launcher detection (the host's xdg-mime).
+  - --talk-name=org.freedesktop.Flatpak
+  # The same config.json, webview storage and autostart entry as before the Flatpak (see update::use_host_dirs).
+  - --filesystem=xdg-config/dealdrop:create
+  - --filesystem=xdg-data/com.dealdrop.desktop:create
+  - --filesystem=xdg-config/autostart:create
+modules:
+  # Tray icon: tauri loads libayatana-appindicator3 at runtime; the GNOME runtime doesn't ship it.
+  - shared-modules/libayatana-appindicator/libayatana-appindicator-gtk3.json
+  - name: dealdrop
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+      build-args:
+        - --share=network
+      env:
+        CARGO_HOME: /run/build/dealdrop/cargo
+    build-commands:
+      # tauri/custom-protocol: what `cargo tauri build` adds, so the bundled UI is served
+      - cargo build --release --locked --features tauri/custom-protocol --manifest-path src-tauri/Cargo.toml
+      - install -Dm755 src-tauri/target/release/dealdrop /app/bin/dealdrop
+      - install -Dm644 src-tauri/icons/128x128.png /app/share/icons/hicolor/128x128/apps/com.dealdrop.desktop.png
+      - install -Dm644 flatpak/com.dealdrop.desktop.desktop /app/share/applications/com.dealdrop.desktop.desktop
+    sources:
+      - type: dir
+        path: ..
+        skip:
+          - .git
+          - node_modules
+          - dist
+          - src-tauri/target
+          - src-tauri/gen
+          - flatpak/shared-modules
+          - .flatpak-builder

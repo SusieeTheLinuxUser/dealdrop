@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=DealDrop
+Comment=Game sale, giveaway & wishlist notifier
+Exec=dealdrop
+Icon=com.dealdrop.desktop
+Categories=Utility;Game;
+Terminal=false
+StartupWMClass=dealdrop

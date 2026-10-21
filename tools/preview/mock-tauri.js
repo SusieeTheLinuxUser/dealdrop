@@ -144,6 +144,9 @@
       case 'check_now': sample.lastChecked = Date.now(); return snapshot()
       case 'get_accounts': return clone(accounts)
       case 'launchers': return launchers()
+      // ?update=1 offers v99.0.0; installing it fails, to show the error path
+      case 'check_update': return flags.get('update') ? { version: '99.0.0', page: 'https://github.com/SusieeTheLinuxUser/dealdrop/releases/tag/v99.0.0', canInstall: true } : null
+      case 'install_update': await new Promise(resolve => setTimeout(resolve, 800)); throw new Error('Preview: Flatpak couldn\'t install the update')
       case 'get_autostart': return autostart
       case 'set_autostart': autostart = args.on; return undefined
       case 'steam_login': accounts.steam = { name: 'Preview Steam', avatar: null, profileUrl: 'https://steamcommunity.com/' }; signedStores.add('steam'); syncWishlist(); return clone(accounts)

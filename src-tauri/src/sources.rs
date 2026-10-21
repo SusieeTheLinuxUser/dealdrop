@@ -138,6 +138,54 @@ pub async fn get_text(url: &str) -> R<String> {
     send(client().get(url)).await?.text().await.map_err(|e| e.to_string())
 }
 
+// ─── App updates ──────────────────────────────────────────────────────────────
+
+const RELEASES: &str = "https://github.com/SusieeTheLinuxUser/dealdrop/releases";
+
+/// A newer GitHub release that has this platform's file. `bundle` is its `.flatpak` (Linux only).
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Update {
+    pub version: String,
+    pub page: String,
+    #[serde(skip)]
+    pub bundle: Option<String>,
+    /// This copy can install it itself (the Flatpak); otherwise the UI opens `page`.
+    pub can_install: bool,
+}
+
+/// This platform's release file (names from scripts/release-linux.sh and .github/workflows/release.yml).
+fn asset(version: &str) -> String {
+    if cfg!(windows) { format!("DealDrop_{version}_x64_en-US.msi") }
+    else if cfg!(target_os = "macos") { format!("DealDrop_{version}_universal.dmg") }
+    else { format!("DealDrop_{version}_{}.flatpak", std::env::consts::ARCH) }
+}
+
+/// `releases/latest` redirects to `releases/tag/vX.Y.Z`: that version when it's newer than `current`
+/// (compared as numbers). Read from the redirect, not the API, whose 60 requests/hour per IP a shared address can use up.
+fn newer_version(final_url: &str, current: &str) -> Option<String> {
+    let parse = |s: &str| s.split('.').map(|n| n.parse::<u32>().ok()).collect::<Option<Vec<_>>>();
+    let tag = parse(final_url.strip_prefix(&format!("{RELEASES}/tag/v"))?)?;
+    (tag.len() == 3 && tag > parse(current)?).then(|| tag.iter().map(u32::to_string).collect::<Vec<_>>().join("."))
+}
+
+/// The newer release, once this platform's file is attached (Windows/macOS files follow the Linux one).
+pub async fn latest_release() -> R<Option<Update>> {
+    let res = send(client().head(format!("{RELEASES}/latest"))).await?;
+    let Some(version) = newer_version(res.url().as_str(), env!("CARGO_PKG_VERSION")) else { return Ok(None) };
+    let file = format!("{RELEASES}/download/v{version}/{}", asset(&version));
+    let status = client().head(&file).send().await.map_err(|e| e.without_url().to_string())?.status();
+    if status == reqwest::StatusCode::NOT_FOUND { return Ok(None); }
+    if !status.is_success() { return Err(format!("HTTP {}", status.as_u16())); }
+    Ok(Some(Update { page: format!("{RELEASES}/tag/v{version}"), version, bundle: cfg!(target_os = "linux").then_some(file), can_install: false }))
+}
+
+/// A release file: GitHub redirects it to its download host; 10 minutes instead of the usual 25 s.
+pub async fn download(url: &str) -> R<Vec<u8>> {
+    let res = send(client().get(url).timeout(Duration::from_secs(600))).await.map_err(|e| format!("Download failed: {e}"))?;
+    res.bytes().await.map(|b| b.to_vec()).map_err(|e| format!("Download failed: {e}"))
+}
+
 fn num(v: &Value) -> Option<f64> {
     v.as_f64().or_else(|| v.as_str().and_then(|s| s.trim().parse().ok())).filter(|x| x.is_finite())
 }
@@ -981,6 +1029,12 @@ mod live {
         let v = steam_free_to_keep().await.expect("steam free-to-keep");
         println!("steam free-to-keep: {} items, first = {:?}", v.len(), v.first());
     }
+    #[tokio::test] #[ignore] async fn latest_release_live() {
+        let res = send(client().head(format!("{RELEASES}/latest"))).await.expect("GitHub latest release");
+        let latest = res.url().as_str().to_owned();
+        let version = newer_version(&latest, "0.0.1").unwrap_or_else(|| panic!("no vX.Y.Z tag in {latest}"));
+        println!("latest release: v{version}; offered to this build: {:?}", latest_release().await);
+    }
     #[tokio::test] #[ignore] async fn steam_sales_live() { show("steam sales", steam_sales().await) }
     #[tokio::test] #[ignore] async fn gog_sales_live() { show("gog sales", gog_sales().await) }
     #[tokio::test] #[ignore] async fn deal_title_lookup_live() {
@@ -1038,6 +1092,21 @@ mod live {
 
 #[cfg(test)]
 pub(crate) mod unit {
+    #[test]
+    fn only_a_newer_x_y_z_release_is_offered() {
+        let tag = |t: &str| format!("https://github.com/SusieeTheLinuxUser/dealdrop/releases/tag/{t}");
+        assert_eq!(super::newer_version(&tag("v0.10.0"), "0.9.2").as_deref(), Some("0.10.0")); // as numbers, not text
+        assert_eq!(super::newer_version(&tag("v1.0.0"), "0.9.2").as_deref(), Some("1.0.0"));
+        assert!(super::newer_version(&tag("v0.9.2"), "0.9.2").is_none());
+        assert!(super::newer_version(&tag("v0.9.1"), "0.9.2").is_none());
+        assert!(super::newer_version(&tag("v1.0.0-beta"), "0.9.2").is_none());
+        assert!(super::newer_version(&tag("v1.0"), "0.9.2").is_none());
+        assert!(super::newer_version(&tag("v1.0.0/../../evil"), "0.9.2").is_none());
+        assert!(super::newer_version("https://github.com/SusieeTheLinuxUser/dealdrop/releases", "0.9.2").is_none()); // no release yet
+        assert!(super::newer_version("https://example.com/SusieeTheLinuxUser/dealdrop/releases/tag/v9.9.9", "0.9.2").is_none());
+        assert_eq!(super::asset("0.10.0"), format!("DealDrop_0.10.0_{}.flatpak", std::env::consts::ARCH));
+    }
+
     #[test]
     fn appdetails_is_dlc_parses_type() {
         assert_eq!(super::appdetails_is_dlc(r#"{"10":{"success":true,"data":{"type":"game"}}}"#), Some(false));

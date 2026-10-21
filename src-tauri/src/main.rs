@@ -5,6 +5,7 @@ mod launchers;
 mod sources;
 mod stores;
 mod tui;
+mod update;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -958,6 +959,25 @@ fn get_autostart() -> bool { autostart::get() }
 #[tauri::command]
 fn set_autostart(on: bool) -> Result<(), String> { autostart::set(on) }
 
+/// A newer release for this platform, if any (the UI asks at start and every 6 hours).
+#[tauri::command]
+async fn check_update() -> Option<Update> {
+    match latest_release().await {
+        Ok(up) => up.map(|u| Update { can_install: u.bundle.is_some() && update::in_flatpak(), ..u }),
+        Err(e) => { eprintln!("[update check] {e}"); None }
+    }
+}
+
+/// Flatpak only: downloads the newest release's bundle, installs it and restarts into it.
+#[tauri::command]
+async fn install_update(app: AppHandle) -> Result<(), String> {
+    let url = latest_release().await?.and_then(|u| u.bundle).ok_or("There's no newer Flatpak release to install")?;
+    let bundle = download(&url).await?;
+    tauri::async_runtime::spawn_blocking(move || update::install(&bundle)).await.map_err(|e| e.to_string())??;
+    app.exit(0);
+    Ok(())
+}
+
 #[tauri::command]
 async fn wishlist_game_deals(app_id: String, name: String) -> Value {
     let ids = [app_id.clone()];
@@ -1007,6 +1027,7 @@ fn main() {
         return;
     }
 
+    update::use_host_dirs();
     tauri::Builder::default()
         // A second launch shows the window, unless it is the login autostart (`--hidden`)
         .plugin(tauri_plugin_single_instance::init(|app, argv, _| {
@@ -1053,8 +1074,12 @@ fn main() {
                 &MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?,
             ])?;
             app.manage(items);
-            TrayIconBuilder::with_id("main")
-                .icon(app.default_window_icon().cloned().ok_or("no icon")?)
+            let mut tray = TrayIconBuilder::with_id("main");
+            // The tray host reads the icon file by path: in a Flatpak only $XDG_RUNTIME_DIR/app/<id> is shared with it.
+            if let (true, Some(run)) = (update::in_flatpak(), std::env::var_os("XDG_RUNTIME_DIR")) {
+                tray = tray.temp_dir_path(PathBuf::from(run).join("app").join(update::APP_ID).join("tray-icon"));
+            }
+            tray.icon(app.default_window_icon().cloned().ok_or("no icon")?)
                 .tooltip("DealDrop")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
@@ -1101,7 +1126,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_settings, save_settings, fetch_data, check_now, get_accounts,
             steam_login, gog_login, epic_login, logout, open_url, open_in_app, open_deal_in_app, launchers,
-            window_minimize, window_close, wishlist_game_deals, get_autostart, set_autostart,
+            window_minimize, window_close, wishlist_game_deals, get_autostart, set_autostart, check_update, install_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running DealDrop");

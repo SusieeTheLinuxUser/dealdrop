@@ -19,6 +19,8 @@ window.api = {
   getAccounts:    ()    => invoke('get_accounts'),
   login:          store => invoke(store + '_login'),
   logout:         store => invoke('logout', { store }),
+  checkUpdate:    ()    => invoke('check_update'),
+  installUpdate:  ()    => invoke('install_update'),
   fetchWishlistGameDeals: p => invoke('wishlist_game_deals', { appId: p.appId, name: p.name }),
   onDataUpdate:   cb    => listen('data-update', e => cb(e.payload)),
   onNavigate:     cb    => listen('navigate', e => cb(e.payload)),

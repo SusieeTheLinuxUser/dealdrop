@@ -38,13 +38,14 @@ Optional store sign-in enables wishlist alerts. No API keys or telemetry; DealDr
 - **Responsive layouts** — card grids fill wide windows while keeping rows and text at a readable width
 - **Bundled fonts** — DM Sans and DM Mono load locally, with no third-party font requests
 - **Safe settings** — an unreadable `config.json` is kept aside as `config.bad.json` instead of being overwritten
-- Native Rust backend (Tauri) — small AppImage, low memory
+- Native Rust backend (Tauri) — small download, low memory
+- **Updates itself** on Linux: when a new release is out, the sidebar shows **Update to vX.Y.Z**; one click installs it and restarts (Windows/macOS: opens the download page)
 
 ---
 
 ## Install
 
-Every release ships all three builds. Download the file for your OS from [Releases](../../releases): Linux AppImage, Windows `.msi`, or universal macOS `.dmg` (Intel and Apple Silicon).
+Every release ships all three builds. Download the file for your OS from [Releases](../../releases): Linux Flatpak, Windows `.msi`, or universal macOS `.dmg` (Intel and Apple Silicon).
 
 ### Windows (.msi)
 
@@ -54,16 +55,20 @@ Run `DealDrop_*.msi`. Windows SmartScreen may warn because the build is unsigned
 
 Open `DealDrop_*.dmg` and drag DealDrop to Applications. Unsigned build: on first launch right-click → **Open**, or run `xattr -dr com.apple.quarantine /Applications/DealDrop.app`.
 
-### Linux (AppImage)
+### Linux (Flatpak)
 
-Download the latest `.AppImage` from [Releases](../../releases), then:
+Download the latest `DealDrop_*_x86_64.flatpak` from [Releases](../../releases), then open it with your software center (Discover, GNOME Software) or run:
 
 ```bash
-chmod +x DealDrop_*.AppImage
-./DealDrop_*.AppImage
+flatpak install --user DealDrop_*_x86_64.flatpak
+flatpak run com.dealdrop.desktop
 ```
 
-No installation needed. Linux requires `webkit2gtk-4.1`. Existing settings and Steam sign-in from the earlier Electron app are picked up automatically.
+It needs Flatpak with the Flathub remote (the GNOME runtime is fetched from there on first install). After that DealDrop updates itself: click **Update to vX.Y.Z** in the sidebar when it appears.
+
+Coming from the AppImage (v0.9.2 and older)? Install the Flatpak and delete the AppImage: settings, sign-ins and "Start when I log in" carry over (the Flatpak uses the same `~/.config/dealdrop/`). The AppImage gets no more updates.
+
+The Flatpak is allowed to talk to the host's Flatpak (`org.freedesktop.Flatpak`) so it can install its own updates and see which game launchers you have; it can only read and write `~/.config/dealdrop`, `~/.local/share/com.dealdrop.desktop` and `~/.config/autostart`.
 
 ### Build from source
 
@@ -73,7 +78,7 @@ Requires Rust, `webkit2gtk-4.1`/GTK dev packages (Linux only), and `cargo instal
 git clone https://github.com/SusieeTheLinuxUser/dealdrop
 cd dealdrop/src-tauri
 cargo tauri dev                             # run in dev mode
-cargo tauri build --bundles appimage        # Linux AppImage
+../scripts/release-linux.sh                 # Linux Flatpak bundle (NO_UPLOAD=1 to only build it)
 cargo tauri build                           # Windows MSI or macOS DMG on that OS
 ```
 

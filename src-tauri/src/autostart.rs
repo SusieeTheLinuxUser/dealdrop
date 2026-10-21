@@ -7,13 +7,8 @@ use std::path::{Path, PathBuf};
 
 pub const HIDDEN: &str = "--hidden";
 
-/// The path to start. Inside an AppImage `current_exe` is the temporary /tmp/.mount_* copy, so
-/// the AppImage file itself (`APPIMAGE`) is used instead.
+/// The path to start.
 fn exe() -> Result<String, String> {
-    #[cfg(target_os = "linux")]
-    if let Some(p) = std::env::var_os("APPIMAGE").filter(|p| !p.is_empty()) {
-        return Ok(p.to_string_lossy().into_owned());
-    }
     std::env::current_exe().map(|p| p.to_string_lossy().into_owned()).map_err(|e| format!("Couldn't find DealDrop's own path: {e}"))
 }
 
@@ -38,14 +33,18 @@ fn exec_arg(path: &str) -> String {
     s
 }
 
-/// `Icon` is a file path: an AppImage installs no themed `dealdrop` icon, and its mount
-/// (`$APPDIR`) is gone once it exits, so `set` copies the icon next to config.json.
+/// The `Exec=` line: the Flatpak through `flatpak run`, anything else (a source build) by its path.
+#[cfg(target_os = "linux")]
+fn exec_line() -> Result<String, String> {
+    if crate::update::in_flatpak() { return Ok(format!("Exec=flatpak run {} {HIDDEN}", crate::update::APP_ID)); }
+    Ok(format!("Exec={} {HIDDEN}", exec_arg(&exe()?)))
+}
+
+/// `Icon` is a file path: a source build installs no themed `dealdrop` icon, so `set` copies the
+/// icon next to config.json.
 #[cfg(any(target_os = "linux", test))]
-fn desktop_entry(exe: &str, icon: &Path) -> String {
-    format!(
-        "[Desktop Entry]\nType=Application\nName=DealDrop\nExec={} {HIDDEN}\nIcon={}\nX-GNOME-Autostart-enabled=true\n",
-        exec_arg(exe), icon.display()
-    )
+fn desktop_entry(exec: &str, icon: &Path) -> String {
+    format!("[Desktop Entry]\nType=Application\nName=DealDrop\n{exec}\nIcon={}\nX-GNOME-Autostart-enabled=true\n", icon.display())
 }
 
 #[cfg(target_os = "linux")]
@@ -122,30 +121,23 @@ fn exec_path(line: &str) -> Option<String> {
     }
 }
 
-/// The entry with only its `Exec=` line pointed at `exe`, when the app it records is gone (an AppImage
-/// update renames the file). Everything else is kept, e.g. `Hidden=true` or
-/// `X-GNOME-Autostart-enabled=false` from the desktop's own autostart settings. A recorded app that
-/// still exists is left alone, so trying another copy doesn't take the entry over, unless both are
-/// release AppImages in the same folder: AppImageUpdate keeps the old file next to the new one. Then an
-/// older running copy (by the `DealDrop_<version>_…` filename) doesn't take it back.
+/// The entry with only its `Exec=` line replaced by `exec`, when the app its quoted path records is
+/// gone. Everything else is kept, e.g. `Hidden=true` or `X-GNOME-Autostart-enabled=false` from the
+/// desktop's own autostart settings. A recorded app that still exists is left alone, so trying another
+/// copy doesn't take the entry over. The Flatpak passes `exists = |_| false`: it takes over an entry
+/// left by an AppImage (which it can't see from the sandbox), and its own unquoted line is never repointed.
 #[cfg(any(target_os = "linux", test))]
-fn repaired_entry(text: &str, exe: &str, exists: impl Fn(&str) -> bool) -> Option<String> {
+fn repaired_entry(text: &str, exec: &str, exists: impl Fn(&str) -> bool) -> Option<String> {
     let old = text.lines().find_map(exec_path)?;
-    let release = |p: &str| p.rsplit_once('/').filter(|(_, f)| f.starts_with("DealDrop_") && f.ends_with(".AppImage")).map(|(dir, _)| dir.to_owned());
-    // "0.10.0" -> [0, 10, 0], so versions compare as numbers; an unparsable one never blocks the update.
-    let version = |p: &str| -> Option<Vec<u32>> { p.rsplit_once('/')?.1.strip_prefix("DealDrop_")?.split_once('_')?.0.split('.').map(|n| n.parse().ok()).collect() };
-    let older = matches!((version(exe), version(&old)), (Some(run), Some(rec)) if run < rec);
-    let update = !older && release(&old).is_some_and(|dir| release(exe) == Some(dir));
-    if old == exe || (exists(&old) && !update) || exe.starts_with("/tmp/.mount_") { return None; }
-    let exec = format!("Exec={} {HIDDEN}", exec_arg(exe));
-    Some(text.lines().map(|l| if l.starts_with("Exec=") { exec.as_str() } else { l }).collect::<Vec<_>>().join("\n") + "\n")
+    if exists(&old) || text.lines().any(|l| l == exec) { return None; }
+    Some(text.lines().map(|l| if l.starts_with("Exec=") { exec } else { l }).collect::<Vec<_>>().join("\n") + "\n")
 }
 
 /// Held across reading and writing the entry, so the startup repair and the Settings toggle can't interleave.
 #[cfg(target_os = "linux")]
 static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// At startup, repair an entry whose app is gone (Linux: AppImage updates rename the file), which
+/// At startup, repair an entry whose app is gone (or, in the Flatpak, left by the old AppImage), which
 /// would otherwise start nothing while the toggle still shows On. Release builds only, so
 /// `cargo tauri dev` never points it at a dev binary. Windows (MSI) and macOS (/Applications) install
 /// to a fixed path, and a Mac app run from the DMG or a translocated path must not take it over.
@@ -154,8 +146,9 @@ pub fn refresh() {
     if cfg!(debug_assertions) { return; }
     let _lock = LOCK.lock();
     let Some(path) = config_home().map(|c| desktop_path(&c)) else { return };
-    let (Ok(text), Ok(exe)) = (std::fs::read_to_string(&path), exe()) else { return };
-    if let Some(fixed) = repaired_entry(&text, &exe, |p| Path::new(p).exists()) {
+    let (Ok(text), Ok(exec)) = (std::fs::read_to_string(&path), exec_line()) else { return };
+    let flatpak = crate::update::in_flatpak();
+    if let Some(fixed) = repaired_entry(&text, &exec, |p| !flatpak && Path::new(p).exists()) {
         if let Err(e) = write(&path, fixed) { eprintln!("autostart refresh failed: {e}"); }
     }
 }
@@ -173,7 +166,7 @@ pub fn set(on: bool) -> Result<(), String> {
     let icon = config.join("dealdrop").join("autostart-icon.png");
     if !on { return remove(&desktop_path(&config)).and(remove(&icon)); }
     write(&icon, ICON)?;
-    write(&desktop_path(&config), desktop_entry(&exe()?, &icon))
+    write(&desktop_path(&config), desktop_entry(&exec_line()?, &icon))
 }
 
 #[cfg(target_os = "macos")]
@@ -217,11 +210,13 @@ pub fn set(on: bool) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    fn quoted(path: &str) -> String { format!("Exec={} {HIDDEN}", exec_arg(path)) }
+
     #[test]
     fn desktop_entry_quotes_the_path() {
-        let text = desktop_entry("/home/me/My Apps/DealDrop_0.8.0_amd64.AppImage", Path::new("/home/me/.config/dealdrop/autostart-icon.png"));
+        let text = desktop_entry(&quoted("/home/me/My Apps/dealdrop"), Path::new("/home/me/.config/dealdrop/autostart-icon.png"));
         assert!(text.starts_with("[Desktop Entry]\n"));
-        assert!(text.contains("\nExec=\"/home/me/My Apps/DealDrop_0.8.0_amd64.AppImage\" --hidden\n"));
+        assert!(text.contains("\nExec=\"/home/me/My Apps/dealdrop\" --hidden\n"));
         for line in ["Type=Application", "Name=DealDrop", "Icon=/home/me/.config/dealdrop/autostart-icon.png", "X-GNOME-Autostart-enabled=true"] {
             assert!(text.lines().any(|l| l == line), "missing {line}");
         }
@@ -231,22 +226,24 @@ mod tests {
     #[test]
     fn a_missing_app_is_repaired_and_desktop_settings_are_kept() {
         for p in ["/home/me/Apps/DealDrop_0.8.0_amd64.AppImage", r#"/a "b" $c `d` \e 100%"#, "/ünï/çødé"] {
-            assert_eq!(exec_path(&format!("Exec={} --hidden", exec_arg(p))).as_deref(), Some(p));
+            assert_eq!(exec_path(&quoted(p)).as_deref(), Some(p));
         }
-        let old = desktop_entry("/apps/DealDrop_0.8.0_amd64.AppImage", Path::new("/i.png")).replace("enabled=true", "enabled=false") + "Hidden=true\n";
-        let new = "/apps/DealDrop_0.9.0_amd64.AppImage";
-        let fixed = repaired_entry(&old, new, |_| false).unwrap();
-        assert_eq!(fixed, old.replace("0.8.0", "0.9.0")); // only Exec= changed; the user's "off" stays
-        assert!(repaired_entry(&old, new, |_| true).is_some()); // AppImageUpdate kept the old file next to it
-        assert!(repaired_entry(&old, "/home/me/Downloads/DealDrop_0.9.0_amd64.AppImage", |_| true).is_none()); // a copy elsewhere
-        assert!(repaired_entry(&old, "/apps/dealdrop-test", |_| true).is_none()); // not a release AppImage
-        let newer = desktop_entry("/apps/DealDrop_0.10.0_amd64.AppImage", Path::new("/i.png"));
-        assert!(repaired_entry(&newer, "/apps/DealDrop_0.9.1_amd64.AppImage", |_| true).is_none()); // an older copy (as numbers, not text)
-        assert!(repaired_entry(&newer, "/apps/DealDrop_0.9.1_amd64.AppImage", |_| false).is_some()); // ...unless the recorded one is gone
-        assert!(repaired_entry(&old, "/apps/DealDrop_0.10.0_amd64.AppImage", |_| true).is_some()); // 0.8.0 -> 0.10.0 is newer
-        assert!(repaired_entry(&newer, "/apps/DealDrop_dev_amd64.AppImage", |_| true).is_some()); // unparsable: as before
-        assert!(repaired_entry(&old, "/tmp/.mount_x/dealdrop", |_| false).is_none());
-        assert!(repaired_entry("[Desktop Entry]\nExec=other\n", new, |_| false).is_none());
+        let old = desktop_entry(&quoted("/apps/DealDrop_0.8.0_amd64.AppImage"), Path::new("/i.png")).replace("enabled=true", "enabled=false") + "Hidden=true\n";
+        let new = quoted("/opt/dealdrop");
+        assert_eq!(repaired_entry(&old, &new, |_| false).unwrap(), old.replace("\"/apps/DealDrop_0.8.0_amd64.AppImage\"", "\"/opt/dealdrop\"")); // only Exec= changed; the user's "off" stays
+        assert!(repaired_entry(&old, &new, |_| true).is_none()); // another copy that still exists keeps it
+        assert!(repaired_entry("[Desktop Entry]\nExec=other\n", &new, |_| false).is_none()); // not ours
+    }
+
+    #[test]
+    fn the_flatpak_takes_over_the_appimage_entry_once() {
+        let flatpak = format!("Exec=flatpak run {} {HIDDEN}", crate::update::APP_ID);
+        assert_eq!(flatpak, "Exec=flatpak run com.dealdrop.desktop --hidden");
+        let old = desktop_entry(&quoted("/apps/DealDrop_0.9.2_amd64.AppImage"), Path::new("/i.png")) + "Hidden=true\n";
+        let fixed = repaired_entry(&old, &flatpak, |_| false).unwrap();
+        assert!(fixed.lines().any(|l| l == flatpak) && fixed.contains("Hidden=true\n") && fixed.contains("Icon=/i.png"));
+        assert!(repaired_entry(&fixed, &flatpak, |_| false).is_none()); // already the Flatpak's
+        assert!(repaired_entry(&fixed, &quoted("/opt/dealdrop"), |_| false).is_none()); // a source build doesn't take it back
     }
 
     #[test]
@@ -266,24 +263,11 @@ mod tests {
 
     #[test]
     fn only_our_own_exec_line_is_read_back() {
-        assert_eq!(exec_path(r#"Exec="/apps/DealDrop.AppImage" --hidden"#).as_deref(), Some("/apps/DealDrop.AppImage"));
-        assert!(exec_path("Exec=/apps/DealDrop.AppImage").is_none()); // not quoted
+        assert_eq!(exec_path(r#"Exec="/apps/dealdrop" --hidden"#).as_deref(), Some("/apps/dealdrop"));
+        assert!(exec_path("Exec=/apps/dealdrop").is_none()); // not quoted
         assert!(exec_path("Exec=").is_none());
         assert!(exec_path("Exec").is_none());
         assert!(exec_path(" X-Exec=\"/apps/x\"").is_none());
-    }
-
-    #[test]
-    fn the_entry_is_only_repointed_when_the_app_it_records_is_gone() {
-        let old = desktop_entry("/apps/DealDrop_0.8.0_amd64.AppImage", Path::new("/i.png"));
-        // The running copy is the one the entry already names
-        assert!(repaired_entry(&old, "/apps/DealDrop_0.8.0_amd64.AppImage", |_| true).is_none());
-        // A gone app: the entry follows the running copy, everything else is kept
-        let fixed = repaired_entry(&old, "/opt/dealdrop", |_| false).unwrap();
-        assert!(fixed.contains("Exec=\"/opt/dealdrop\" --hidden"));
-        assert!(fixed.contains("Icon=/i.png"));
-        assert!(fixed.contains("Name=DealDrop"));
-        assert!(fixed.ends_with('\n'));
     }
 
     #[test]
@@ -291,7 +275,7 @@ mod tests {
         let base = std::env::temp_dir().join(format!("dealdrop-autostart-test-{}", std::process::id()));
         let path = desktop_path(&base);
         assert_eq!(path, base.join("autostart/dealdrop.desktop"));
-        write(&path, desktop_entry("/opt/Deal Drop/dealdrop", &base.join("dealdrop/autostart-icon.png"))).unwrap();
+        write(&path, desktop_entry(&quoted("/opt/Deal Drop/dealdrop"), &base.join("dealdrop/autostart-icon.png"))).unwrap();
         assert!(std::fs::read_to_string(&path).unwrap().contains("Exec=\"/opt/Deal Drop/dealdrop\" --hidden"));
         // Writing the same text again (turning it on twice) does not touch the file: it works even read-only.
         let text = std::fs::read(&path).unwrap();
@@ -302,8 +286,8 @@ mod tests {
         #[allow(clippy::permissions_set_readonly_false)]
         perms.set_readonly(false);
         std::fs::set_permissions(&path, perms).unwrap();
-        write(&path, desktop_entry("/opt/DealDrop_9.9.9_amd64.AppImage", &base.join("i.png"))).unwrap();
-        assert!(std::fs::read_to_string(&path).unwrap().contains("Exec=\"/opt/DealDrop_9.9.9_amd64.AppImage\" --hidden"));
+        write(&path, desktop_entry(&quoted("/opt/dealdrop-9"), &base.join("i.png"))).unwrap();
+        assert!(std::fs::read_to_string(&path).unwrap().contains("Exec=\"/opt/dealdrop-9\" --hidden"));
         remove(&path).unwrap();
         assert!(!path.exists());
         remove(&path).unwrap(); // already gone is fine

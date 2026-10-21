@@ -30,8 +30,10 @@ pub fn options(store: &str) -> &'static [Opt] {
 /// Is a desktop app installed that handles this URL scheme?
 #[cfg(target_os = "linux")]
 fn has_scheme(scheme: &str) -> bool {
-    std::process::Command::new("xdg-mime")
-        .args(["query", "default", &format!("x-scheme-handler/{scheme}")])
+    // The Flatpak's own xdg-mime only knows the sandbox: ask the host's.
+    let mut cmd = std::process::Command::new(if crate::update::in_flatpak() { "flatpak-spawn" } else { "xdg-mime" });
+    if crate::update::in_flatpak() { cmd.args(["--host", "xdg-mime"]); }
+    cmd.args(["query", "default", &format!("x-scheme-handler/{scheme}")])
         .output().map(|o| !o.stdout.iter().all(u8::is_ascii_whitespace)).unwrap_or(false)
 }
 

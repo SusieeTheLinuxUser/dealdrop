@@ -46,5 +46,8 @@ src-tauri/target/
 src-tauri/gen/
 
 # Release artifacts
+*.flatpak
+.flatpak-builder/
+# Old AppImage releases
 *.zsync
 *.AppImage

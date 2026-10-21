@@ -1,5 +1,5 @@
 # Windows .msi + macOS .dmg (Intel + Apple Silicon), attached to an EXISTING release.
-# The Linux AppImage is built locally first (see AGENTS.md "Releasing"); once it's tested, run:
+# The Linux Flatpak is built locally first (see AGENTS.md "Releasing"); once it's tested, run:
 #   gh workflow run release.yml -f tag=vX.Y.Z
 name: release
 on:

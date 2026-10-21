@@ -1980,6 +1980,7 @@ function renderErrors () {
     state.fetchError,
     ...state.sourceErrors,
     state.dealsError && `Hot deals: ${state.dealsError}`,
+    state.updateError && `Update: ${state.updateError}`,
     ...Object.entries(state.wishlistErrors).filter(([s]) => state.accounts[s]).map(([s, e]) => `${STORES[s] ?? s} wishlist: ${e}`),
   ].filter(Boolean)
   lastErrorText = lines.length ? `DealDrop ${document.getElementById('app-version')?.textContent.replace('DealDrop ', '') ?? ''}\n${lines.join('\n')}` : ''
@@ -1999,6 +2000,38 @@ async function copyError () {
   }
   if (btn) { btn.textContent = 'Copied ✓'; setTimeout(() => { btn.textContent = 'Copy error' }, 1500) }
   announceStatus('Copied')
+}
+
+// "Update to vX.Y.Z" above the error box when GitHub has a newer release for this platform.
+// The Flatpak installs it and restarts; other builds open the release page.
+async function checkUpdate () {
+  state.update = await window.api.checkUpdate().catch(() => null)
+  if (!state.update && state.updateError) { state.updateError = null; renderErrors() } // the failed update is gone (installed by hand, or withdrawn)
+  const box = document.getElementById('sidebar-update')
+  const btn = document.getElementById('btn-update')
+  if (!box || !btn || btn.disabled) return
+  box.style.display = state.update ? 'block' : 'none'
+  if (state.update) btn.textContent = `Update to v${state.update.version}`
+}
+
+async function installUpdate () {
+  const up = state.update
+  const btn = document.getElementById('btn-update')
+  if (!up || !btn || btn.disabled) return
+  if (!up.canInstall) { openBrowser(up.page); return }
+  btn.disabled = true
+  btn.textContent = 'Updating…'
+  if (state.updateError) { state.updateError = null; renderErrors() } // a retry: the last failure no longer applies
+  announceStatus('Updating DealDrop')
+  try {
+    await window.api.installUpdate() // DealDrop quits and starts the new version
+  } catch (e) {
+    state.updateError = String(e).slice(0, 400)
+    renderErrors()
+    btn.disabled = false
+    btn.textContent = `Update to v${up.version}`
+    announceStatus('Update failed')
+  }
 }
 
 function applyData (data) {
@@ -2160,6 +2193,9 @@ async function init () {
   navigate(state.page)
   startRefreshAgeTimer()
   loadData()
+  checkUpdate()
+  setInterval(checkUpdate, 6 * 3600_000)
+  document.getElementById('btn-update')?.addEventListener('click', installUpdate)
 
   if (!state.settings.onboarded) startOnboarding()
 }

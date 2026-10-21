@@ -384,6 +384,10 @@ html[data-theme="winter"]{--bg0:#08121c;--bg1:#0d1b2a;--bg2:#14283c;--bg3:#1c365
 .sidebar-errors strong{display:block;color:var(--text0);margin-bottom:6px}
 .copy-err-btn{width:100%;padding:5px;font-size:11px;font-family:var(--sans);color:var(--text0);background:rgba(220,60,60,.22);border:1px solid var(--red);border-radius:var(--rs);cursor:pointer}
 .copy-err-btn:hover{background:rgba(220,60,60,.4)}
+.sidebar-update{margin:6px 8px 0}
+.update-btn{width:100%;padding:6px;font-size:12px;font-family:var(--sans);color:var(--text0);background:var(--acc-d);border:1px solid var(--acc);border-radius:var(--rs);cursor:pointer}
+.update-btn:hover:not(:disabled){background:var(--bg3)}
+.update-btn:disabled{cursor:default;opacity:.7}
 .app-logo{border-radius:4px;display:block}
 .arrow-down{vertical-align:-1px}
 .icon-btn .logo{display:block}

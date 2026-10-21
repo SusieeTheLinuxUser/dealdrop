@@ -30,7 +30,7 @@ See [AGENTS.md](AGENTS.md) for the file map and commands.
 - **No telemetry.** DealDrop doesn't phone home. Don't add any.
 - **All API calls go through the Rust backend.** The webview never calls external APIs directly.
 - **Keep it dependency-light.** Think carefully before adding a crate.
-- **Three platforms.** Releases ship AppImage + .msi + .dmg (AppImage built locally; .msi/.dmg by `.github/workflows/release.yml`, run manually after the Linux build is tested). Keep OS-specific code behind `cfg` so all three compile. Test locally with `cargo tauri build --bundles appimage` on Linux.
+- **Three platforms.** Releases ship Flatpak + .msi + .dmg (Flatpak built locally; .msi/.dmg by `.github/workflows/release.yml`, run manually after the Linux build is tested). Keep OS-specific code behind `cfg` so all three compile. Test locally with `NO_UPLOAD=1 scripts/release-linux.sh` on Linux.
 
 ## Running checks
 
@@ -56,12 +56,14 @@ CI (`.github/workflows/ci.yml`) runs `cargo test` and `node tools/preview/selfch
 - JSON sent to the UI is camelCase (`#[serde(rename_all = "camelCase")]`); keep it in sync with `renderer/app.js`.
 - Add a theme in both `renderer/style.css` (`html[data-theme="…"]`) and `renderer/app.js` (`BASE_THEMES` / `SALE_THEMES`).
 
-## Building the AppImage (Linux)
+## Building the Flatpak (Linux)
 
 ```bash
-cd src-tauri && cargo tauri build --bundles appimage
-# src-tauri/target/release/bundle/appimage/DealDrop_x.x.x_amd64.AppImage
+NO_UPLOAD=1 scripts/release-linux.sh        # from the repo root; needs flatpak (+ flatpak-builder or org.flatpak.Builder)
+flatpak install --user src-tauri/target/flatpak/DealDrop_x.x.x_x86_64.flatpak
 ```
+
+The manifest is `flatpak/com.dealdrop.desktop.yml`; it builds the app inside the GNOME SDK (first run downloads ~1.5 GB of SDK).
 
 ## Opening a PR
 

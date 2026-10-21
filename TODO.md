@@ -5,7 +5,7 @@
 Left over from the 2026-10-18/19 overnight work (shipped in v0.9.0):
 
 - **Cleanup done 2026-10-21** (date math, test SteamID, parser defaults, `loadJson`/`saveJson`, `makeHideButton`). Deliberately left: merging `keep_prices` into `carry_cheapest` (risks re-arming price targets); an `X-DealDrop-Exe` key in `autostart.rs` (changes the on-disk entry and still needs the `Exec=` reader for old ones); parsing CheapShark bodies once (mostly test churn); `settingRow`/dialog helpers (save about a line each).
-- **Check for real** (see AGENTS.md "Known unverified paths" and TESTING.md §8): tray menu, start at login after an AppImage update, price-target and sale-soon notifications, the loot section, closing to the tray marking "New" seen.
+- **Check for real** (see AGENTS.md "Known unverified paths" and TESTING.md §8): tray menu, start at login from the Flatpak, the Flatpak updating itself, price-target and sale-soon notifications, the loot section, closing to the tray marking "New" seen.
 
 ## Minimize animation on KDE Plasma (Wayland) flies to the pointer
 
@@ -19,7 +19,7 @@ If it still happens with an always-visible panel, file a new bug with 513815 in 
 
 ## Release status
 
-- v0.8.0: Linux AppImage first, then Windows `.msi` and universal macOS `.dmg` from CI.
+- Since the Flatpak move: Linux Flatpak first, then Windows `.msi` and universal macOS `.dmg` from CI.
 - Unverified end to end: sale themes during a live sale; launcher detection on Windows/macOS (desk research says `reg query HKCR\<scheme> /ve` and the app-bundle paths are right, not tested on a real machine). The Epic deep link `store/p/<slug>` is reported valid alongside the documented `store/product/<slug>` (not tested on Epic's launcher).
 
 ## Windows window frame (unverified, needs a real Windows machine)

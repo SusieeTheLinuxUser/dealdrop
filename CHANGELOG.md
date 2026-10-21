@@ -3,6 +3,8 @@
 All notable changes to DealDrop are documented in this file.
 
 ## [Unreleased]
+- Linux: DealDrop is now a **Flatpak** (`DealDrop_<version>_x86_64.flatpak`) instead of an AppImage. Install it once by hand; settings, sign-ins and "Start when I log in" carry over from the AppImage (same `~/.config/dealdrop/`). The AppImage gets no more updates.
+- **Update to vX.Y.Z** in the sidebar when a newer release is out (checked at start and every 6 hours). The Flatpak downloads and installs it and restarts; Windows and macOS open the release page.
 
 ## [v0.9.2] - 2026-10-20
 - Linux: the AppImage's embedded update info is back to naming the `.zsync` file. v0.9.1 dropped it and Gear Lever then no longer detected the update info (Update management showed an empty source); install v0.9.2 to get automatic update detection again.
