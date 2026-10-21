@@ -17,7 +17,7 @@ const context = vm.createContext({ document: { getElementById: () => label } })
 vm.runInContext([
   sales,
   between('const DEFAULT_SETTINGS = {', '\nconst UI_PREFS_KEY'),
-  between('const UI_PREFS_KEY', '\nfunction readUiPrefs'),
+  between('const UI_PREFS_KEY', '\nconst initialUiPrefs'),
   'const initialUiPrefs = mergeUiPrefs(null)',
   between('const CLAIMED_KEY', '\nconst state = {'),
   between('const state = {', '\nlet shortcutsDialog'),
@@ -71,9 +71,9 @@ assert.equal('query' in merged.lists.deals, false)
 assert.equal(h.mergeUiPrefs({ version: 2, page: 'settings' }).page, 'free')
 
 assert.equal(JSON.stringify(h.state.claimed), '[]') // no localStorage in node: falls back to nothing claimed
-assert.equal(JSON.stringify(h.parseClaimed('["a",2,"b"]')), '["a","b"]')
-assert.equal(JSON.stringify(h.parseClaimed('{"a":1}')), '[]')
-assert.equal(JSON.stringify(h.parseClaimed('not json')), '[]')
+assert.equal(JSON.stringify(h.parseClaimed(['a', 2, 'b'])), '["a","b"]')
+assert.equal(JSON.stringify(h.parseClaimed({ a: 1 })), '[]')
+assert.equal(JSON.stringify(h.parseClaimed('a')), '[]')
 assert.equal(JSON.stringify(h.parseClaimed(null)), '[]')
 assert.equal(JSON.stringify(h.toggleClaimed(['a'], 'b')), '["a","b"]')
 assert.equal(JSON.stringify(h.toggleClaimed(['a', 'b'], 'a')), '["b"]')
@@ -81,8 +81,8 @@ assert.equal(JSON.stringify(h.pruneClaimed(['a', 'gone', 'b'], [{ id: 'b' }, { i
 assert.equal(JSON.stringify(h.claimedLast([{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }], ['a', 'c']).map(g => g.id)), '["b","d","a","c"]')
 
 assert.equal(JSON.stringify(h.state.seen), '{"deals":null,"storesales":null,"wishlist":null}') // no localStorage: first run, nothing tagged
-assert.equal(JSON.stringify(h.parseSeen('{"deals":["a",2],"storesales":"x"}')), '{"deals":["a"],"storesales":null,"wishlist":null}')
-assert.equal(JSON.stringify(h.parseSeen('not json')), '{"deals":null,"storesales":null,"wishlist":null}')
+assert.equal(JSON.stringify(h.parseSeen({ deals: ['a', 2], storesales: 'x' })), '{"deals":["a"],"storesales":null,"wishlist":null}')
+assert.equal(JSON.stringify(h.parseSeen('deals')), '{"deals":null,"storesales":null,"wishlist":null}')
 assert.equal(h.newIds(['a', 'b'], null).size, 0)
 assert.equal(JSON.stringify([...h.newIds(['a', 'b', 'c'], ['b'])]), '["a","c"]')
 assert.equal(JSON.stringify(h.mergeSeen({ deals: ['old'], storesales: null }, 'deals', ['a', 'b', 'a'])), '{"deals":["a","b"],"storesales":null}')
@@ -280,10 +280,10 @@ assert.equal(h.searchRank([{ title: 'aa' }, { title: 'aa' }], 'a').length, 2)
 assert.equal(JSON.stringify(h.mergeSeen({ deals: ['x'] }, 'deals', [], true)), '{"deals":[]}')
 assert.equal(JSON.stringify([...h.newIds(['10', '1'], ['1'])]), '["10"]')
 assert.equal(JSON.stringify([...h.newIds(['a', 'a'], [])]), '["a"]')
-assert.equal(JSON.stringify(h.parseSeen('{"deals":[]}')), '{"deals":[],"storesales":null,"wishlist":null}')
-assert.equal(JSON.stringify(h.parseSeen('[1]')), '{"deals":null,"storesales":null,"wishlist":null}')
-assert.equal(JSON.stringify(h.parseSeen('"deals"')), '{"deals":null,"storesales":null,"wishlist":null}')
-assert.equal(JSON.stringify(h.parseSeen('null')), '{"deals":null,"storesales":null,"wishlist":null}')
+assert.equal(JSON.stringify(h.parseSeen({ deals: [] })), '{"deals":[],"storesales":null,"wishlist":null}')
+assert.equal(JSON.stringify(h.parseSeen([1])), '{"deals":null,"storesales":null,"wishlist":null}')
+assert.equal(JSON.stringify(h.parseSeen(undefined)), '{"deals":null,"storesales":null,"wishlist":null}')
+assert.equal(JSON.stringify(h.parseSeen(null)), '{"deals":null,"storesales":null,"wishlist":null}')
 // refresh age: a clock set back (future timestamp) is "just now"; hours read as minutes
 h.state.lastChecked = Date.now() + 3600000
 h.updateRefreshAge()

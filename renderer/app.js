@@ -39,21 +39,25 @@ function mergeUiPrefs (saved) {
   return prefs
 }
 
-function readUiPrefs () {
-  try { return mergeUiPrefs(JSON.parse(localStorage.getItem(UI_PREFS_KEY) || 'null')) } catch { return mergeUiPrefs(null) }
+// localStorage can throw (storage disabled); a failed read is "nothing saved", a failed write is skipped
+function loadJson (key) {
+  try { return JSON.parse(localStorage.getItem(key)) } catch { return null }
 }
+function saveJson (key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)) } catch {}
+}
+
+const readUiPrefs = () => mergeUiPrefs(loadJson(UI_PREFS_KEY))
 
 const initialUiPrefs = readUiPrefs()
 
 function persistUiPrefs () {
   const { deals, storesales, wishlist } = state.listFilters
-  try {
-    localStorage.setItem(UI_PREFS_KEY, JSON.stringify({ version: 1, page: state.page, lists: {
-      deals: { sort: deals.sort, minDiscount: deals.minDiscount, shop: deals.shop },
-      storesales: { sort: storesales.sort, minDiscount: storesales.minDiscount },
-      wishlist: { sort: wishlist.sort, onSaleOnly: wishlist.onSaleOnly },
-    } }))
-  } catch {}
+  saveJson(UI_PREFS_KEY, { version: 1, page: state.page, lists: {
+    deals: { sort: deals.sort, minDiscount: deals.minDiscount, shop: deals.shop },
+    storesales: { sort: storesales.sort, minDiscount: storesales.minDiscount },
+    wishlist: { sort: wishlist.sort, onSaleOnly: wishlist.onSaleOnly },
+  } })
 }
 
 function clearUiPrefs () {
@@ -62,11 +66,8 @@ function clearUiPrefs () {
 
 // Ids of free-to-keep games the user marked as claimed (UI-only, like the prefs above)
 const CLAIMED_KEY = 'dealdrop-claimed'
-function parseClaimed (raw) {
-  try {
-    const ids = JSON.parse(raw)
-    return Array.isArray(ids) ? ids.filter(id => typeof id === 'string') : []
-  } catch { return [] }
+function parseClaimed (ids) {
+  return Array.isArray(ids) ? ids.filter(id => typeof id === 'string') : []
 }
 function pruneClaimed (ids, games) {
   const live = new Set(games.map(g => g.id))
@@ -79,19 +80,13 @@ function claimedLast (games, ids) {
   return [...games].sort((a, b) => ids.includes(a.id) - ids.includes(b.id))
 }
 
-function readClaimed () {
-  try { return parseClaimed(localStorage.getItem(CLAIMED_KEY)) } catch { return [] }
-}
-function saveClaimed () {
-  try { localStorage.setItem(CLAIMED_KEY, JSON.stringify(state.claimed)) } catch {}
-}
+const readClaimed = () => parseClaimed(loadJson(CLAIMED_KEY))
+const saveClaimed = () => saveJson(CLAIMED_KEY, state.claimed)
 
 // Ids already shown on Hot deals / Store sales / Wishlist; anything else gets a "New" tag (UI-only, like claimed)
 const SEEN_KEY = 'dealdrop-seen'
 const SEEN_PAGES = ['deals', 'storesales', 'wishlist']
-function parseSeen (raw) {
-  let saved = null
-  try { saved = JSON.parse(raw) } catch {}
+function parseSeen (saved) {
   return Object.fromEntries(SEEN_PAGES.map(p => [p, Array.isArray(saved?.[p]) ? saved[p].filter(id => typeof id === 'string') : null]))
 }
 // No stored set yet (first run) means nothing is new
@@ -106,9 +101,7 @@ function mergeSeen (seen, page, ids, loaded = ids.length > 0) {
 }
 // The discount is part of the key, so a game that sells again after going back to full price is new again
 const wishlistKey = w => `${w.store}:${w.id}:${w.priceInfo?.discount ?? 0}`
-function readSeen () {
-  try { return parseSeen(localStorage.getItem(SEEN_KEY)) } catch { return parseSeen(null) }
-}
+const readSeen = () => parseSeen(loadJson(SEEN_KEY))
 
 const state = {
   page:         initialUiPrefs.page,
@@ -1152,7 +1145,7 @@ function markSeen (page) {
   if (page === 'storesales') state.salesViewed = new Set()
   // A loaded wishlist with nothing on sale is a real empty set, so the first sale afterwards is new
   state.seen = mergeSeen(state.seen, page, ids, page === 'wishlist' ? state.wishlist.length > 0 : undefined)
-  try { localStorage.setItem(SEEN_KEY, JSON.stringify(state.seen)) } catch {}
+  saveJson(SEEN_KEY, state.seen)
   updateBadges()
 }
 
