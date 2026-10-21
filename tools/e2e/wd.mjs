@@ -35,6 +35,7 @@ export async function launch (args = appArgs) {
     handle: () => s('GET', '/window'),
     switchTo: handle => s('POST', '/window', { handle }),
     title: () => s('GET', '/title'),
+    screenshot: () => s('GET', '/screenshot'), // base64 PNG of the page
     url: () => s('GET', '/url'),
     quit: () => s('DELETE', ''),
   }

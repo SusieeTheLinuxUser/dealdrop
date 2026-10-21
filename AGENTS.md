@@ -21,7 +21,7 @@ It polls store APIs, shows free games / store sales / hot deals / wishlists, and
 | `renderer/api.js` | `window.api` → Tauri `invoke` bridge (the only place the UI calls backend commands; `app.js` also calls two Tauri window/app APIs directly) |
 | `renderer/app.js` | All UI rendering. `renderer/index.html`, `renderer/style.css`, `renderer/onboarding.js` / `onboarding.css` (first-run guide + tour) |
 | `tools/preview/` | Dev-only browser preview harness with a local mock Tauri bridge; never bundled. Mock flags: `?stress=1&accounts=1&bigwishlist=1&sale=<key>` (also `errors`, `empty`, `stale`, `onboarded`; see its README). `selfcheck.mjs` asserts the pure helpers in `app.js` |
-| `tools/e2e/` | Dev-only headless checks of the real release app: `run.sh <check.mjs>` isolates it (temp home, private D-Bus, `kwin_wayland --virtual`) and the check drives the webview through WebKitWebDriver (see its README) |
+| `tools/e2e/` | Dev-only headless checks of the real release app: `run.sh <check.mjs>` isolates it (temp home, private D-Bus, `kwin_wayland --virtual`) and the check drives the webview through WebKitWebDriver (see its README). `DEALDROP_BIN=tools/e2e/flatpak.sh … flatpak.mjs` drives the installed Flatpak |
 
 ## Backend notes
 
