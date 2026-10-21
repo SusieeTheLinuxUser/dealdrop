@@ -222,14 +222,23 @@ fn update_tray(app: &AppHandle, snap: &Snapshot) {
     }
 }
 
+/// "Foo: Bar!" → "foobar", so the same game from two sources compares equal.
+fn title_key(title: &str) -> String { title.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect() }
+
 /// Collapse "Foo" / "foo!" duplicates reported by both a store API and GamerPower.
 fn dedupe_free(list: Vec<Free>) -> Vec<Free> {
     let mut seen = HashSet::new();
     list.into_iter().filter(|g| {
-        let mut key: String = g.title.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect();
+        let mut key = title_key(&g.title);
         if key.is_empty() { key = normalize_title(&g.title); } // "???" and "★★★" are different games
         seen.insert(format!("{}:{key}", g.kind))
     }).collect()
+}
+
+/// Loot that is already a free game (Steam's free-to-keep DLC, which it titles "… (DLC)") is shown once, as the game.
+fn drop_listed_loot(loot: Vec<Free>, free: &[Free]) -> Vec<Free> {
+    let listed: HashSet<String> = free.iter().map(|g| title_key(g.title.trim_end_matches(" (DLC)"))).collect();
+    loot.into_iter().filter(|g| { let key = title_key(&g.title); key.is_empty() || !listed.contains(&key) }).collect()
 }
 
 // ─── Sale calendar ────────────────────────────────────────────────────────────
@@ -456,6 +465,7 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
 
     let free_games = dedupe_free([ef, sf, sk, gp].concat());
     let free_weekends = dedupe_free(sw);
+    let free_loot = drop_listed_loot(free_loot, &free_games);
 
     // The very first poll on a fresh install only records what is free today; no notification burst.
     let had_errors = *free_failed.lock().unwrap();
@@ -1255,6 +1265,15 @@ mod tests {
         assert_eq!(store_label("gog"), "GOG");
         assert_eq!(store_label("other"), "another store");
         assert_eq!(store_label("itch"), "itch");
+    }
+
+    #[test]
+    fn loot_that_steam_lists_as_free_dlc_is_shown_once() {
+        let free = vec![game("steam-ftk-1", "Squad Weapon Skins - Recon Team Pack (DLC)", "steam", "free"), game("epic-2", "Alan Wake", "epic", "free")];
+        let loot = vec![game("gp-loot-1", "Squad Weapon Skins - Recon Team Pack", "steam", "loot"), game("gp-loot-2", "Alan Wake: Skin Pack", "epic", "loot"),
+            game("gp-loot-3", "★★★", "steam", "loot")];
+        let kept: Vec<_> = super::drop_listed_loot(loot, &free).into_iter().map(|g| g.id).collect();
+        assert_eq!(kept, ["gp-loot-2", "gp-loot-3"]); // a different item of the same game, and a symbol-only title, stay
     }
 
     #[test]
