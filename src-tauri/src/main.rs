@@ -343,6 +343,15 @@ fn carry_cheapest(items: &mut [WishItem], prev: &[WishItem], unanswered: &[usize
     }
 }
 
+/// A failed `games?ids=` batch leaves a hot deal without its lowest-ever price for one poll: keep the last
+/// one while the deal (same CheapShark dealID, so same store and game) still has the same price.
+fn carry_deal_lowest(deals: &mut [Deal], prev: &[Deal]) {
+    for d in deals {
+        let Some(p) = prev.iter().find(|p| p.id == d.id && p.price == d.price) else { continue };
+        d.lowest = d.lowest.or(p.lowest);
+    }
+}
+
 /// Last-good rows for one source. `steam-` is also a prefix of `steam-ftk-`, so a featured
 /// restore must not swallow free-to-keep rows. Any other id with that prefix is kept (`steam-fw-` stays).
 fn restore_by_prefix(old: &[Free], prefix: &str) -> Vec<Free> {
@@ -441,7 +450,7 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
         epic: deals_of("Epic sales", es, &prev.sales.epic),
     };
     let (mut deals, deals_source, deals_error) = hot;
-    if deals_error.is_some() { deals = prev.deals.clone(); } // keep the last good hot deals
+    if deals_error.is_some() { deals = prev.deals.clone(); } else { carry_deal_lowest(&mut deals, &prev.deals); } // keep the last good hot deals
 
     let free_games = dedupe_free([ef, sf, sk, gp].concat());
     let free_weekends = dedupe_free(sw);
@@ -1091,7 +1100,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{LiveSale, days_from_civil, sale_soon_notice, sale_starting_tomorrow, SALES, clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, keep_or_fail, keep_prices, carry_cheapest, normalize_hidden, normalize_targets, target_hits, target_notice, price_failure, CS_BLOCKED, normalize_title, remember_big_deals, remember_free, remember_wishlist, restore_by_prefix, safe_https, sale_key, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, load_db, CONFIG_STUCK, Acct, Db, Deal, Free, Price, Prime, Settings, SteamProfile, Tokens, WishItem, accounts, same_refresh};
+    use super::{LiveSale, days_from_civil, sale_soon_notice, sale_starting_tomorrow, SALES, clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, keep_or_fail, keep_prices, carry_cheapest, carry_deal_lowest, normalize_hidden, normalize_targets, target_hits, target_notice, price_failure, CS_BLOCKED, normalize_title, remember_big_deals, remember_free, remember_wishlist, restore_by_prefix, safe_https, sale_key, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, load_db, CONFIG_STUCK, Acct, Db, Deal, Free, Price, Prime, Settings, SteamProfile, Tokens, WishItem, accounts, same_refresh};
     use std::collections::{HashMap, HashSet};
 
     #[cfg(unix)]
@@ -1996,5 +2005,14 @@ mod tests {
         carry_cheapest(&mut now, std::slice::from_ref(&old), &[]);
         assert_eq!(now[0].lowest, Some(7.0));
         assert!(now[0].cheapest.is_none()); // answered: no offer brought back, so its price target is untouched
+    }
+
+    #[test]
+    fn hot_deal_keeps_lowest_ever_through_a_failed_games_batch_while_its_price_is_unchanged() {
+        let deal = |id: &str, price, lowest| Deal { id: id.into(), price, lowest, ..Default::default() };
+        let prev = [deal("a", 5.0, Some(4.0)), deal("b", 5.0, Some(4.0)), deal("c", 5.0, Some(4.0))];
+        let mut now = [deal("a", 5.0, None), deal("b", 6.0, None), deal("c", 5.0, Some(3.0)), deal("d", 5.0, None)];
+        carry_deal_lowest(&mut now, &prev);
+        assert_eq!(now.map(|d| d.lowest), [Some(4.0), None, Some(3.0), None]); // carried, price moved, fresh wins, new deal
     }
 }
