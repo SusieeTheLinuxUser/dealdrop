@@ -51,9 +51,13 @@ pub fn install(bundle: &[u8]) -> Result<(), String> {
     // The sandbox's cache folder (~/.var/app/<id>/cache) has the same path on the host.
     let dir = std::env::var_os("XDG_CACHE_HOME").map(std::path::PathBuf::from).ok_or("No cache folder to download into")?;
     let file = dir.join("dealdrop-update.flatpak");
-    std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(&file, bundle)).map_err(|e| format!("Couldn't save the update to {}: {e}", file.display()))?;
+    std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(&file, bundle)).map_err(|e| {
+        let _ = std::fs::remove_file(&file); // a half-written bundle
+        format!("Couldn't save the update to {}: {e}", file.display())
+    })?;
+    // No --noninteractive: it also stops polkit from asking for the password a system-wide install needs.
     let out = Command::new("flatpak-spawn")
-        .args(["--host", "flatpak", "install", installation(&info), "-y", "--noninteractive", "--reinstall", "--bundle"])
+        .args(["--host", "flatpak", "install", installation(&info), "-y", "--reinstall", "--bundle"])
         .arg(&file)
         .output()
         .map_err(|e| format!("Couldn't start Flatpak: {e}"));
