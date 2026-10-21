@@ -326,17 +326,20 @@ fn keep_prices(items: &mut [WishItem], prev: &[WishItem]) {
     }
 }
 
-/// CheapShark gave no answer for these items this poll (a failed request, or past the lookup cap):
-/// keep the last cheaper offer (and lowest-ever price) while the store's own price is unchanged, so one bad poll neither
+/// CheapShark gave no answer for the `unanswered` items this poll (a failed request, or past the lookup cap):
+/// keep the last cheaper offer while the store's own price is unchanged, so one bad poll neither
 /// hides it nor re-arms its price target (which would notify again on the next good poll).
+/// Every item whose price is unchanged also keeps its last lowest-ever price when none came back: a failed
+/// `games?ids=` batch leaves it unset on answered items too. It only ever falls, so a fresh one wins.
 /// ponytail: an item that stays past the cap keeps an offer that may have ended, until its own price
 /// changes; rotate the lookups if that shows up.
 fn carry_cheapest(items: &mut [WishItem], prev: &[WishItem], unanswered: &[usize]) {
     let own = |w: &WishItem| w.price_info.as_ref().map(|p| (p.fin, p.currency.clone()));
-    for &i in unanswered {
-        let w = &mut items[i];
+    for (i, w) in items.iter_mut().enumerate() {
         let Some(p) = prev.iter().find(|p| p.store == w.store && p.id == w.id) else { continue };
-        if own(p) == own(w) { w.cheapest = p.cheapest.clone(); w.lowest = w.lowest.or(p.lowest); }
+        if own(p) != own(w) { continue }
+        if unanswered.contains(&i) { w.cheapest = p.cheapest.clone(); }
+        w.lowest = w.lowest.or(p.lowest);
     }
 }
 
@@ -1980,5 +1983,18 @@ mod tests {
         let mut other = item(20.0, "USD");
         other.id = "2".into();
         assert!(carried(other, &[0]).cheapest.is_none()); // a different game
+    }
+
+    #[test]
+    fn lowest_ever_survives_a_failed_games_batch_on_an_answered_item() {
+        let item = || WishItem { store: "steam".into(), id: "1".into(),
+            price_info: Some(Price { fin: 10.0, discount: 50, currency: Some("USD".into()), ..Default::default() }), ..Default::default() };
+        let mut old = item();
+        old.lowest = Some(7.0);
+        // its steamAppID lookup answered (nobody cheaper), but the `games?ids=` batch failed: no lowest this poll
+        let mut now = vec![item()];
+        carry_cheapest(&mut now, std::slice::from_ref(&old), &[]);
+        assert_eq!(now[0].lowest, Some(7.0));
+        assert!(now[0].cheapest.is_none()); // answered: no offer brought back, so its price target is untouched
     }
 }
