@@ -7,6 +7,7 @@ tools/e2e/run.sh tools/e2e/hidden-start.mjs     # --hidden start doesn't mark un
 tools/e2e/run.sh tools/e2e/signin-title.mjs     # sign-in window titles show the site
 tools/e2e/run.sh tools/e2e/close-to-tray.mjs   # closing to the tray fires visibilitychange and marks the page seen
 STEAM_ID=7656… tools/e2e/run.sh tools/e2e/price-target.mjs   # price target: one notification, re-fires on a changed target
+tools/e2e/run.sh tools/e2e/sale-soon.mjs       # "Sale starts tomorrow" once, clock moved to the day before the next sale
 tools/e2e/run.sh tools/e2e/loot.mjs            # Free DLC & loot: cards, no duplicates, not notified or counted
 tools/e2e/run.sh tools/e2e/tray.mjs           # tray menu + counts + shortcut, icon file, new-free-game notification
 DEALDROP_BIN=tools/e2e/flatpak.sh tools/e2e/run.sh tools/e2e/flatpak.mjs   # the installed Flatpak: host config/storage/autostart, update button
