@@ -221,8 +221,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     "Some sources failed; showing available data".into()
                 };
-                for i in 0..3 {
-                    selected[i] = selected[i].min(data.rows(i).len().saturating_sub(1));
+                for (i, sel) in selected.iter_mut().enumerate() {
+                    *sel = (*sel).min(data.rows(i).len().saturating_sub(1));
                 }
             }
             Action::Up => selected[tab] = selected[tab].saturating_sub(1),
