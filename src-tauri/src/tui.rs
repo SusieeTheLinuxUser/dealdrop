@@ -15,7 +15,7 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
     Terminal,
 };
-use std::{io, process::Command, time::Duration};
+use std::{io, time::Duration};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Action {
@@ -196,9 +196,10 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let _session = TerminalSession::enter()?;
     let runtime = tokio::runtime::Runtime::new()?;
     let mut data = Data::default();
-    runtime.block_on(data.refresh());
     let mut tab = 0usize;
     let mut selected = [0usize; 3];
+    terminal.draw(|frame| draw(frame, &data, tab, 0, "Loading…"))?;
+    runtime.block_on(data.refresh());
     let mut status = "Loaded public store data".to_string();
 
     loop {
@@ -316,41 +317,8 @@ fn draw(frame: &mut ratatui::Frame<'_>, data: &Data, tab: usize, selected: usize
 }
 
 fn open_link(raw: &str) -> Result<(), String> {
-    let url =
-        crate::safe_https(raw).ok_or_else(|| "link rejected by HTTPS validation".to_string())?;
-    open_validated_url(url.as_str())
-}
-
-#[cfg(target_os = "linux")]
-fn open_validated_url(url: &str) -> Result<(), String> {
-    Command::new("xdg-open")
-        .arg(url)
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| e.to_string())
-}
-
-#[cfg(target_os = "macos")]
-fn open_validated_url(url: &str) -> Result<(), String> {
-    Command::new("open")
-        .arg(url)
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| e.to_string())
-}
-
-#[cfg(target_os = "windows")]
-fn open_validated_url(url: &str) -> Result<(), String> {
-    Command::new("rundll32.exe")
-        .args(["url.dll,FileProtocolHandler", url])
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| e.to_string())
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-fn open_validated_url(_: &str) -> Result<(), String> {
-    Err("browser opening is unsupported on this platform".into())
+    let url = crate::safe_https(raw).ok_or_else(|| "link rejected by HTTPS validation".to_string())?;
+    tauri_plugin_opener::open_url(url.as_str(), None::<&str>).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
