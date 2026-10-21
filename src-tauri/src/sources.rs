@@ -487,9 +487,8 @@ fn parse_steam_sales(body: &str) -> R<Vec<Deal>> {
             url: format!("https://store.steampowered.com/app/{id}"),
             image: capsule.captures(chunk).map(|c| c[1].to_string()),
             cut, price, regular,
-            lowest: None,
             app_id: Some(id.clone()),
-            rating: None, rating_text: None,
+            ..Default::default()
         });
     }
     Ok(out)
@@ -511,9 +510,8 @@ pub async fn steam_wishlist(steam_id: &str) -> R<Vec<WishItem>> {
             name: it.map_or_else(|| format!("App {id}"), |i| i.name.clone()),
             price_info: it.and_then(|i| i.price.clone()),
             app_id: Some(id.clone()),
-            cheapest: None,
-            lowest: None,
             id,
+            ..Default::default()
         }
     }).collect())
 }
@@ -663,7 +661,7 @@ fn parse_gamerpower(body: &str, prefix: &str, kind: &str) -> R<Vec<Free>> {
                 end_date: end,
                 image: s(&g["thumbnail"]),
                 kind: kind.into(),
-                starts: None,
+                ..Default::default()
             })
         })
         .collect())
@@ -713,9 +711,7 @@ fn parse_gog_sales(body: &str) -> R<Vec<Deal>> {
             url: s(&p["storeLink"])?,
             image: s(&p["coverHorizontal"]),
             cut, price, regular,
-            lowest: None,
-            app_id: None,
-            rating: None, rating_text: None,
+            ..Default::default()
         })
     }).collect())
 }
@@ -854,10 +850,10 @@ fn parse_cheapshark_deals(body: &str, stores: &HashMap<String, String>) -> R<Vec
             image: s(&d["thumb"]),
             cut: f(&d["savings"]).round().clamp(0.0, 100.0) as u32,
             price, regular,
-            lowest: None,
             app_id: s(&d["steamAppID"]).filter(|x| !x.is_empty() && x != "0"),
             rating_text: rating.and(s(&d["steamRatingText"])).filter(|x| !x.is_empty()),
             rating,
+            ..Default::default()
         })
     }).collect())
 }

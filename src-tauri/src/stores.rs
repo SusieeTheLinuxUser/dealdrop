@@ -253,7 +253,8 @@ fn parse_gog_wishlist_products(products: &Value, prices: &Value) -> Vec<WishItem
             url: format!("https://www.gog.com/en/game/{}", p["slug"].as_str().unwrap_or_default()),
             image: p["images"]["logo2x"].as_str().map(|u| format!("https:{u}")),
             name: p["title"].as_str().unwrap_or("GOG game").into(),
-            id, app_id: None, price_info: price, cheapest: None, lowest: None,
+            id, price_info: price,
+            ..Default::default()
         }
     }).collect()
 }
@@ -392,9 +393,7 @@ fn parse_epic_sales(v: &Value) -> Vec<Deal> {
                 url: epic_page(o),
                 image: epic_image(o),
                 cut: p.discount, price: p.fin, regular: p.initial,
-                lowest: None,
-                app_id: None,
-                rating: None, rating_text: None,
+                ..Default::default()
             })
         }).collect();
     deals.sort_by_key(|d| std::cmp::Reverse(d.cut));
@@ -450,9 +449,7 @@ fn parse_epic_wishlist(v: &Value) -> R<Vec<WishItem>> {
             url: epic_page(o),
             image: epic_image(o),
             price_info: epic_price(o),
-            app_id: None,
-            cheapest: None,
-            lowest: None,
+            ..Default::default()
         })
     }).collect())
 }
