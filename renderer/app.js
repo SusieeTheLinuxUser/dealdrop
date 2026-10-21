@@ -2004,14 +2004,34 @@ async function copyError () {
 
 // "Update to vX.Y.Z" above the error box when GitHub has a newer release for this platform.
 // The Flatpak installs it and restarts; other builds open the release page.
+// Returns false when the check itself failed; the 6-hourly calls stay silent about that.
 async function checkUpdate () {
-  state.update = await window.api.checkUpdate().catch(() => null)
-  if (!state.update && state.updateError) { state.updateError = null; renderErrors() } // the failed update is gone (installed by hand, or withdrawn)
+  let ok = true
+  state.update = await window.api.checkUpdate().catch(() => { ok = false; return null })
+  if (ok && !state.update && state.updateError) { state.updateError = null; renderErrors() } // the failed update is gone (installed by hand, or withdrawn)
   const box = document.getElementById('sidebar-update')
   const btn = document.getElementById('btn-update')
-  if (!box || !btn || btn.disabled) return
+  if (!box || !btn || btn.disabled) return ok
   box.style.display = state.update ? 'block' : 'none'
   if (state.update) btn.textContent = `Update to v${state.update.version}`
+  return ok
+}
+
+// Settings → About: a check the user asked for, so it says what happened (textContent: the version comes from the network).
+async function checkUpdateNow () {
+  const btn = document.getElementById('btn-check-update')
+  const status = document.getElementById('about-update-status')
+  if (!btn || btn.disabled) return
+  btn.disabled = true
+  status.textContent = 'Checking…'
+  try {
+    const ok = await checkUpdate()
+    if (!ok) status.textContent = "Couldn't reach GitHub. Try again later."
+    else if (state.update) status.textContent = `v${state.update.version} is available: use "Update to v${state.update.version}" in the sidebar.`
+    else status.textContent = "You're on the latest version."
+  } finally {
+    btn.disabled = false
+  }
 }
 
 async function installUpdate () {
@@ -2196,6 +2216,7 @@ async function init () {
   checkUpdate()
   setInterval(checkUpdate, 6 * 3600_000)
   document.getElementById('btn-update')?.addEventListener('click', installUpdate)
+  document.getElementById('btn-check-update')?.addEventListener('click', checkUpdateNow)
 
   if (!state.settings.onboarded) startOnboarding()
 }

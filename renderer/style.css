@@ -204,6 +204,7 @@ html,body{background:transparent} /* window is transparent; #app paints the colo
 .hidden-game-row .settings-reset{flex-shrink:0;margin:0}
 .settings-about{line-height:1.5;overflow-wrap:anywhere}
 .settings-about-version,.settings-about-links,.settings-about-trademark{margin:0 0 8px;color:var(--text1);font-size:12px}
+.settings-about-update{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin:0 0 8px;color:var(--text1);font-size:12px}
 .settings-about-links{display:flex;flex-wrap:wrap;gap:4px 8px}
 .settings-about a{color:var(--acc);text-decoration:underline;cursor:pointer}
 .settings-about h3{margin:14px 0 4px;color:var(--text0);font-size:13px}
