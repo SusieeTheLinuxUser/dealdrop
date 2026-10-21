@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <!-- @VERSION@ and @DATE@ are filled in by the build (flatpak/com.dealdrop.desktop.yml) from src-tauri/Cargo.toml -->
+  <id>com.dealdrop.desktop</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>DealDrop</name>
+  <summary>Game sale, giveaway and wishlist notifier</summary>
+  <developer id="io.github.susieethelinuxuser">
+    <name>SusieeTheLinuxUser</name>
+  </developer>
+  <description>
+    <p>DealDrop notifies you when Steam sales start, when free games drop on Epic, Steam and GOG, and when games on your wishlists go on sale. It runs in your system tray; no API keys, no telemetry.</p>
+    <p>Features:</p>
+    <ul>
+      <li>Free games from Epic, Steam and GOG, de-duplicated across sources</li>
+      <li>Steam sale alerts, with a heads-up the day before a sale starts</li>
+      <li>Store sales from Steam, GOG and Epic Games</li>
+      <li>Hot deals across 30+ stores via CheapShark, with a lowest-ever badge</li>
+      <li>Wishlists from Steam, GOG and Epic, with price targets</li>
+      <li>Hide games, themes, and a seasonal theme during Steam sales</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">com.dealdrop.desktop.desktop</launchable>
+  <url type="homepage">https://github.com/SusieeTheLinuxUser/dealdrop</url>
+  <url type="bugtracker">https://github.com/SusieeTheLinuxUser/dealdrop/issues</url>
+  <url type="vcs-browser">https://github.com/SusieeTheLinuxUser/dealdrop</url>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="@VERSION@" date="@DATE@"/>
+  </releases>
+</component>

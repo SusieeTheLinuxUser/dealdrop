@@ -39,8 +39,14 @@ modules:
       # tauri/custom-protocol: what `cargo tauri build` adds, so the bundled UI is served
       - cargo build --release --locked --features tauri/custom-protocol --manifest-path src-tauri/Cargo.toml
       - install -Dm755 src-tauri/target/release/dealdrop /app/bin/dealdrop
+      - install -Dm644 src-tauri/icons/32x32.png /app/share/icons/hicolor/32x32/apps/com.dealdrop.desktop.png
+      - install -Dm644 src-tauri/icons/64x64.png /app/share/icons/hicolor/64x64/apps/com.dealdrop.desktop.png
       - install -Dm644 src-tauri/icons/128x128.png /app/share/icons/hicolor/128x128/apps/com.dealdrop.desktop.png
+      - install -Dm644 src-tauri/icons/128x128@2x.png /app/share/icons/hicolor/256x256/apps/com.dealdrop.desktop.png
       - install -Dm644 flatpak/com.dealdrop.desktop.desktop /app/share/applications/com.dealdrop.desktop.desktop
+      - >-
+        sed -e "s/@VERSION@/$(sed -n 's/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml | head -1)/" -e "s/@DATE@/$(date -u +%F)/"
+        flatpak/com.dealdrop.desktop.metainfo.xml | install -Dm644 /dev/stdin /app/share/metainfo/com.dealdrop.desktop.metainfo.xml
     sources:
       - type: dir
         path: ..
