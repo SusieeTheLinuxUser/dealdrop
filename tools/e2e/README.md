@@ -5,6 +5,7 @@ Runs the **real release app** (WebKitGTK webview, Rust backend, live store APIs)
 ```bash
 tools/e2e/run.sh tools/e2e/hidden-start.mjs     # --hidden start doesn't mark unseen pages seen
 tools/e2e/run.sh tools/e2e/signin-title.mjs     # sign-in window titles show the site
+tools/e2e/run.sh tools/e2e/close-to-tray.mjs   # closing to the tray fires visibilitychange and marks the page seen
 tools/e2e/run.sh tools/e2e/tray.mjs           # tray menu + counts + shortcut, icon file, new-free-game notification
 DEALDROP_BIN=tools/e2e/flatpak.sh tools/e2e/run.sh tools/e2e/flatpak.mjs   # the installed Flatpak: host config/storage/autostart, update button
 DEALDROP_BIN=/path/to/dealdrop tools/e2e/run.sh <check.mjs> [app args...]
