@@ -1,4 +1,6 @@
 // Minimal W3C WebDriver client for WebKitWebDriver (started by run.sh). No dependencies.
+import { execFileSync } from 'node:child_process'
+
 const base = process.env.WEBDRIVER_URL
 if (!base) throw new Error('run through tools/e2e/run.sh')
 
@@ -37,7 +39,15 @@ export async function launch (args = appArgs) {
     title: () => s('GET', '/title'),
     screenshot: () => s('GET', '/screenshot'), // base64 PNG of the page
     url: () => s('GET', '/url'),
-    quit: () => s('DELETE', ''),
+    async quit () {
+      await s('DELETE', '')
+      // WebDriver only kills `flatpak run`; the sandboxed app outlives it and keeps the single-instance
+      // D-Bus name, so the next launch would hand over to it and exit. This only sees run.sh's instances.
+      if (process.env.DEALDROP_BIN?.endsWith('flatpak.sh')) {
+        try { execFileSync('flatpak', ['kill', 'com.dealdrop.desktop'], { stdio: 'ignore' }) } catch {}
+        for (const end = Date.now() + 10000; Date.now() < end && execFileSync('flatpak', ['ps', '--columns=application'], { encoding: 'utf8' }).includes('com.dealdrop.desktop');) await sleep(200)
+      }
+    },
   }
 }
 
