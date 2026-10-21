@@ -17,6 +17,7 @@ It polls store APIs, shows free games / store sales / hot deals / wishlists, and
 | `renderer/api.js` | `window.api` → Tauri `invoke` bridge (the only place the UI calls backend commands; `app.js` also calls two Tauri window/app APIs directly) |
 | `renderer/app.js` | All UI rendering. `renderer/index.html`, `renderer/style.css`, `renderer/onboarding.js` / `onboarding.css` (first-run guide + tour) |
 | `tools/preview/` | Dev-only browser preview harness with a local mock Tauri bridge; never bundled. Mock flags: `?stress=1&accounts=1&bigwishlist=1&sale=<key>` (also `errors`, `empty`, `stale`, `onboarded`; see its README). `selfcheck.mjs` asserts the pure helpers in `app.js` |
+| `tools/e2e/` | Dev-only headless checks of the real release app: `run.sh <check.mjs>` isolates it (temp home, private D-Bus, `kwin_wayland --virtual`) and the check drives the webview through WebKitWebDriver (see its README) |
 
 ## Backend notes
 
@@ -111,5 +112,5 @@ See [TODO.md](TODO.md) (e.g. the KDE minimize animation flying to the pointer in
 - Autostart at a real login, and its `refresh()` after a real AppImage update (Gear Lever / AppImageUpdate); only `repaired_entry` is unit-tested.
 - Price-target and "sale starts tomorrow" notifications seen for real (only `target_hits` / `sale_starting_tomorrow` are unit-tested; the next sale heads-up is 2026-12-16 UTC).
 - The Free DLC & loot section in the real app (checked in the preview and by the GamerPower parser fixture only).
-- `visibilitychange` (closing to the tray marks the open page's "New" tags seen) in WebKitGTK: unverified that hiding the window fires it, or that a never-shown `--hidden` window pauses `requestAnimationFrame` (`state.pageShown` relies on it; if not, a `--hidden` start still marks the open page seen).
+- `visibilitychange` (closing to the tray marks the open page's "New" tags seen) in WebKitGTK: unverified that hiding the window fires it. A never-shown `--hidden` window does report `document.hidden` and pauses `requestAnimationFrame` (what `state.pageShown` relies on; checked by `tools/e2e/hidden-start.mjs`, WebKitGTK 2.54).
 - Sale-theme switching is unit-tested (`nextTheme` in `app.js`, asserted by `tools/preview/selfcheck.mjs`) and preview-checkable with `?sale=<key>`, but Steam spotlight banner detection (`detect_steam_sale`) during a real sale is still unverified.
