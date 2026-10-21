@@ -1104,7 +1104,9 @@ pub(crate) mod unit {
         assert!(super::newer_version(&tag("v1.0.0/../../evil"), "0.9.2").is_none());
         assert!(super::newer_version("https://github.com/SusieeTheLinuxUser/dealdrop/releases", "0.9.2").is_none()); // no release yet
         assert!(super::newer_version("https://example.com/SusieeTheLinuxUser/dealdrop/releases/tag/v9.9.9", "0.9.2").is_none());
-        assert_eq!(super::asset("0.10.0"), format!("DealDrop_0.10.0_{}.flatpak", std::env::consts::ARCH));
+        let file = if cfg!(windows) { "DealDrop_0.10.0_x64_en-US.msi".into() } else if cfg!(target_os = "macos") { "DealDrop_0.10.0_universal.dmg".into() }
+            else { format!("DealDrop_0.10.0_{}.flatpak", std::env::consts::ARCH) };
+        assert_eq!(super::asset("0.10.0"), file); // the names release-linux.sh and release.yml publish
     }
 
     #[test]
