@@ -60,9 +60,12 @@ pub async fn sign_in_window(
 ) -> R<url::Url> {
     let (tx, mut rx) = mpsc::unbounded_channel::<Option<url::Url>>();
     let tx_nav = tx.clone();
+    let base = title.to_owned();
     let mut b = WebviewWindowBuilder::new(app, label, WebviewUrl::External(start.parse().map_err(|e: url::ParseError| e.to_string())?))
         .title(title)
         .inner_size(820.0, 660.0)
+        // No address bar, so the title shows which site the page is on (a link off the sign-in is visible)
+        .on_page_load(move |w, p| { let _ = w.set_title(&format!("{base} · {}", p.url().host_str().unwrap_or(""))); })
         .on_navigation(move |u| {
             if is_callback(u.as_str()) {
                 let _ = tx_nav.send(Some(u.clone()));
