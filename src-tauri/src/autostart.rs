@@ -126,12 +126,16 @@ fn exec_path(line: &str) -> Option<String> {
 /// update renames the file). Everything else is kept, e.g. `Hidden=true` or
 /// `X-GNOME-Autostart-enabled=false` from the desktop's own autostart settings. A recorded app that
 /// still exists is left alone, so trying another copy doesn't take the entry over, unless both are
-/// release AppImages in the same folder: AppImageUpdate keeps the old file next to the new one.
+/// release AppImages in the same folder: AppImageUpdate keeps the old file next to the new one. Then an
+/// older running copy (by the `DealDrop_<version>_…` filename) doesn't take it back.
 #[cfg(any(target_os = "linux", test))]
 fn repaired_entry(text: &str, exe: &str, exists: impl Fn(&str) -> bool) -> Option<String> {
     let old = text.lines().find_map(exec_path)?;
     let release = |p: &str| p.rsplit_once('/').filter(|(_, f)| f.starts_with("DealDrop_") && f.ends_with(".AppImage")).map(|(dir, _)| dir.to_owned());
-    let update = release(&old).is_some_and(|dir| release(exe) == Some(dir));
+    // "0.10.0" -> [0, 10, 0], so versions compare as numbers; an unparsable one never blocks the update.
+    let version = |p: &str| -> Option<Vec<u32>> { p.rsplit_once('/')?.1.strip_prefix("DealDrop_")?.split_once('_')?.0.split('.').map(|n| n.parse().ok()).collect() };
+    let older = matches!((version(exe), version(&old)), (Some(run), Some(rec)) if run < rec);
+    let update = !older && release(&old).is_some_and(|dir| release(exe) == Some(dir));
     if old == exe || (exists(&old) && !update) || exe.starts_with("/tmp/.mount_") { return None; }
     let exec = format!("Exec={} {HIDDEN}", exec_arg(exe));
     Some(text.lines().map(|l| if l.starts_with("Exec=") { exec.as_str() } else { l }).collect::<Vec<_>>().join("\n") + "\n")
@@ -236,6 +240,11 @@ mod tests {
         assert!(repaired_entry(&old, new, |_| true).is_some()); // AppImageUpdate kept the old file next to it
         assert!(repaired_entry(&old, "/home/me/Downloads/DealDrop_0.9.0_amd64.AppImage", |_| true).is_none()); // a copy elsewhere
         assert!(repaired_entry(&old, "/apps/dealdrop-test", |_| true).is_none()); // not a release AppImage
+        let newer = desktop_entry("/apps/DealDrop_0.10.0_amd64.AppImage", Path::new("/i.png"));
+        assert!(repaired_entry(&newer, "/apps/DealDrop_0.9.1_amd64.AppImage", |_| true).is_none()); // an older copy (as numbers, not text)
+        assert!(repaired_entry(&newer, "/apps/DealDrop_0.9.1_amd64.AppImage", |_| false).is_some()); // ...unless the recorded one is gone
+        assert!(repaired_entry(&old, "/apps/DealDrop_0.10.0_amd64.AppImage", |_| true).is_some()); // 0.8.0 -> 0.10.0 is newer
+        assert!(repaired_entry(&newer, "/apps/DealDrop_dev_amd64.AppImage", |_| true).is_some()); // unparsable: as before
         assert!(repaired_entry(&old, "/tmp/.mount_x/dealdrop", |_| false).is_none());
         assert!(repaired_entry("[Desktop Entry]\nExec=other\n", new, |_| false).is_none());
     }
