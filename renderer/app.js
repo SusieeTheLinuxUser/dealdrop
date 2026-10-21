@@ -1273,9 +1273,7 @@ function makeDealRow (d, isNew = false) {
     return openBrowser(d.url)
   }
   main.addEventListener('click', open)
-  const hide = document.createElement('button')
-  hide.type = 'button'; hide.className = 'deal-open hide-title'; hide.textContent = 'Hide'; hide.setAttribute('aria-label', `Hide ${d.title}`)
-  hide.addEventListener('click', e => { e.stopPropagation(); hideTitle(d.title, hide) })
+  const hide = makeHideButton(d.title, 'deal-open')
   const btn = tmpl(`<button class="deal-open" title="Open store page">↗</button>`)
   btn.setAttribute('aria-label', `Open ${d.title} on ${d.shop}`)
   btn.addEventListener('click', e => { e.stopPropagation(); open() })
@@ -1719,9 +1717,9 @@ function hideTitle (title, button) {
   }
 }
 
-function makeHideButton (title) {
+function makeHideButton (title, look = 'card-btn') {
   const button = document.createElement('button')
-  button.type = 'button'; button.className = 'card-btn hide-title'; button.textContent = 'Hide'
+  button.type = 'button'; button.className = `${look} hide-title`; button.textContent = 'Hide'
   button.setAttribute('aria-label', `Hide ${title}`)
   button.addEventListener('click', e => { e.stopPropagation(); hideTitle(title, button) })
   return button
