@@ -5,7 +5,9 @@
 Left over from the 2026-10-18/19 overnight work (shipped in v0.9.0):
 
 - **Cleanup done 2026-10-21** (date math, test SteamID, parser defaults, `loadJson`/`saveJson`, `makeHideButton`). Deliberately left: merging `keep_prices` into `carry_cheapest` (risks re-arming price targets); an `X-DealDrop-Exe` key in `autostart.rs` (changes the on-disk entry and still needs the `Exec=` reader for old ones); parsing CheapShark bodies once (mostly test churn); `settingRow`/dialog helpers (save about a line each).
-- **Check for real** (see AGENTS.md "Known unverified paths" and TESTING.md §8): the tray on a real panel (its D-Bus side is checked by `tools/e2e/tray.mjs`), start at login from the Flatpak, the Flatpak updating itself; notifications as Plasma shows them (sending is checked by `tools/e2e/`).
+- **Check for real** (see AGENTS.md "Known unverified paths" and TESTING.md §8): the tray on a real panel (its D-Bus side is checked by `tools/e2e/tray.mjs`), start at login from the Flatpak, the Flatpak updating itself (also a system-wide install: the polkit password prompt, since 2026-10-22 no longer blocked by `--noninteractive`); notifications as Plasma shows them (sending is checked by `tools/e2e/`).
+- **Rerun with the desktop unlocked** (2026-10-22 they failed only because the session was locked, see tools/e2e/README.md): `DEALDROP_BIN=tools/e2e/flatpak.sh tools/e2e/run.sh tools/e2e/hidden-start.mjs`, and a look at Settings → About's new **Check for updates** row (layout at 570×420 and wide).
+- **Self-update hardening, deliberately left** (Codex review 2026-10-22): restricting the update client's redirects to GitHub hosts, and a signature/checksum on the bundle. Both only matter if github.com or the repo is compromised, which would also let an attacker change the code. Revisit if the bundle is ever served from somewhere else. Also left: a backend guard against two `install_update` calls at once (the UI disables the button).
 
 ## Minimize animation on KDE Plasma (Wayland) flies to the pointer
 
