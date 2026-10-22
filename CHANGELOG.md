@@ -6,6 +6,8 @@ All notable changes to DealDrop are documented in this file.
 - Linux: DealDrop is now a **Flatpak** (`DealDrop_<version>_x86_64.flatpak`) instead of an AppImage. Install it once by hand; settings, sign-ins and "Start when I log in" carry over from the AppImage (same `~/.config/dealdrop/`). The AppImage gets no more updates.
 - **Update to vX.Y.Z** in the sidebar when a newer release is out (checked at start and every 6 hours). The Flatpak downloads and installs it and restarts; Windows and macOS open the release page.
 - Settings → About has a **Check for updates** button that says whether you're on the latest version (or that GitHub couldn't be reached).
+- The Flatpak carries AppStream info: software centers show its description, version and links when you open the `.flatpak`, and `flatpak info` shows the version.
+- Updated dependencies for two TLS certificate advisories (RUSTSEC-2026-0381, RUSTSEC-2026-0382).
 - Fixed: with Free DLC & loot on, a DLC Steam gives away (listed under Free to keep as "… (DLC)") no longer shows a second time as a loot card.
 
 ## [v0.9.2] - 2026-10-20

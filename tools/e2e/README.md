@@ -14,7 +14,9 @@ DEALDROP_BIN=tools/e2e/flatpak.sh tools/e2e/run.sh tools/e2e/flatpak.mjs   # the
 DEALDROP_BIN=/path/to/dealdrop tools/e2e/run.sh <check.mjs> [app args...]
 ```
 
-`flatpak.sh` runs `flatpak run com.dealdrop.desktop` from your real per-user installation (install the bundle first: `flatpak install --user src-tauri/target/flatpak/DealDrop_*.flatpak`); everything it writes still lands in the throwaway home. `E2E_SCREENSHOT=/tmp/x.png` saves a screenshot of the window with the update button. Inside the private bus there is no `org.freedesktop.Flatpak` service, so `flatpak-spawn --host` (installing an update, launcher detection) can't be exercised here.
+`flatpak.sh` runs `flatpak run com.dealdrop.desktop` from your real per-user installation (install the bundle first: `flatpak install --user src-tauri/target/flatpak/DealDrop_*.flatpak`); everything it writes still lands in the throwaway home. `E2E_SCREENSHOT=/tmp/x.png` saves a screenshot of the window with the update button. Inside the private bus there is no `org.freedesktop.Flatpak` service, so `flatpak-spawn --host` (installing an update, launcher detection) can't be exercised here. `quit()` also runs `flatpak kill` for the Flatpak: WebDriver only stops `flatpak run`, and the sandboxed app would otherwise keep the single-instance name and swallow the next launch.
+
+Checks that need frames (`requestAnimationFrame` in `hidden-start.mjs`, `screenshot()`) fail while your desktop session is locked (`loginctl show-session <n> -p LockedHint`): the virtual compositor stops presenting. Rerun them unlocked.
 
 `tray.mjs` starts `fake-desktop.py` (Python + GObject introspection) on the private bus: a StatusNotifierWatcher like Plasma's and a notification server that log what the app sends. It works with either `DEALDROP_BIN`.
 

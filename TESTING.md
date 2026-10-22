@@ -135,6 +135,8 @@ One pass on Linux (KDE Plasma, Wayland) for everything in CHANGELOG.md [Unreleas
 ### Updating itself (5 min, Flatpak)
 - [ ] Install a Flatpak built with an older version number (e.g. set `0.0.1` in `tauri.conf.json` and `Cargo.toml`, `NO_UPLOAD=1 scripts/release-linux.sh`, install it). Within a few seconds of starting, the sidebar shows **Update to v<latest>**.
 - [ ] Click it: it says **Updating…**, then DealDrop closes and reopens on the latest release (Settings → About shows the new version). `flatpak list --app` shows one DealDrop, in the same installation (user or system) as before.
+- [ ] System-wide install (`flatpak install --system …`): clicking **Update** asks for your password (polkit), then updates and restarts. Cancelling the prompt shows the red box and the app keeps running.
+- [ ] Settings → About → **Check for updates**: says **Checking…**, then "v<latest> is available…" on the old build, "You're on the latest version." after the update, and "Couldn't reach GitHub…" offline; the button works again each time.
 - [ ] Offline (or with a bad download) clicking it shows the red box; **Copy error** includes `Update: …`, and the button works again.
 - [ ] Settings, sign-ins, "New" tags and claimed games survive the update and the AppImage → Flatpak move.
 

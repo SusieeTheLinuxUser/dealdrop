@@ -39,7 +39,7 @@ Optional store sign-in enables wishlist alerts. No API keys or telemetry; DealDr
 - **Bundled fonts** — DM Sans and DM Mono load locally, with no third-party font requests
 - **Safe settings** — an unreadable `config.json` is kept aside as `config.bad.json` instead of being overwritten
 - Native Rust backend (Tauri) — small download, low memory
-- **Updates itself** on Linux: when a new release is out, the sidebar shows **Update to vX.Y.Z**; one click installs it and restarts (Windows/macOS: opens the download page)
+- **Updates itself** on Linux: when a new release is out, the sidebar shows **Update to vX.Y.Z**; one click installs it and restarts (Windows/macOS: opens the download page). Settings → About → **Check for updates** checks right away
 
 ---
 
