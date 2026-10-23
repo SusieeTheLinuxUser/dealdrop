@@ -29,10 +29,12 @@ vm.runInContext([
   between('const PAGE_SIZE', '\n// Rows for the first'),
   between('const BASE_THEMES = {', '\nfunction applyTheme'),
   between('function nextTheme (', '\nfunction syncSaleTheme'),
+  between('function wishlistLowestTag (', '\n// ─── Price targets'),
+  between('const saleKey =', '\n// Live sale →'),
   between('const targetKey', '\nfunction wishlistTargetTag'),
   between('const nextIndex', '\n// Moves focus between'),
   between('const fmt$ =', '\n// CSP forbids inline onerror'),
-  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge, mergeUiPrefs, dealShops, parseClaimed, pruneClaimed, toggleClaimed, claimedLast, normalizeTitle, hiddenTitle, searchRank, parseSeen, newIds, mergeSeen, wishlistKey, seenIds, salesSeenIds, PAGE_SIZE, pageSlice, nextTheme, targetKey, targetPrice, targetHit, parseTarget, protonTier, protonText, protonTag, nextIndex, fmt$, salePriceDescription, dataSig, timeLeft, endsFirst, endDateLabel, startDateLabel, fmtChecked, gameStoreName, srcIcon }',
+  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge, mergeUiPrefs, dealShops, parseClaimed, pruneClaimed, toggleClaimed, claimedLast, normalizeTitle, hiddenTitle, searchRank, parseSeen, newIds, mergeSeen, wishlistKey, seenIds, salesSeenIds, PAGE_SIZE, pageSlice, nextTheme, targetKey, targetPrice, targetHit, parseTarget, protonTier, protonText, protonTag, nextIndex, fmt$, salePriceDescription, dataSig, timeLeft, endsFirst, endDateLabel, startDateLabel, fmtChecked, gameStoreName, srcIcon, wishlistLowestTag, saleKey, BASE_THEMES, SALE_THEMES }',
 ].join('\n'), context)
 
 const h = context.helpers
@@ -323,4 +325,60 @@ assert.equal(h.srcIcon('other'), '🎮')
 assert.equal(h.dataSig({ deals: [1], lastChecked: 1 }), h.dataSig({ deals: [1], lastChecked: 2 }))
 assert.notEqual(h.dataSig({ deals: [1], lastChecked: 1 }), h.dataSig({ deals: [2], lastChecked: 1 }))
 
-console.log('Renderer self-check passed (price targets, escaping, hidden titles, search ranking, filters, store filter, UI preference merge, claimed games, seen deals, list paging, next sale, refresh age, sale themes, J/K navigation, money and date labels, poll data signature).')
+// Escaping: every remote string that goes near innerHTML; `'` passes through because every
+// attribute interpolation in app.js is double-quoted (the tripwire below fails if one ever isn't)
+assert.equal(h.escHtml(`<tag a="&">'`), '&lt;tag a=&quot;&amp;&quot;&gt;\'')
+assert.equal(h.escHtml(`<b>&"'</b>`), '&lt;b&gt;&amp;&quot;\'&lt;/b&gt;')
+assert.equal(h.escHtml('Hades & Co'), 'Hades &amp; Co')
+assert.equal(h.escHtml(''), '')
+assert.equal(h.escHtml(null), '')
+assert.equal(h.escHtml(5), '5')
+assert.equal(/='\$\{[^}]*escHtml\(/.test(app), false) // no single-quoted attribute carries an escaped value
+
+// ProtonDB: all five tiers render (capitalised, on the 🐧 tag); anything else never does
+h.state.proton = { 1: 'platinum', 2: 'gold', 3: 'silver', 4: 'bronze', 5: 'borked', 6: 'pending', 7: 'Platinum' }
+for (const [id, tier] of Object.entries(h.state.proton).slice(0, 5)) {
+  assert.match(h.protonTag(id), new RegExp(`class="proton-tag ${tier}".*🐧 ${tier[0].toUpperCase() + tier.slice(1)}`), tier)
+  assert.equal(h.protonText(id), `ProtonDB: ${tier[0].toUpperCase() + tier.slice(1)}`)
+}
+for (const id of [6, 7]) assert.equal(h.protonTag(String(id)), '', `tier ${h.state.proton[id]} must not render`) // pending and wrong-case are unknown
+h.state.proton = {}
+
+// "Lowest ever": USD store prices at their all-time low, with a cent of slack
+const low = (final, lowest, currency = 'USD', discount = 50) => h.wishlistLowestTag({ lowest, priceInfo: { final, lowest, currency, discount } })
+assert.match(low(4.99, 4.99), /Lowest ever/)
+assert.match(low(4.995, 4.99), /Lowest ever/)  // a cent above the low still counts
+assert.equal(low(5.00, 4.99), '')              // more than that: no tag
+assert.equal(low(4.99, 4.99, 'EUR'), '')       // CheapShark's low is USD: only USD compares
+assert.equal(low(4.99, 4.99, 'USD', 0), '')    // not on sale: the tag is only for sales
+assert.equal(low(4.99, null), '')
+
+// Calendar: the sale name carries its theme key
+assert.equal(h.saleKey({ name: 'Steam Winter Sale' }), 'winter')
+assert.equal(h.saleKey({ name: 'Lunar New Year Sale' }), 'lunar')
+assert.equal(h.saleKey({ name: 'Autumn Sale' }), 'autumn')
+assert.equal(h.saleKey({ name: 'Weekly Deals' }), undefined)
+assert.equal(h.saleKey({ name: 'Steam Scream Fest' }), undefined) // a fest, not a seasonal sale
+
+// Countdowns: the d/h/soon split is the floor of the exact instant delta (never a wall-clock
+// day count, which would shift across a DST night); relative durations keep this runnable any day
+for (const [ms, label] of [[2.5 * 86400000, '2d left'], [86400000 + 60000, '1d left'], [86400000 - 60000, '23h left'], [5 * 3600000 - 60000, '4h left'], [3600000 + 60000, '1h left'], [3600000 - 60000, 'ending soon']]) {
+  assert.equal(h.timeLeft(new Date(Date.now() + ms).toISOString()), label, String(ms))
+}
+assert.equal(h.timeLeft(new Date(Date.now() - 86400000).toISOString()), 'ended') // a day past, not a negative label
+assert.equal(h.timeLeft('2026-12-31'), h.timeLeft('2026-12-31T00:00:00Z')) // a date-only string is UTC midnight
+assert.equal(h.timeLeft('9999-12-31T00:00:00Z').endsWith('d left'), true)  // a far future date is still days
+assert.equal(h.endDateLabel('2020-01-01T00:00:00Z'), 'Ended')              // long past, not "ending soon"
+
+// Themes: every theme the JS offers has a CSS block (midnight is the :root default), and CSS has none the JS lacks
+const css = readFileSync(new URL('../../renderer/style.css', import.meta.url), 'utf8')
+const cssThemes = new Set([...css.matchAll(/html\[data-theme="([a-z]+)"\]/g)].map(m => m[1]))
+const jsThemes = new Set([...Object.keys(h.BASE_THEMES), ...Object.keys(h.SALE_THEMES)])
+for (const t of jsThemes) {
+  if (t === 'midnight') { assert.equal(cssThemes.has('midnight'), false, 'midnight should be the :root default, not its own block'); continue }
+  assert.equal(cssThemes.has(t), true, `theme "${t}" has no html[data-theme] block in style.css`)
+}
+for (const t of cssThemes) assert.equal(jsThemes.has(t), true, `style.css theme "${t}" is missing from BASE_THEMES/SALE_THEMES in app.js`)
+assert.equal(jsThemes.has('midnight'), true) // and the root default is offered in Settings
+
+console.log('Renderer self-check passed (price targets, escaping, hidden titles, search ranking, filters, store filter, UI preference merge, claimed games, seen deals, list paging, next sale, refresh age, sale themes, J/K navigation, money and date labels, poll data signature, ProtonDB tiers, lowest-ever rule, sale keys, countdown thresholds, theme/CSS consistency).')
