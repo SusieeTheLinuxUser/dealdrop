@@ -328,6 +328,17 @@ const EPIC_OFFER_FIELDS: &str = r#"title id namespace urlSlug productSlug
   price(country:"US"){totalPrice{discountPrice originalPrice discount currencyInfo{decimals}
     fmtPrice(locale:"en-US"){discountPrice}}}"#;
 
+/// A GraphQL body is a failure only when it carries an error message and no data;
+/// a message alongside data (a partial answer) is passed through.
+fn gql_checked(v: Value, bearer: Option<&str>) -> R<Value> {
+    if let Some(e) = v["errors"][0]["message"].as_str() {
+        if v["data"].is_null() {
+            return Err(match bearer { Some(b) => redact(e.to_string(), &[b]), None => e.to_string() });
+        }
+    }
+    Ok(v)
+}
+
 async fn epic_gql(url: &str, ua: &str, bearer: Option<&str>, query: &str, vars: Value) -> R<Value> {
     let mut req = client().post(url).header("User-Agent", ua).json(&json!({"query": query, "variables": vars}));
     if let Some(b) = bearer { req = req.bearer_auth(b); }
@@ -336,12 +347,7 @@ async fn epic_gql(url: &str, ua: &str, bearer: Option<&str>, query: &str, vars: 
         return Err(format!("HTTP {}", res.status().as_u16()));
     }
     let v: Value = res.json().await.map_err(|e| match bearer { Some(b) => redact(net_err(e), &[b]), None => net_err(e) })?;
-    if let Some(e) = v["errors"][0]["message"].as_str() {
-        if v["data"].is_null() {
-            return Err(match bearer { Some(b) => redact(e.to_string(), &[b]), None => e.to_string() });
-        }
-    }
-    Ok(v)
+    gql_checked(v, bearer)
 }
 
 fn epic_image(o: &Value) -> Option<String> {
