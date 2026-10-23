@@ -113,5 +113,48 @@ mod tests {
         let system = "[Instance]\ninstance-id=\napp-path=/var/lib/flatpak/app/com.dealdrop.desktop/x86_64/master/abc/files\n";
         assert_eq!(installation(system), "--system");
         assert_eq!(instance_id(system), None);
+        // No app-path at all (an older runtime): not provably in the user's home, so --system asks for the password
+        assert_eq!(installation("[Instance]\ninstance-id=x\n"), "--system");
+    }
+
+    #[test]
+    fn host_dirs_follow_the_host_overrides_and_fall_back_to_home() {
+        let home = std::path::Path::new("/home/me");
+        let get = |k: &str| match k {
+            "HOST_XDG_CONFIG_HOME" => Some("/host/cfg".into()),
+            _ => None,
+        };
+        let dirs = host_dirs(home, get);
+        assert_eq!(dirs[0].0, "XDG_CONFIG_HOME");
+        assert_eq!(dirs[0].1, std::path::Path::new("/host/cfg"));
+        assert_eq!(dirs[1].1, home.join(".local/share")); // no override: the home default
+        // An empty override is no override
+        let both = host_dirs(home, |k| Some(if k == "HOST_XDG_DATA_HOME" { "".into() } else { "/h".into() }));
+        assert_eq!(both[0].1, std::path::Path::new("/h"));
+        assert_eq!(both[1].1, home.join(".local/share"));
+    }
+
+    #[test]
+    fn install_command_installs_the_bundle_without_noninteractive() {
+        let bundle = std::path::Path::new("/cache/dealdrop-update.flatpak");
+        for flag in ["--user", "--system"] {
+            let cmd = install_command(flag, bundle);
+            assert_eq!(cmd.get_program(), "flatpak-spawn");
+            let args: Vec<_> = cmd.get_args().map(|a| a.to_string_lossy().into_owned()).collect();
+            assert_eq!(args, vec!["--host", "flatpak", "install", flag, "-y", "--reinstall", "--bundle", "/cache/dealdrop-update.flatpak"]);
+            // `--noninteractive` also stops polkit from asking for the password (see AGENTS.md)
+            assert!(!args.iter().any(|a| a.contains("noninteractive")));
+        }
+    }
+
+    #[test]
+    fn restart_command_waits_for_this_instance_then_runs_the_app() {
+        let cmd = restart_command("1234567");
+        assert_eq!(cmd.get_program(), "flatpak-spawn");
+        let args: Vec<_> = cmd.get_args().map(|a| a.to_string_lossy().into_owned()).collect();
+        assert_eq!(&args[..3], &["--host", "sh", "-c"]);
+        let script = &args[3];
+        assert!(script.contains("flatpak ps") && script.contains("flatpak run"), "{script}");
+        assert_eq!(&args[4..], &["sh", "1234567", APP_ID]); // $1 = instance to wait for, $2 = the app
     }
 }
