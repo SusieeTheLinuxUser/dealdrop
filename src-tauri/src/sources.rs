@@ -902,7 +902,7 @@ fn parse_cheapshark_deals(body: &str, stores: &HashMap<String, String>) -> R<Vec
     Ok(v.as_array().into_iter().flatten().filter_map(|d| {
         let id = s(&d["dealID"])?;
         let (price, regular) = (money(&d["salePrice"])?, money(&d["normalPrice"])?);
-        let rating = Some(f(&d["steamRatingPercent"]).round() as u32).filter(|&r| r > 0 && f(&d["steamRatingCount"]) > 0.0);
+        let rating = Some(f(&d["steamRatingPercent"]).round().clamp(0.0, 100.0) as u32).filter(|&r| r > 0 && f(&d["steamRatingCount"]) > 0.0);
         Some(Deal {
             url: format!("https://www.cheapshark.com/redirect?dealID={id}"),
             id,
@@ -1795,6 +1795,17 @@ pub(crate) mod unit {
         assert_eq!(super::money(&json!(" 4.99 ")), Some(4.99));
         assert_eq!(super::money(&json!(0)), Some(0.0));
         assert_eq!(super::money(&json!("0.00")), Some(0.0));
+    }
+
+    #[test]
+    fn steam_ratings_stay_within_zero_to_a_hundred() {
+        let stores = std::collections::HashMap::new();
+        let row = |rating: &str| format!(
+            r#"{{"dealID":"d","title":"T","storeID":"1","salePrice":"5.00","normalPrice":"10.00","savings":"50","steamRatingPercent":"{rating}","steamRatingCount":"10","steamRatingText":"Good"}}"#);
+        for (rating, shown) in [("98", Some(98)), ("100", Some(100)), ("0", None), ("-5", None), ("150", Some(100)), ("1e300", Some(100)), ("NaN", None)] {
+            let v = super::parse_cheapshark_deals(&format!("[{}]", row(rating)), &stores).unwrap();
+            assert_eq!(v[0].rating, shown, "steamRatingPercent {rating}");
+        }
     }
 
     #[test]
