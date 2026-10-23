@@ -7,6 +7,7 @@ All notable changes to DealDrop are documented in this file.
 - **Update to vX.Y.Z** in the sidebar when a newer release is out (checked at start and every 6 hours). The Flatpak downloads and installs it and restarts; Windows and macOS open the release page.
 - Settings → About has a **Check for updates** button that says whether you're on the latest version (or that GitHub couldn't be reached).
 - The Flatpak carries AppStream info: software centers show its description, version and links when you open the `.flatpak`, and `flatpak info` shows the version.
+- Linux: free games, store sales, hot deals and wishlist games show their **ProtonDB rating** (🐧 Platinum … Borked: how well they run through Proton), and a single-game alert names it ("Hades is free on Steam! · ProtonDB: Platinum"). Looked up by Steam app id, cached for a week; not shown on Windows/macOS.
 - Updated dependencies for two TLS certificate advisories (RUSTSEC-2026-0381, RUSTSEC-2026-0382).
 - Fixed: with Free DLC & loot on, a DLC Steam gives away (listed under Free to keep as "… (DLC)") no longer shows a second time as a loot card.
 

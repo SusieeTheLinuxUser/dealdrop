@@ -162,6 +162,9 @@ html,body{background:transparent} /* window is transparent; #app paints the colo
 .target-action:hover{background:var(--bg4)}
 .target-note:empty{display:none}
 .target-tag{font-size:9px;font-weight:600;font-family:var(--mono);color:var(--text1);background:var(--bg3);padding:2px 6px;border-radius:var(--rs);white-space:nowrap}
+/* ProtonDB tier: theme text colour (readable on Daylight too) with the tier's colour as a side bar */
+.proton-tag{font-size:9px;font-weight:600;font-family:var(--mono);color:var(--text1);background:var(--bg3);padding:2px 6px;border-radius:var(--rs);white-space:nowrap;border-left:3px solid var(--tier)}
+.proton-tag.platinum{--tier:#b4c7dc}.proton-tag.gold{--tier:#cfb53b}.proton-tag.silver{--tier:#a6a6a6}.proton-tag.bronze{--tier:#cd7f32}.proton-tag.borked{--tier:#ff4d4d}
 .target-tag.hit{color:var(--green);background:var(--grn-d)}
 
 .info-notice{display:flex;align-items:center;gap:8px;padding:10px 14px;margin-bottom:14px;background:var(--bg2);border:1px solid var(--bord2);border-radius:var(--r);font-size:13px;color:var(--text1)}

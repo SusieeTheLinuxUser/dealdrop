@@ -104,6 +104,8 @@
     wishlistErrors: signedStores.has('gog') && flags.get('errors') === '1' ? { gog: 'Could not refresh wishlist' } : {},
     sourceErrors: flags.get('errors') === '1' ? ['Epic sales: HTTP 500', 'GOG giveaways: unavailable'] : [],
     lastChecked,
+    // Sent by Linux builds only; one of each tier across the pages
+    proton: empty ? {} : { 440: 'platinum', 570: 'gold', 441: 'silver', 442: 'bronze', 443: 'borked', 124: 'gold' },
   }
   const syncWishlist = () => { sample.wishlist = empty ? [] : wishlistItems.filter(item => signedStores.has(item.store)) }
   if (stress) {

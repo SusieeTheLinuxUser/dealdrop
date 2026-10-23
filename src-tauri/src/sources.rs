@@ -1013,6 +1013,25 @@ fn parse_cheapest_deal(deals: &Value, stores: &HashMap<String, String>) -> Optio
     })
 }
 
+// ─── ProtonDB ─────────────────────────────────────────────────────────────────
+
+const PROTON_TIERS: [&str; 5] = ["platinum", "gold", "silver", "bronze", "borked"];
+
+/// ProtonDB's community rating for a Steam app: how well it runs on Linux through Proton.
+/// Ok(None) when there's no settled rating: no reports yet (404) or still "pending".
+pub async fn protondb_tier(app_id: &str) -> R<Option<String>> {
+    if app_id.is_empty() || !app_id.bytes().all(|b| b.is_ascii_digit()) { return Ok(None); }
+    match get_json(&format!("https://www.protondb.com/api/v1/reports/summaries/{app_id}.json")).await {
+        Ok(v) => Ok(parse_protondb(&v)),
+        Err(e) if e == "HTTP 404" => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+fn parse_protondb(v: &Value) -> Option<String> {
+    s(&v["tier"]).filter(|t| PROTON_TIERS.contains(&t.as_str()))
+}
+
 // Live smoke tests: `cargo test -- --ignored --nocapture` (needs network).
 #[cfg(test)]
 mod live {
@@ -1088,6 +1107,12 @@ mod live {
         assert_eq!(m.len(), 2);
         println!("{:?}", m);
     }
+    #[tokio::test] #[ignore] async fn protondb_live() {
+        let hades = protondb_tier("1145360").await.expect("ProtonDB summary");
+        println!("Hades on ProtonDB: {hades:?}");
+        assert!(hades.is_some(), "a heavily reported game has no tier");
+        assert_eq!(protondb_tier("1").await, Ok(None)); // no such app: 404 means no rating, not an error
+    }
 }
 
 #[cfg(test)]
@@ -1107,6 +1132,16 @@ pub(crate) mod unit {
         let file = if cfg!(windows) { "DealDrop_0.10.0_x64_en-US.msi".into() } else if cfg!(target_os = "macos") { "DealDrop_0.10.0_universal.dmg".into() }
             else { format!("DealDrop_0.10.0_{}.flatpak", std::env::consts::ARCH) };
         assert_eq!(super::asset("0.10.0"), file); // the names release-linux.sh and release.yml publish
+    }
+
+    #[test]
+    fn protondb_tier_is_a_known_rating_only() {
+        let tier = |body: &str| super::parse_protondb(&serde_json::from_str(body).unwrap());
+        assert_eq!(tier(r#"{"tier":"platinum","total":756,"trendingTier":"gold"}"#).as_deref(), Some("platinum"));
+        assert_eq!(tier(r#"{"tier":"borked"}"#).as_deref(), Some("borked"));
+        assert_eq!(tier(r#"{"tier":"pending","total":1}"#), None);
+        assert_eq!(tier(r#"{"tier":"<b>x</b>"}"#), None); // never pass arbitrary text on to the UI
+        assert_eq!(tier("{}"), None);
     }
 
     #[test]

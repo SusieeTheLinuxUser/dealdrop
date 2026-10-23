@@ -32,7 +32,7 @@ vm.runInContext([
   between('const targetKey', '\nfunction wishlistTargetTag'),
   between('const nextIndex', '\n// Moves focus between'),
   between('const fmt$ =', '\n// CSP forbids inline onerror'),
-  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge, mergeUiPrefs, dealShops, parseClaimed, pruneClaimed, toggleClaimed, claimedLast, normalizeTitle, hiddenTitle, searchRank, parseSeen, newIds, mergeSeen, wishlistKey, seenIds, salesSeenIds, PAGE_SIZE, pageSlice, nextTheme, targetKey, targetPrice, targetHit, parseTarget , nextIndex, fmt$, salePriceDescription, dataSig, timeLeft, endsFirst, endDateLabel, startDateLabel, fmtChecked, gameStoreName, srcIcon }',
+  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge, mergeUiPrefs, dealShops, parseClaimed, pruneClaimed, toggleClaimed, claimedLast, normalizeTitle, hiddenTitle, searchRank, parseSeen, newIds, mergeSeen, wishlistKey, seenIds, salesSeenIds, PAGE_SIZE, pageSlice, nextTheme, targetKey, targetPrice, targetHit, parseTarget, protonTier, protonText, protonTag, nextIndex, fmt$, salePriceDescription, dataSig, timeLeft, endsFirst, endDateLabel, startDateLabel, fmtChecked, gameStoreName, srcIcon }',
 ].join('\n'), context)
 
 const h = context.helpers
@@ -181,6 +181,13 @@ assert.equal(step('', { theme: 'lunar', baseTheme: 'gone' }), 'midnight/')     /
 assert.equal(h.parseTarget('12.345'), 12.35)
 assert.equal(h.parseTarget('10000'), 10000)
 for (const bad of ['', '0', '0.004', '-1', '10000.01', 'abc', 'Infinity']) assert.equal(h.parseTarget(bad), null, bad)
+
+h.state.proton = { 440: 'gold', 7: '<img src=x>', 8: 'constructor' }
+assert.equal(h.protonTier('440'), 'gold')
+assert.equal(h.protonText('440'), 'ProtonDB: Gold')
+assert.match(h.protonTag('440'), /class="proton-tag gold".*🐧 Gold.*ProtonDB: Gold\./)
+for (const id of [null, undefined, '9', '7', '8', 'constructor']) assert.equal(h.protonTag(id), '', String(id)) // unknown or unexpected tiers never render
+h.state.proton = {}
 const targeted = { store: 'gog', id: 'g1', priceInfo: { final: 15, currency: 'USD' }, cheapest: { price: 9.5 } }
 assert.equal(h.targetKey(targeted), 'gog:g1')
 assert.equal(h.targetPrice(targeted), 9.5)

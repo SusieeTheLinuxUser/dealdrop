@@ -88,6 +88,16 @@ struct Db {
     fired_targets: HashMap<String, f64>,
     /// The first poll has recorded the free list (absent in old config files, so false).
     primed: bool,
+    /// ProtonDB lookups by Steam appid (`proton_tiers`), so each game is asked about once a week.
+    proton: HashMap<String, ProtonEntry>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct ProtonEntry {
+    /// None: ProtonDB has no settled rating for it yet.
+    tier: Option<String>,
+    /// When it was looked up (ms).
+    at: u64,
 }
 
 // ─── App state ────────────────────────────────────────────────────────────────
@@ -112,6 +122,8 @@ struct Snapshot {
     /// Sources that failed this round ("Epic sales: HTTP 500"); the sidebar shows them in a red box.
     source_errors: Vec<String>,
     last_checked: u64,
+    /// Steam appid → ProtonDB tier ("platinum" … "borked") for the games listed above. Linux only.
+    proton: HashMap<String, String>,
 }
 
 /// Write `text` to `path` (0600: it holds API keys and tokens), swapping it in atomically.
@@ -467,12 +479,16 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
     let free_weekends = dedupe_free(sw);
     let free_loot = drop_listed_loot(free_loot, &free_games);
 
+    // Before the free-game alerts so they can name the tier; free games are looked up first.
+    let mut proton = proton_tiers(st, free_games.iter().chain(&free_weekends).map(|g| &g.app_id)
+        .chain(sales.steam.iter().chain(&deals).map(|d| &d.app_id))).await;
+
     // The very first poll on a fresh install only records what is free today; no notification burst.
     let had_errors = *free_failed.lock().unwrap();
     match st.read(|d| should_prime(d.primed, d.seen_free_ids.is_empty(), had_errors)) {
         Prime::Notify { mark } => {
-            if settings.notify_free_game { notify_new_free(app, st, &free_games, false); }
-            if settings.notify_free_weekend { notify_new_free(app, st, &free_weekends, true); }
+            if settings.notify_free_game { notify_new_free(app, st, &free_games, false, &proton); }
+            if settings.notify_free_weekend { notify_new_free(app, st, &free_weekends, true, &proton); }
             if mark { st.edit(|d| d.primed = true); }
         }
         Prime::Record => {
@@ -541,14 +557,58 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
             keep_prices(&mut wishlist, &prev.wishlist);
         }
     }
-    if settings.notify_wishlist_sale { notify_wishlist(app, st, &wishlist); }
+    proton.extend(proton_tiers(st, wishlist.iter().map(|w| &w.app_id)).await);
+    if settings.notify_wishlist_sale { notify_wishlist(app, st, &wishlist, &proton); }
     notify_targets(app, st, &wishlist); // setting a target is the opt-in, so no extra toggle
-    if settings.notify_big_deal { notify_big_deals(app, st, &deals); }
+    if settings.notify_big_deal { notify_big_deals(app, st, &deals, &proton); }
 
     Snapshot {
         free_games, free_weekends, free_upcoming, free_loot, sales, live_sale, deals, deals_source, deals_error,
         wishlist, wishlist_private, wishlist_errors, source_errors: source_errors.into_inner().unwrap(), last_checked: now_ms(),
+        proton,
     }
+}
+
+const PROTON_TTL_MS: u64 = 7 * 86_400_000;
+/// A game not listed for this long is dropped from the cache.
+const PROTON_FORGET_MS: u64 = 30 * 86_400_000;
+/// Lookups per poll (4 at a time): a big wishlist fills in over a few polls instead of hammering ProtonDB.
+const PROTON_PER_POLL: usize = 60;
+
+/// Steam appid → ProtonDB tier for `ids` from the cache, first looking up the missing and week-old ones.
+/// Linux only: the tier says how a game runs through Proton, which means nothing on Windows/macOS.
+/// A failed lookup keeps the old entry and is retried next poll; it's not worth an error box.
+async fn proton_tiers<'a>(st: &AppState, ids: impl IntoIterator<Item = &'a Option<String>>) -> HashMap<String, String> {
+    if !cfg!(target_os = "linux") { return HashMap::new(); }
+    let mut uniq = HashSet::new();
+    let ids: Vec<String> = ids.into_iter().flatten().filter(|id| uniq.insert(*id)).cloned().collect();
+    let now = now_ms();
+    let stale: Vec<String> = st.read(|d| ids.iter()
+        .filter(|id| d.proton.get(*id).is_none_or(|e| now.saturating_sub(e.at) > PROTON_TTL_MS))
+        .take(PROTON_PER_POLL).cloned().collect());
+    use futures::StreamExt;
+    let got: Vec<(String, R<Option<String>>)> = futures::stream::iter(stale)
+        .map(|id| async move { let tier = protondb_tier(&id).await; (id, tier) })
+        .buffer_unordered(4).collect().await;
+    let known = |d: &Db| ids.iter().filter_map(|id| Some((id.clone(), d.proton.get(id)?.tier.clone()?))).collect();
+    if got.is_empty() { return st.read(known); }
+    st.edit(|d| {
+        for (id, tier) in got {
+            match tier {
+                Ok(tier) => { d.proton.insert(id, ProtonEntry { tier, at: now }); }
+                Err(e) => eprintln!("[protondb] {id}: {e}"),
+            }
+        }
+        d.proton.retain(|_, e| now.saturating_sub(e.at) < PROTON_FORGET_MS);
+        known(d)
+    })
+}
+
+/// " · ProtonDB: Gold" for a game with a known tier, else "".
+fn proton_suffix(app_id: &Option<String>, proton: &HashMap<String, String>) -> String {
+    let Some(tier) = app_id.as_ref().and_then(|id| proton.get(id)) else { return String::new() };
+    let mut c = tier.chars();
+    c.next().map_or(String::new(), |f| format!(" · ProtonDB: {}{}", f.to_uppercase(), c.as_str()))
 }
 
 /// True when this store's slot still holds `refresh` (the token this poll is acting for).
@@ -611,12 +671,12 @@ fn fresh_free<'a>(items: &'a [Free], seen: &HashSet<String>, hidden: &[String]) 
 }
 
 /// One game gets its own notice. Several share one, listing every title.
-fn free_notice(fresh: &[&Free], weekend: bool) -> Option<Notice> {
+fn free_notice(fresh: &[&Free], weekend: bool, proton: &HashMap<String, String>) -> Option<Notice> {
     match fresh {
         [] => None,
         [g] => Some(Notice {
             title: if weekend { format!("Free weekend: {}", g.title) } else { format!("Free: {}", g.title) },
-            body: format!("{} is free on {}!", g.title, store_label(&g.source)),
+            body: format!("{} is free on {}!{}", g.title, store_label(&g.source), proton_suffix(&g.app_id, proton)),
         }),
         many => Some(Notice {
             title: format!("{} free {} available", many.len(), if weekend { "weekend games" } else { "games" }),
@@ -630,11 +690,11 @@ fn remember_free(seen: &mut HashSet<String>, games: &[Free]) {
     seen.extend(games.iter().map(|g| g.id.clone()));
 }
 
-fn notify_new_free(app: &AppHandle, st: &AppState, games: &[Free], weekend: bool) {
+fn notify_new_free(app: &AppHandle, st: &AppState, games: &[Free], weekend: bool, proton: &HashMap<String, String>) {
     let (fresh, unseen) = st.read(|d| (fresh_free(games, &d.seen_free_ids, &d.settings.hidden), games.iter().any(|g| !d.seen_free_ids.contains(&g.id))));
     if !unseen { return; }
     st.edit(|d| remember_free(&mut d.seen_free_ids, games));
-    if let Some(n) = free_notice(&fresh, weekend) { notify(app, &n.title, &n.body); }
+    if let Some(n) = free_notice(&fresh, weekend, proton) { notify(app, &n.title, &n.body); }
 }
 
 fn discount(w: &WishItem) -> u32 { w.price_info.as_ref().map_or(0, |p| p.discount) }
@@ -663,14 +723,14 @@ fn fresh_wishlist<'a>(items: &'a [WishItem], seen: &HashSet<String>, hidden: &[S
 }
 
 /// One game names its price. Several share one notice, the first four names, then an ellipsis.
-fn wishlist_notice(fresh: &[&WishItem]) -> Option<Notice> {
+fn wishlist_notice(fresh: &[&WishItem], proton: &HashMap<String, String>) -> Option<Notice> {
     match fresh {
         [] => None,
         [w] => {
             let p = w.price_info.as_ref().unwrap();
             Some(Notice {
                 title: format!("🏷️ {} is on sale!", w.name),
-                body: format!("{}% off — now {} on {}", p.discount, p.formatted.clone().unwrap_or_default(), store_label(&w.store)),
+                body: format!("{}% off — now {} on {}{}", p.discount, p.formatted.clone().unwrap_or_default(), store_label(&w.store), proton_suffix(&w.app_id, proton)),
             })
         }
         many => {
@@ -691,9 +751,9 @@ fn remember_wishlist(seen: &mut HashSet<String>, items: &[WishItem], min_cut: u3
     for w in items { if discount(w) < 5 { seen.remove(&sale_key(w)); } }
 }
 
-fn notify_wishlist(app: &AppHandle, st: &AppState, items: &[WishItem]) {
+fn notify_wishlist(app: &AppHandle, st: &AppState, items: &[WishItem], proton: &HashMap<String, String>) {
     let (fresh, min_cut) = st.read(|d| (fresh_wishlist(items, &d.seen_sale_ids, &d.settings.hidden, d.settings.wishlist_min_cut), d.settings.wishlist_min_cut));
-    if let Some(n) = wishlist_notice(&fresh) { notify(app, &n.title, &n.body); }
+    if let Some(n) = wishlist_notice(&fresh, proton) { notify(app, &n.title, &n.body); }
     st.edit(|d| remember_wishlist(&mut d.seen_sale_ids, items, min_cut));
 }
 
@@ -758,10 +818,10 @@ fn fresh_big_deals<'a>(items: &'a [Deal], seen: &HashSet<String>, hidden: &[Stri
     items.iter().filter(|x| x.cut >= min_cut && !seen.contains(&x.id) && !is_hidden(hidden, &x.title)).collect()
 }
 
-fn notify_big_deals(app: &AppHandle, st: &AppState, deals: &[Deal]) {
+fn notify_big_deals(app: &AppHandle, st: &AppState, deals: &[Deal], proton: &HashMap<String, String>) {
     let (fresh, min_cut): (Vec<&Deal>, u32) = st.read(|d| (fresh_big_deals(deals, &d.seen_deal_ids, &d.settings.hidden, d.settings.big_deal_min_cut), d.settings.big_deal_min_cut));
     if let [d] = fresh[..] {
-        notify(app, &format!("🔥 {}% off: {}", d.cut, d.title), &format!("{} — ${:.2}", d.shop, d.price));
+        notify(app, &format!("🔥 {}% off: {}", d.cut, d.title), &format!("{} — ${:.2}{}", d.shop, d.price, proton_suffix(&d.app_id, proton)));
     } else if !fresh.is_empty() {
         let names: Vec<&str> = fresh.iter().take(4).map(|d| d.title.as_str()).collect();
         notify(app, &format!("{} deals at {}%+ off", fresh.len(), min_cut), &(names.join(", ") + if fresh.len() > 4 { "…" } else { "" }));
@@ -1144,7 +1204,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{LiveSale, days_from_civil, sale_soon_notice, sale_starting_tomorrow, SALES, clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, keep_or_fail, keep_prices, carry_cheapest, carry_deal_lowest, normalize_hidden, normalize_targets, target_hits, target_notice, price_failure, CS_BLOCKED, normalize_title, remember_big_deals, remember_free, remember_wishlist, restore_by_prefix, safe_https, sale_key, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, load_db, Acct, Db, Deal, Free, Price, Prime, Settings, SteamProfile, Tokens, WishItem, accounts, same_refresh};
+    use super::{LiveSale, days_from_civil, sale_soon_notice, sale_starting_tomorrow, SALES, clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, keep_or_fail, keep_prices, carry_cheapest, carry_deal_lowest, normalize_hidden, normalize_targets, target_hits, target_notice, price_failure, CS_BLOCKED, normalize_title, remember_big_deals, remember_free, remember_wishlist, restore_by_prefix, safe_https, sale_key, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, load_db, proton_suffix, Acct, Db, Deal, Free, Price, Prime, Settings, SteamProfile, Tokens, WishItem, accounts, same_refresh};
     use std::collections::{HashMap, HashSet};
 
     #[cfg(unix)]
@@ -1437,12 +1497,12 @@ mod tests {
         let games = vec![game("steam-ftk-1", "Hades", "steam", "free")];
         let mut seen = HashSet::new();
         let fresh = fresh_free(&games, &seen, &[]);
-        let n = free_notice(&fresh, false).unwrap();
+        let n = free_notice(&fresh, false, &HashMap::new()).unwrap();
         assert_eq!(n.title, "Free: Hades");
         assert_eq!(n.body, "Hades is free on Steam!");
         seen.extend(fresh.iter().map(|g| g.id.clone()));
         assert!(fresh_free(&games, &seen, &[]).is_empty());
-        assert!(free_notice(&fresh_free(&games, &seen, &[]), false).is_none());
+        assert!(free_notice(&fresh_free(&games, &seen, &[]), false, &HashMap::new()).is_none());
     }
 
     #[test]
@@ -1470,7 +1530,7 @@ mod tests {
         let mut seen = HashSet::<String>::from(["steam-10".into(), "epic-1".into()]);
         let fresh = fresh_free(&games, &seen, &[]);
         assert_eq!(fresh.iter().map(|g| g.id.as_str()).collect::<Vec<_>>(), ["steam-ftk-1", "steam-ftk-2"]);
-        let n = free_notice(&fresh, false).unwrap();
+        let n = free_notice(&fresh, false, &HashMap::new()).unwrap();
         assert_eq!(n.title, "2 free games available");
         assert_eq!(n.body, "Hades, Control");
         seen.extend(fresh.iter().map(|g| g.id.clone()));
@@ -1480,19 +1540,38 @@ mod tests {
     #[test]
     fn weekend_and_free_notices_use_different_wording() {
         let seen = HashSet::new();
-        let free = free_notice(&fresh_free(&[game("steam-1", "Hades", "steam", "free")], &seen, &[]), false).unwrap();
+        let free = free_notice(&fresh_free(&[game("steam-1", "Hades", "steam", "free")], &seen, &[]), false, &HashMap::new()).unwrap();
         assert_eq!(free.title, "Free: Hades");
         assert_eq!(free.body, "Hades is free on Steam!");
         let weekends = vec![
             game("steam-fw-1", "Hades", "steam", "weekend"),
             game("steam-fw-2", "Control", "steam", "weekend"),
         ];
-        let grouped = free_notice(&fresh_free(&weekends, &seen, &[]), true).unwrap();
+        let grouped = free_notice(&fresh_free(&weekends, &seen, &[]), true, &HashMap::new()).unwrap();
         assert_eq!(grouped.title, "2 free weekend games available");
         assert_eq!(grouped.body, "Hades, Control");
-        let one = free_notice(&fresh_free(&weekends[..1], &seen, &[]), true).unwrap();
+        let one = free_notice(&fresh_free(&weekends[..1], &seen, &[]), true, &HashMap::new()).unwrap();
         assert_eq!(one.title, "Free weekend: Hades");
         assert_eq!(one.body, "Hades is free on Steam!");
+    }
+
+    #[test]
+    fn single_game_notices_name_the_protondb_tier() {
+        let proton = HashMap::from([("1145360".to_string(), "platinum".to_string())]);
+        let hades = Free { app_id: Some("1145360".into()), ..game("steam-1145360", "Hades", "steam", "free") };
+        let n = free_notice(&[&hades], false, &proton).unwrap();
+        assert_eq!(n.body, "Hades is free on Steam! · ProtonDB: Platinum");
+        let unrated = Free { app_id: Some("2".into()), ..game("steam-2", "Control", "steam", "free") };
+        assert_eq!(free_notice(&[&unrated], false, &proton).unwrap().body, "Control is free on Steam!");
+        assert_eq!(free_notice(&[&hades, &unrated], false, &proton).unwrap().body, "Hades, Control"); // grouped: names only
+        assert_eq!(proton_suffix(&None, &proton), "");
+        assert_eq!(proton_suffix(&Some("1".into()), &HashMap::from([("1".to_string(), String::new())])), ""); // hand-edited config
+    }
+
+    #[test]
+    fn configs_from_before_protondb_still_load() {
+        let db: Db = serde_json::from_str(r#"{"primed":true}"#).unwrap();
+        assert!(db.primed && db.proton.is_empty());
     }
 
     #[test]
@@ -1504,18 +1583,18 @@ mod tests {
         ];
         let fresh = fresh_wishlist(&items, &HashSet::new(), &[], 20);
         assert_eq!(fresh.iter().map(|w| w.id.as_str()).collect::<Vec<_>>(), ["3"]);
-        let n = wishlist_notice(&fresh).unwrap();
+        let n = wishlist_notice(&fresh, &HashMap::new()).unwrap();
         assert_eq!(n.title, "🏷️ Hades is on sale!");
         assert_eq!(n.body, "20% off — now $4.99 on Steam");
         assert!(fresh_wishlist(&items, &HashSet::<String>::from(["steam:3".into()]), &[], 20).is_empty());
 
         let pair = vec![wish("3", "Hades", Some(20)), wish("4", "Control", Some(50))];
-        let n = wishlist_notice(&fresh_wishlist(&pair, &HashSet::new(), &[], 20)).unwrap();
+        let n = wishlist_notice(&fresh_wishlist(&pair, &HashSet::new(), &[], 20), &HashMap::new()).unwrap();
         assert_eq!(n.title, "2 wishlist games on sale");
         assert_eq!(n.body, "Hades, Control");
 
         let many: Vec<_> = (0..5).map(|i| wish(&i.to_string(), &format!("G{i}"), Some(40))).collect();
-        let n = wishlist_notice(&fresh_wishlist(&many, &HashSet::new(), &[], 20)).unwrap();
+        let n = wishlist_notice(&fresh_wishlist(&many, &HashSet::new(), &[], 20), &HashMap::new()).unwrap();
         assert_eq!(n.title, "5 wishlist games on sale");
         assert_eq!(n.body, "G0, G1, G2, G3…");
     }
@@ -1568,7 +1647,7 @@ mod tests {
         ]);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].id, "steam-ftk-1091500");
-        let n = free_notice(&fresh_free(&rows, &HashSet::new(), &[]), false).unwrap();
+        let n = free_notice(&fresh_free(&rows, &HashSet::new(), &[]), false, &HashMap::new()).unwrap();
         assert_eq!(n.title, "Free: Hades");
         assert_eq!(n.body, "Hades is free on Steam!");
     }

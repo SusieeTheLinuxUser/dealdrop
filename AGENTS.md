@@ -30,6 +30,8 @@ It polls store APIs, shows free games / store sales / hot deals / wishlists, and
 - **Price targets:** `Settings.price_targets` (`"store:id"` → USD, `normalize_targets`) and `Db.fired_targets` (key → the target that fired). `target_hits` fires once per target; it re-arms when the price rises above it or the target changes. Reset settings keeps hidden games and targets.
 - **CheapShark:** every request goes through `cheapshark_get`, which shares one 429 cooldown (`CS_COOLDOWN`: Retry-After, else 15 min doubling to 2 h) and fails without touching the network while blocked; the poll keeps last good data, and `price_failure` drops the wishlist copy of the cooldown error so it shows once. Wishlist offers' stores come from the batched `games?ids=` lookup (never one `deals?id=` per item). `attach_cheapest` returns the items it got no answer for, and `carry_cheapest` keeps their last offer while the store's own price is unchanged, so a missed lookup doesn't re-arm a price target; any item with an unchanged price also keeps its last lowest-ever when none came back (a failed `games?ids=` batch); `carry_deal_lowest` does the same for hot deals (same dealID and price).
 
+- **ProtonDB (Linux only):** `proton_tiers` in `main.rs` looks up `protondb_tier` (`sources.rs`, the public `reports/summaries/<appid>.json`; 404 = no rating) for every Steam appid listed, at most `PROTON_PER_POLL` per poll, 4 at a time, and caches the answer in `Db.proton` for a week (dropped after 30 days unlisted). `Snapshot.proton` (appid → tier) feeds the 🐧 tags in `app.js` (`protonTag`; only the five known tiers render) and single-game notifications (`proton_suffix`). A failed lookup keeps the old entry and only logs: it's not worth an error box.
+
 ## Commands
 
 ```bash
