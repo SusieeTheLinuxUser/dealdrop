@@ -1217,7 +1217,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{LiveSale, days_from_civil, sale_soon_notice, sale_starting_tomorrow, SALES, clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, keep_or_fail, keep_prices, carry_cheapest, carry_deal_lowest, normalize_hidden, normalize_targets, target_hits, target_notice, price_failure, CS_BLOCKED, normalize_title, remember_big_deals, remember_free, remember_wishlist, restore_by_prefix, safe_https, sale_key, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, load_db, proton_suffix, Acct, Db, Deal, Free, Price, Prime, Settings, SteamProfile, Tokens, WishItem, accounts, same_refresh};
+    use super::{LiveSale, days_from_civil, sale_soon_notice, sale_starting_tomorrow, SALES, clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, keep_or_fail, keep_prices, carry_cheapest, carry_deal_lowest, normalize_hidden, normalize_targets, target_hits, target_notice, price_failure, CS_BLOCKED, normalize_title, remember_big_deals, remember_free, remember_wishlist, restore_by_prefix, safe_https, sale_key, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, load_db, proton_suffix, Acct, Db, Deal, Free, Price, Prime, Settings, SteamProfile, Tokens, WishItem, accounts, same_refresh, BIG_DEAL_CUTS, WISHLIST_CUTS};
     use std::collections::{HashMap, HashSet};
 
     #[cfg(unix)]
@@ -1330,9 +1330,24 @@ mod tests {
         assert_eq!(known, HashMap::from([("new".to_string(), "platinum".to_string()), ("retry".to_string(), "bronze".to_string())]));
     }
 
+    /// The cuts Settings offers (JS `cuts:` arrays) must be exactly what `snap_cuts` clamps to,
+    /// or a saved choice would silently change to a nearby Rust value.
     #[test]
-    fn sale_calendar_matches_the_ui() {
+    fn notification_cut_choices_match_the_rust_clamps() {
         let js = include_str!("../../renderer/app.js");
+        let cuts = |threshold: &str| -> Vec<u32> {
+            let at = js.find(&format!("threshold: '{threshold}'")).unwrap_or_else(|| panic!("{threshold} not in app.js"));
+            let line_end = js[at..].find('\n').unwrap() + at;
+            let line = &js[at..line_end];
+            let list = line.split("cuts: [").nth(1).and_then(|r| r.split(']').next()).unwrap_or_else(|| panic!("no cuts list next to {threshold}"));
+            list.split(',').map(|n| n.trim().parse().unwrap_or_else(|_| panic!("non-numeric cut {n:?}"))).collect()
+        };
+        assert_eq!(cuts("wishlistMinCut"), WISHLIST_CUTS.to_vec());
+        assert_eq!(cuts("bigDealMinCut"), BIG_DEAL_CUTS.to_vec());
+    }
+
+    #[test]
+    fn sale_calendar_matches_the_ui() {        let js = include_str!("../../renderer/app.js");
         let block = &js[js.find("const SALES = [").unwrap()..];
         let block = &block[..block.find("\n]").unwrap()];
         for s in SALES {
