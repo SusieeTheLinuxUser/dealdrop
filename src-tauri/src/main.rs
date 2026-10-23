@@ -575,6 +575,31 @@ const PROTON_FORGET_MS: u64 = 30 * 86_400_000;
 /// Lookups per poll (4 at a time): a big wishlist fills in over a few polls instead of hammering ProtonDB.
 const PROTON_PER_POLL: usize = 60;
 
+/// Appids that need a lookup: missing from the cache or older than a week, at most `PROTON_PER_POLL`.
+fn proton_stale(db: &Db, ids: &[String], now: u64) -> Vec<String> {
+    let mut uniq = HashSet::new();
+    ids.iter().filter(|id| uniq.insert(*id))
+        .filter(|id| db.proton.get(*id).is_none_or(|e| now.saturating_sub(e.at) > PROTON_TTL_MS))
+        .take(PROTON_PER_POLL).cloned().collect()
+}
+
+/// Store this round's answers (`Err` keeps the old entry, so it is retried) and drop
+/// entries for games that have not been listed for 30 days.
+fn proton_apply(db: &mut Db, got: Vec<(String, R<Option<String>>)>, now: u64) {
+    for (id, tier) in got {
+        match tier {
+            Ok(tier) => { db.proton.insert(id, ProtonEntry { tier, at: now }); }
+            Err(e) => eprintln!("[protondb] {id}: {e}"),
+        }
+    }
+    db.proton.retain(|_, e| now.saturating_sub(e.at) < PROTON_FORGET_MS);
+}
+
+/// (appid → tier) for the listed ids, from the cache as it is now.
+fn proton_known(db: &Db, ids: &[String]) -> HashMap<String, String> {
+    ids.iter().filter_map(|id| Some((id.clone(), db.proton.get(id)?.tier.clone()?))).collect()
+}
+
 /// Steam appid → ProtonDB tier for `ids` from the cache, first looking up the missing and week-old ones.
 /// Linux only: the tier says how a game runs through Proton, which means nothing on Windows/macOS.
 /// A failed lookup keeps the old entry and is retried next poll; it's not worth an error box.
@@ -583,25 +608,13 @@ async fn proton_tiers<'a>(st: &AppState, ids: impl IntoIterator<Item = &'a Optio
     let mut uniq = HashSet::new();
     let ids: Vec<String> = ids.into_iter().flatten().filter(|id| uniq.insert(*id)).cloned().collect();
     let now = now_ms();
-    let stale: Vec<String> = st.read(|d| ids.iter()
-        .filter(|id| d.proton.get(*id).is_none_or(|e| now.saturating_sub(e.at) > PROTON_TTL_MS))
-        .take(PROTON_PER_POLL).cloned().collect());
+    let stale: Vec<String> = st.read(|d| proton_stale(d, &ids, now));
     use futures::StreamExt;
     let got: Vec<(String, R<Option<String>>)> = futures::stream::iter(stale)
         .map(|id| async move { let tier = protondb_tier(&id).await; (id, tier) })
         .buffer_unordered(4).collect().await;
-    let known = |d: &Db| ids.iter().filter_map(|id| Some((id.clone(), d.proton.get(id)?.tier.clone()?))).collect();
-    if got.is_empty() { return st.read(known); }
-    st.edit(|d| {
-        for (id, tier) in got {
-            match tier {
-                Ok(tier) => { d.proton.insert(id, ProtonEntry { tier, at: now }); }
-                Err(e) => eprintln!("[protondb] {id}: {e}"),
-            }
-        }
-        d.proton.retain(|_, e| now.saturating_sub(e.at) < PROTON_FORGET_MS);
-        known(d)
-    })
+    if got.is_empty() { return st.read(|d| proton_known(d, &ids)); }
+    st.edit(|d| { proton_apply(d, got, now); proton_known(d, &ids) })
 }
 
 /// " · ProtonDB: Gold" for a game with a known tier, else "".
