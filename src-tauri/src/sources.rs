@@ -1148,6 +1148,65 @@ pub(crate) mod unit {
     }
 
     #[test]
+    fn release_files_are_named_per_platform() {
+        assert_eq!(super::asset_for("windows", "x86_64", "0.10.0"), "DealDrop_0.10.0_x64_en-US.msi");
+        assert_eq!(super::asset_for("macos", "x86_64", "0.10.0"), "DealDrop_0.10.0_universal.dmg");
+        assert_eq!(super::asset_for("macos", "aarch64", "0.10.0"), "DealDrop_0.10.0_universal.dmg"); // one universal build
+        assert_eq!(super::asset_for("linux", "x86_64", "0.10.0"), "DealDrop_0.10.0_x86_64.flatpak");
+        assert_eq!(super::asset_for("linux", "aarch64", "0.10.0"), "DealDrop_0.10.0_aarch64.flatpak");
+    }
+
+    #[test]
+    fn an_offered_update_points_at_this_platforms_file_only_when_attached() {
+        let up = super::update_for("0.10.0".into(), true).unwrap();
+        assert_eq!(up.version, "0.10.0");
+        assert_eq!(up.page, "https://github.com/SusieeTheLinuxUser/dealdrop/releases/tag/v0.10.0");
+        assert!(!up.can_install); // main.rs decides whether this copy may install, not the fetch
+        if cfg!(target_os = "linux") {
+            assert_eq!(up.bundle.as_deref(), Some(
+                format!("https://github.com/SusieeTheLinuxUser/dealdrop/releases/download/v0.10.0/{}", super::asset("0.10.0")).as_str()));
+        } else {
+            assert!(up.bundle.is_none()); // Windows/macOS open the release page instead
+        }
+        // a release without this platform's file (yet, or ever) is not offered
+        assert!(super::update_for("0.10.0".into(), false).is_none());
+    }
+
+    #[test]
+    fn an_html_error_page_is_not_parsed_as_data() {
+        let page = "<html><head><title>502 Bad Gateway</title></head><body><center>nginx</center></body></html>";
+        assert!(super::parse_steam_sales(page).is_err());
+        assert!(super::parse_steam_free_to_keep(page).is_err());
+        assert!(super::parse_gog_sales(page).is_err());
+        assert!(super::parse_epic_free(page).is_err());
+        assert!(super::parse_epic_upcoming(page).is_err());
+        assert!(super::parse_gamerpower(page, "gp-", "free").is_err());
+        assert!(super::parse_cheapshark_deals(page, &Default::default()).is_err());
+        assert!(super::read_steam_sale(page).is_none());
+        assert!(super::parse_cheapshark_lowest(page).is_empty());
+        assert!(super::parse_deal_stores(page).is_empty());
+        assert!(super::cheapshark_deals_by_game(page).is_empty());
+        assert_eq!(super::parse_steam_profile(page), None);
+        assert!(!super::profile_is_private(page));
+        // an empty list is not an error either
+        assert_eq!(super::parse_gog_sales("[]").unwrap().len(), 0);
+        assert_eq!(super::parse_epic_free("[]").unwrap().len(), 0);
+    }
+
+    #[test]
+    fn unicode_titles_survive_the_html_parsers() {
+        // CJK, an emoji and a combining accent come through whole (never split mid-character)
+        let html = r#"<a data-ds-appid="1"><img src="https://cdn.example/ja.jpg"><span class="title">合同会社 🎮 Cafe&#769; &amp; Co</span>
+<div data-discount="50" data-price-final="500"><div class="discount_original_price">$10.00</div></div></a>"#;
+        let sales = super::parse_steam_sales(&search_body(html)).unwrap();
+        assert_eq!(sales.len(), 1);
+        // the combining accent stays a separate character (U+0301), not a panic or a cut
+        assert_eq!(sales[0].title, "合同会社 🎮 Cafe\u{301} & Co");
+        let ftk = super::parse_steam_free_to_keep(&search_body(&html.replace(r#"data-discount="50" data-price-final="500""#, r#"data-price-final="0" data-discount="100""#))).unwrap();
+        assert_eq!(ftk[0].title, sales[0].title);
+    }
+
+    #[test]
     fn protondb_tier_is_a_known_rating_only() {
         let tier = |body: &str| super::parse_protondb(&serde_json::from_str(body).unwrap());
         assert_eq!(tier(r#"{"tier":"platinum","total":756,"trendingTier":"gold"}"#).as_deref(), Some("platinum"));
