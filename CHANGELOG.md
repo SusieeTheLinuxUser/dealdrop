@@ -10,7 +10,6 @@ All notable changes to DealDrop are documented in this file.
 - Linux: free games, store sales, hot deals and wishlist games show their **ProtonDB rating** (🐧 Platinum … Borked: how well they run through Proton), and a single-game alert names it ("Hades is free on Steam! · ProtonDB: Platinum"). Looked up by Steam app id, cached for a week; not shown on Windows/macOS.
 - Updated dependencies for two TLS certificate advisories (RUSTSEC-2026-0381, RUSTSEC-2026-0382).
 - Fixed: with Free DLC & loot on, a DLC Steam gives away (listed under Free to keep as "… (DLC)") no longer shows a second time as a loot card.
-- Fixed: a bogus Steam review score from CheapShark (above 100%) no longer shows as a huge percentage on hot deals; it is clamped to 100% like the discount is.
 
 ## [v0.9.2] - 2026-10-20
 - Linux: the AppImage's embedded update info is back to naming the `.zsync` file. v0.9.1 dropped it and Gear Lever then no longer detected the update info (Update management showed an empty source); install v0.9.2 to get automatic update detection again.

@@ -1347,7 +1347,8 @@ mod tests {
     }
 
     #[test]
-    fn sale_calendar_matches_the_ui() {        let js = include_str!("../../renderer/app.js");
+    fn sale_calendar_matches_the_ui() {
+        let js = include_str!("../../renderer/app.js");
         let block = &js[js.find("const SALES = [").unwrap()..];
         let block = &block[..block.find("\n]").unwrap()];
         for s in SALES {
