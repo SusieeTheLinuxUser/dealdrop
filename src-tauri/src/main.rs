@@ -1272,6 +1272,65 @@ mod tests {
     }
 
     #[test]
+    fn failure_text_is_capped_without_splitting_characters() {
+        // 4000 bytes of emoji: a byte-wise cap would cut a glyph in half (the cap counts chars)
+        let msg = failure("Epic sales", &"🎮".repeat(1000));
+        assert_eq!(msg.chars().count(), "Epic sales: ".len() + 400);
+        assert!(msg.ends_with('🎮'));
+        assert!(msg.is_char_boundary(msg.len()));
+    }
+
+    #[test]
+    fn proton_cache_refreshes_week_old_entries_under_a_per_poll_cap() {
+        let week = super::PROTON_TTL_MS;
+        let fresh = |at| super::ProtonEntry { tier: Some("gold".into()), at };
+        let mut db = Db {
+            proton: HashMap::from([("1".into(), fresh(0)), ("2".into(), fresh(1))]),
+            ..Default::default()
+        };
+        // exactly a week old is still fresh; a tick past it is looked up again
+        assert!(super::proton_stale(&db, &["1".into()], week).is_empty());
+        assert_eq!(super::proton_stale(&db, &["1".into()], week + 1), ["1"]);
+        // "no rating yet" entries go stale the same way, so pending games are re-asked later
+        db.proton.insert("3".into(), super::ProtonEntry { tier: None, at: 0 });
+        assert_eq!(super::proton_stale(&db, &["1".into(), "2".into(), "3".into(), "4".into(), "2".into()], week + 1),
+            ["1", "3", "4"]); // "1" is a tick past its week, "2" is not yet; duplicates collapse
+        // at most PROTON_PER_POLL per poll, the first ones in list order
+        let many: Vec<String> = (0..(super::PROTON_PER_POLL as u64 + 10)).map(|i| (1000 + i).to_string()).collect();
+        let stale = super::proton_stale(&db, &many, week + 1);
+        assert_eq!(stale.len(), super::PROTON_PER_POLL);
+        assert_eq!(stale[0], "1000");
+    }
+
+    #[test]
+    fn proton_answers_are_cached_and_forgotten_after_a_month_unlisted() {
+        let now = 60 * 86_400_000;
+        let mut db = Db {
+            proton: HashMap::from([
+                // listed 30+ days ago: dropped; stale but not forgotten: kept on a failed lookup
+                ("gone".into(), super::ProtonEntry { tier: Some("gold".into()), at: 5 }),
+                ("retry".into(), super::ProtonEntry { tier: Some("bronze".into()), at: now - 10 * 86_400_000 }),
+            ]),
+            ..Default::default()
+        };
+        let got = vec![
+            ("new".to_string(), Ok(Some("platinum".into()))),
+            ("pending".to_string(), Ok(None)),          // asked, no settled rating: cached so it isn't re-asked all week
+            ("retry".to_string(), Err("HTTP 503".into())), // a failed lookup keeps the old entry
+        ];
+        super::proton_apply(&mut db, got, now);
+        assert!(!db.proton.contains_key("gone"));
+        let retry = db.proton.get("retry").unwrap();
+        assert_eq!(retry.tier.as_deref(), Some("bronze"));
+        assert_eq!(retry.at, now - 10 * 86_400_000); // still stale: retried on the next poll
+        assert_eq!(db.proton.get("pending").unwrap().tier, None);
+        assert_eq!(db.proton.get("new").unwrap().at, now);
+        // what the snapshot gets: tiers that exist, nothing for unknown ids or "no rating yet"
+        let known = super::proton_known(&db, &["new".into(), "pending".into(), "retry".into(), "gone".into()]);
+        assert_eq!(known, HashMap::from([("new".to_string(), "platinum".to_string()), ("retry".to_string(), "bronze".to_string())]));
+    }
+
+    #[test]
     fn sale_calendar_matches_the_ui() {
         let js = include_str!("../../renderer/app.js");
         let block = &js[js.find("const SALES = [").unwrap()..];
