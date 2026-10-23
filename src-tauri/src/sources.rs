@@ -154,11 +154,24 @@ pub struct Update {
     pub can_install: bool,
 }
 
-/// This platform's release file (names from scripts/release-linux.sh and .github/workflows/release.yml).
+/// This platform's release file name for `os`/`arch`
+/// (names from scripts/release-linux.sh and .github/workflows/release.yml).
+fn asset_for(os: &str, arch: &str, version: &str) -> String {
+    if os == "windows" { format!("DealDrop_{version}_x64_en-US.msi") }
+    else if os == "macos" { format!("DealDrop_{version}_universal.dmg") }
+    else { format!("DealDrop_{version}_{arch}.flatpak") }
+}
+
 fn asset(version: &str) -> String {
-    if cfg!(windows) { format!("DealDrop_{version}_x64_en-US.msi") }
-    else if cfg!(target_os = "macos") { format!("DealDrop_{version}_universal.dmg") }
-    else { format!("DealDrop_{version}_{}.flatpak", std::env::consts::ARCH) }
+    asset_for(std::env::consts::OS, std::env::consts::ARCH, version)
+}
+
+/// The update to offer for `version` when its file for this platform is attached
+/// (`present`: the asset HEAD succeeded). `bundle` is the `.flatpak` on Linux only.
+fn update_for(version: String, present: bool) -> Option<Update> {
+    if !present { return None; }
+    let file = format!("{RELEASES}/download/v{version}/{}", asset(&version));
+    Some(Update { page: format!("{RELEASES}/tag/v{version}"), version, bundle: cfg!(target_os = "linux").then_some(file), can_install: false })
 }
 
 /// `releases/latest` redirects to `releases/tag/vX.Y.Z`: that version when it's newer than `current`
@@ -175,9 +188,9 @@ pub async fn latest_release() -> R<Option<Update>> {
     let Some(version) = newer_version(res.url().as_str(), env!("CARGO_PKG_VERSION")) else { return Ok(None) };
     let file = format!("{RELEASES}/download/v{version}/{}", asset(&version));
     let status = client().head(&file).send().await.map_err(|e| e.without_url().to_string())?.status();
+    if status.is_success() { return Ok(update_for(version, true)); }
     if status == reqwest::StatusCode::NOT_FOUND { return Ok(None); }
-    if !status.is_success() { return Err(format!("HTTP {}", status.as_u16())); }
-    Ok(Some(Update { page: format!("{RELEASES}/tag/v{version}"), version, bundle: cfg!(target_os = "linux").then_some(file), can_install: false }))
+    Err(format!("HTTP {}", status.as_u16()))
 }
 
 /// A release file: GitHub redirects it to its download host; 10 minutes instead of the usual 25 s.
