@@ -788,6 +788,22 @@ mod unit {
     }
 
     #[test]
+    fn gql_errors_without_data_fail_and_never_carry_the_token() {
+        const TOKEN: &str = "eg1-token-0123456789abcdef";
+        // an expired/invalid session: an error message and no data
+        let e = super::gql_checked(json!({"errors": [{"message": format!("token '{TOKEN}' expired")}]}), Some(TOKEN)).unwrap_err();
+        assert_eq!(e, "token '[redacted]' expired");
+        // the same body without a bearer keeps its text as is
+        assert_eq!(super::gql_checked(json!({"errors": [{"message": "not logged in"}]}), None).unwrap_err(), "not logged in");
+        // a message alongside data is a partial answer, not a failure
+        let partial = super::gql_checked(json!({"errors": [{"message": "one field failed"}], "data": {"Wishlist": null}}), Some(TOKEN)).unwrap();
+        assert!(partial["data"].is_object());
+        // a non-string message, or no errors at all, passes through
+        assert!(super::gql_checked(json!({"errors": [{"code": 5}]}), Some(TOKEN)).is_ok());
+        assert!(super::gql_checked(json!({"data": {"x": 1}}), Some(TOKEN)).is_ok());
+    }
+
+    #[test]
     fn store_parsers_survive_wrong_types_and_keep_prices_sane() {
         use crate::sources::unit::mutations;
         let sane = |what: &str, p: &Option<crate::sources::Price>| {

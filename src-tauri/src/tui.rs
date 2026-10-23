@@ -345,4 +345,20 @@ mod tests {
         };
         assert_eq!(row_text(&row), "Example Game  [Steam]  $4.99 · 50% off");
     }
+
+    #[test]
+    fn free_rows_show_the_end_date_and_deal_rows_the_price() {
+        let free = free_row(&Free {
+            title: "Hades".into(), source: "steam".into(), url: "https://store.steampowered.com/app/1091500".into(),
+            end_date: Some("2026-10-24 23:59:59".into()), ..Default::default()
+        });
+        assert_eq!((free.title.as_str(), free.store.as_str(), free.detail.as_str()), ("Hades", "steam", "ends 2026-10-24 23:59:59"));
+        assert_eq!(free.url, "https://store.steampowered.com/app/1091500");
+        // no end date (a permanent giveaway): no detail, so row_text leaves the trailing part off
+        let endless = free_row(&Free { title: "QWOP".into(), source: "other".into(), ..Default::default() });
+        assert_eq!(endless.detail, "");
+        assert_eq!(row_text(&endless), "QWOP  [other]");
+        let deal = deal_row(&Deal { title: "Control".into(), shop: "Epic".into(), price: 5.0, cut: 75, url: "u".into(), ..Default::default() });
+        assert_eq!((deal.title.as_str(), deal.store.as_str(), deal.detail.as_str()), ("Control", "Epic", "$5.00 · 75% off"));
+    }
 }
