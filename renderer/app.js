@@ -2014,19 +2014,26 @@ async function copyError () {
   announceStatus('Copied')
 }
 
+// A check that couldn't reach GitHub is not "no update": keep the offer already shown.
+function updateAfterCheck (shown, answer, reached) {
+  return reached ? answer : shown
+}
+
 // "Update to vX.Y.Z" above the error box when GitHub has a newer release for this platform.
 // The Flatpak installs it and restarts; other builds open the release page.
-// Returns false when the check itself failed; the 6-hourly calls stay silent about that.
+// Returns false when the check itself failed; the 6-hourly calls stay silent about that,
+// and an update already offered stays up.
 async function checkUpdate () {
-  let ok = true
-  state.update = await window.api.checkUpdate().catch(() => { ok = false; return null })
-  if (ok && !state.update && state.updateError) { state.updateError = null; renderErrors() } // the failed update is gone (installed by hand, or withdrawn)
+  let reached = true
+  const answer = await window.api.checkUpdate().catch(() => { reached = false; return null })
+  state.update = updateAfterCheck(state.update, answer, reached)
+  if (reached && !state.update && state.updateError) { state.updateError = null; renderErrors() } // the failed update is gone (installed by hand, or withdrawn)
   const box = document.getElementById('sidebar-update')
   const btn = document.getElementById('btn-update')
-  if (!box || !btn || btn.disabled) return ok
+  if (!box || !btn || btn.disabled) return reached
   box.style.display = state.update ? 'block' : 'none'
   if (state.update) btn.textContent = `Update to v${state.update.version}`
-  return ok
+  return reached
 }
 
 // Settings → About: a check the user asked for, so it says what happened (textContent: the version comes from the network).
