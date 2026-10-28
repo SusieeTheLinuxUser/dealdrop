@@ -3,6 +3,7 @@
 All notable changes to DealDrop are documented in this file.
 
 ## [Unreleased]
+- Fixed: Settings → About → **Check for updates** says GitHub couldn't be reached when the check fails, instead of "You're on the latest version." A failed check also no longer hides an update that was already offered.
 - Linux: DealDrop is now a **Flatpak** (`DealDrop_<version>_x86_64.flatpak`) instead of an AppImage. Install it once by hand; settings, sign-ins and "Start when I log in" carry over from the AppImage (same `~/.config/dealdrop/`). The AppImage gets no more updates.
 - **Update to vX.Y.Z** in the sidebar when a newer release is out (checked at start and every 6 hours). The Flatpak downloads and installs it and restarts; Windows and macOS open the release page.
 - Settings → About has a **Check for updates** button that says whether you're on the latest version (or that GitHub couldn't be reached).

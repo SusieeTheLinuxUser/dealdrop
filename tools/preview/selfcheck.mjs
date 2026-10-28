@@ -31,10 +31,11 @@ vm.runInContext([
   between('function nextTheme (', '\nfunction syncSaleTheme'),
   between('function wishlistLowestTag (', '\n// ─── Price targets'),
   between('const saleKey =', '\n// Live sale →'),
+  between('function updateAfterCheck (', '\n// "Update to v'),
   between('const targetKey', '\nfunction wishlistTargetTag'),
   between('const nextIndex', '\n// Moves focus between'),
   between('const fmt$ =', '\n// CSP forbids inline onerror'),
-  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge, mergeUiPrefs, dealShops, parseClaimed, pruneClaimed, toggleClaimed, claimedLast, normalizeTitle, hiddenTitle, searchRank, parseSeen, newIds, mergeSeen, wishlistKey, seenIds, salesSeenIds, PAGE_SIZE, pageSlice, nextTheme, targetKey, targetPrice, targetHit, parseTarget, protonTier, protonText, protonTag, nextIndex, fmt$, salePriceDescription, dataSig, timeLeft, endsFirst, endDateLabel, startDateLabel, fmtChecked, gameStoreName, srcIcon, wishlistLowestTag, saleKey, BASE_THEMES, SALE_THEMES }',
+  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge, mergeUiPrefs, dealShops, parseClaimed, pruneClaimed, toggleClaimed, claimedLast, normalizeTitle, hiddenTitle, searchRank, parseSeen, newIds, mergeSeen, wishlistKey, seenIds, salesSeenIds, PAGE_SIZE, pageSlice, nextTheme, targetKey, targetPrice, targetHit, parseTarget, protonTier, protonText, protonTag, nextIndex, fmt$, salePriceDescription, dataSig, timeLeft, endsFirst, endDateLabel, startDateLabel, fmtChecked, gameStoreName, srcIcon, wishlistLowestTag, saleKey, updateAfterCheck, BASE_THEMES, SALE_THEMES }',
 ].join('\n'), context)
 
 const h = context.helpers
@@ -360,6 +361,13 @@ assert.equal(h.saleKey({ name: 'Autumn Sale' }), 'autumn')
 assert.equal(h.saleKey({ name: 'Weekly Deals' }), undefined)
 assert.equal(h.saleKey({ name: 'Steam Scream Fest' }), undefined) // a fest, not a seasonal sale
 
+// A failed update check keeps the offer already shown; only a reached answer replaces it
+const offered = { version: '0.10.0' }
+assert.equal(h.updateAfterCheck(offered, null, false), offered)
+assert.equal(h.updateAfterCheck(null, null, false), null)
+assert.equal(h.updateAfterCheck(offered, null, true), null) // reached, and nothing newer: the offer is gone
+assert.equal(h.updateAfterCheck(null, offered, true), offered)
+
 // Countdowns: the d/h/soon split is the floor of the exact instant delta (never a wall-clock
 // day count, which would shift across a DST night); relative durations keep this runnable any day
 for (const [ms, label] of [[2.5 * 86400000, '2d left'], [86400000 + 60000, '1d left'], [86400000 - 60000, '23h left'], [5 * 3600000 - 60000, '4h left'], [3600000 + 60000, '1h left'], [3600000 - 60000, 'ending soon']]) {
@@ -381,4 +389,4 @@ for (const t of jsThemes) {
 for (const t of cssThemes) assert.equal(jsThemes.has(t), true, `style.css theme "${t}" is missing from BASE_THEMES/SALE_THEMES in app.js`)
 assert.equal(jsThemes.has('midnight'), true) // and the root default is offered in Settings
 
-console.log('Renderer self-check passed (price targets, escaping, hidden titles, search ranking, filters, store filter, UI preference merge, claimed games, seen deals, list paging, next sale, refresh age, sale themes, J/K navigation, money and date labels, poll data signature, ProtonDB tiers, lowest-ever rule, sale keys, countdown thresholds, theme/CSS consistency).')
+console.log('Renderer self-check passed (price targets, escaping, hidden titles, search ranking, filters, store filter, UI preference merge, claimed games, seen deals, list paging, next sale, refresh age, sale themes, J/K navigation, money and date labels, poll data signature, ProtonDB tiers, lowest-ever rule, sale keys, countdown thresholds, theme/CSS consistency, failed update check).')

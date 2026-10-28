@@ -1042,13 +1042,21 @@ fn get_autostart() -> bool { autostart::get() }
 #[tauri::command]
 fn set_autostart(on: bool) -> Result<(), String> { autostart::set(on) }
 
+/// `Ok(None)` means this platform is up to date. An error stays an error: the UI reads `None`
+/// as "You're on the latest version", so a GitHub failure must not look like that.
+fn offered_update(found: Result<Option<Update>, String>, in_flatpak: bool) -> Result<Option<Update>, String> {
+    found.map(|up| up.map(|u| Update { can_install: u.bundle.is_some() && in_flatpak, ..u }))
+}
+
 /// A newer release for this platform, if any (the UI asks at start and every 6 hours).
+/// Errors reject the command so Settings → About can say GitHub couldn't be reached.
 #[tauri::command]
-async fn check_update() -> Option<Update> {
-    match latest_release().await {
-        Ok(up) => up.map(|u| Update { can_install: u.bundle.is_some() && update::in_flatpak(), ..u }),
-        Err(e) => { eprintln!("[update check] {e}"); None }
-    }
+async fn check_update() -> Result<Option<Update>, String> {
+    let found = match latest_release().await {
+        Ok(up) => Ok(up),
+        Err(e) => { eprintln!("[update check] {e}"); Err(e) }
+    };
+    offered_update(found, update::in_flatpak())
 }
 
 /// Flatpak only: downloads the newest release's bundle, installs it and restarts into it.
@@ -1217,8 +1225,28 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{LiveSale, days_from_civil, sale_soon_notice, sale_starting_tomorrow, SALES, clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, keep_or_fail, keep_prices, carry_cheapest, carry_deal_lowest, normalize_hidden, normalize_targets, target_hits, target_notice, price_failure, CS_BLOCKED, normalize_title, remember_big_deals, remember_free, remember_wishlist, restore_by_prefix, safe_https, sale_key, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, load_db, proton_suffix, Acct, Db, Deal, Free, Price, Prime, Settings, SteamProfile, Tokens, WishItem, accounts, same_refresh, BIG_DEAL_CUTS, WISHLIST_CUTS};
+    use super::{LiveSale, days_from_civil, sale_soon_notice, sale_starting_tomorrow, SALES, clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, keep_or_fail, keep_prices, carry_cheapest, carry_deal_lowest, normalize_hidden, normalize_targets, target_hits, target_notice, price_failure, CS_BLOCKED, normalize_title, remember_big_deals, remember_free, remember_wishlist, restore_by_prefix, safe_https, sale_key, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, load_db, proton_suffix, Acct, Db, Deal, Free, Price, Prime, Settings, SteamProfile, Tokens, Update, WishItem, accounts, offered_update, same_refresh, BIG_DEAL_CUTS, WISHLIST_CUTS};
     use std::collections::{HashMap, HashSet};
+
+    #[test]
+    fn a_failed_update_check_is_not_the_same_as_being_up_to_date() {
+        let bundle = Some("https://github.com/SusieeTheLinuxUser/dealdrop/releases/download/v0.10.0/DealDrop_0.10.0_x86_64.flatpak".into());
+        let up = Update {
+            version: "0.10.0".into(),
+            page: "https://github.com/SusieeTheLinuxUser/dealdrop/releases/tag/v0.10.0".into(),
+            bundle: bundle.clone(),
+            can_install: false,
+        };
+        let flatpak = offered_update(Ok(Some(up.clone())), true).unwrap().unwrap();
+        assert!(flatpak.can_install); // only the Flatpak installs the bundle itself
+        assert_eq!(flatpak.bundle, bundle);
+        let other = offered_update(Ok(Some(up)), false).unwrap().unwrap();
+        assert!(!other.can_install); // Windows, macOS, and a non-Flatpak Linux build open the release page
+        assert!(!offered_update(Ok(Some(Update { bundle: None, ..other })), true).unwrap().unwrap().can_install);
+        assert_eq!(offered_update(Ok(None), true).unwrap(), None); // a real "nothing newer"
+        // the About button reads a rejected command as "Couldn't reach GitHub", not as up to date
+        assert_eq!(offered_update(Err("HTTP 503".into()), true), Err("HTTP 503".into()));
+    }
 
     #[cfg(unix)]
     #[test]
