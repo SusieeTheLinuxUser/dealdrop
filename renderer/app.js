@@ -347,6 +347,12 @@ function startDateLabel (dateStr) {
   return `Free from ${start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
 }
 
+// "Dec 17" for a SALES day (a date-only string parses as UTC midnight, so print it in UTC:
+// in the Americas the local date would be the day before). The year shows unless it is this year's.
+function saleDateLabel (d, now) {
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC', year: d.getUTCFullYear() === now.getFullYear() ? undefined : 'numeric' })
+}
+
 function fmtChecked (ts) {
   if (!ts) return ''
   const s = Math.floor((Date.now() - ts) / 1000)
@@ -1401,7 +1407,7 @@ function renderSalesCalendar () {
     banner.innerHTML = `<div class="nsb-icon">✅</div><div class="nsb-info"><div class="nsb-title">No upcoming sales found</div></div>`
   }
 
-  const fmtDate = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: d.getFullYear() === now.getFullYear() ? undefined : 'numeric' })
+  const fmtDate = d => saleDateLabel(d, now)
   SALES.forEach(s => {
     const start  = new Date(s.start)
     const end    = new Date(s.end)

@@ -35,7 +35,7 @@ vm.runInContext([
   between('const targetKey', '\nfunction wishlistTargetTag'),
   between('const nextIndex', '\n// Moves focus between'),
   between('const fmt$ =', '\n// CSP forbids inline onerror'),
-  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge, mergeUiPrefs, dealShops, parseClaimed, pruneClaimed, toggleClaimed, claimedLast, normalizeTitle, hiddenTitle, searchRank, parseSeen, newIds, mergeSeen, wishlistKey, seenIds, salesSeenIds, PAGE_SIZE, pageSlice, nextTheme, targetKey, targetPrice, targetHit, parseTarget, protonTier, protonText, protonTag, nextIndex, fmt$, salePriceDescription, dataSig, timeLeft, endsFirst, endDateLabel, startDateLabel, fmtChecked, gameStoreName, srcIcon, wishlistLowestTag, saleKey, updateAfterCheck, BASE_THEMES, SALE_THEMES }',
+  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge, mergeUiPrefs, dealShops, parseClaimed, pruneClaimed, toggleClaimed, claimedLast, normalizeTitle, hiddenTitle, searchRank, parseSeen, newIds, mergeSeen, wishlistKey, seenIds, salesSeenIds, PAGE_SIZE, pageSlice, nextTheme, targetKey, targetPrice, targetHit, parseTarget, protonTier, protonText, protonTag, nextIndex, fmt$, salePriceDescription, dataSig, timeLeft, endsFirst, endDateLabel, startDateLabel, saleDateLabel, fmtChecked, gameStoreName, srcIcon, wishlistLowestTag, saleKey, updateAfterCheck, BASE_THEMES, SALE_THEMES }',
 ].join('\n'), context)
 
 const h = context.helpers
@@ -240,6 +240,14 @@ assert.equal(h.startDateLabel('2020-01-01T00:00:00Z'), 'Free now')
 assert.equal(h.startDateLabel('2030-01-01T00:00:00Z').startsWith('Free from '), true)
 
 assert.equal(h.fmtChecked(0), '')
+// The sales calendar prints the listed day in every timezone (UTC midnight is the day before west of Greenwich)
+const tz = process.env.TZ
+for (const zone of ['America/Los_Angeles', 'Pacific/Auckland', 'UTC']) {
+  process.env.TZ = zone
+  assert.equal(h.saleDateLabel(new Date('2026-12-17'), new Date('2026-10-18T12:00:00Z')), 'Dec 17', zone)
+  assert.equal(h.saleDateLabel(new Date('2027-01-04'), new Date('2026-10-18T12:00:00Z')), 'Jan 4, 2027', zone)
+}
+if (tz === undefined) delete process.env.TZ; else process.env.TZ = tz
 assert.equal(h.fmtChecked(Date.now()), 'updated just now')
 assert.match(h.fmtChecked(Date.now() - 30000), /^updated 3[01]s ago$/) // the clock may tick between the two reads
 assert.equal(h.fmtChecked(Date.now() - 5 * 60000), 'updated 5m ago')
