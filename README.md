@@ -12,8 +12,6 @@ Optional store sign-in enables wishlist alerts. No API keys or telemetry; DealDr
 |---|---|---|
 | ![Wishlist with sale prices and cheaper stores](assets/screenshots/wishlist.png) | ![Hot deals from CheapShark](assets/screenshots/deals.png) | ![Settings: themes and notifications](assets/screenshots/settings.png) |
 
-<sub>Screenshots use the preview harness's sample data (`tools/preview/`).</sub>
-
 ---
 
 ## Features
