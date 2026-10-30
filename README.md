@@ -6,6 +6,14 @@
 
 Optional store sign-in enables wishlist alerts. No API keys or telemetry; DealDrop runs in your system tray.
 
+![Free now: free-to-keep games from Steam, Epic and GOG](assets/screenshots/free.png)
+
+| Wishlist | Hot deals | Settings |
+|---|---|---|
+| ![Wishlist with sale prices and cheaper stores](assets/screenshots/wishlist.png) | ![Hot deals from CheapShark](assets/screenshots/deals.png) | ![Settings: themes and notifications](assets/screenshots/settings.png) |
+
+<sub>Screenshots use the preview harness's sample data (`tools/preview/`).</sub>
+
 ---
 
 ## Features
