@@ -693,13 +693,28 @@ fn gp_title(raw: &str) -> String {
 
 pub async fn gamerpower() -> R<Vec<Free>> {
     let body = get_text("https://www.gamerpower.com/api/giveaways?platform=pc&type=game").await?;
-    parse_gamerpower(&body, "gp-", "free")
+    parse_gamerpower(&body, "gp-", "free").map(not_ended)
 }
 
 /// Free DLC & in-game items (opt-in `show_loot`): shown on the Free page, never notified or counted.
 pub async fn gamerpower_loot() -> R<Vec<Free>> {
     let body = get_text("https://www.gamerpower.com/api/giveaways?platform=pc&type=loot").await?;
-    parse_gamerpower(&body, "gp-loot-", "loot")
+    parse_gamerpower(&body, "gp-loot-", "loot").map(not_ended)
+}
+
+fn not_ended(giveaways: Vec<Free>) -> Vec<Free> { open_on(giveaways, (crate::now_ms() / 86_400_000) as i64) }
+
+/// GamerPower can leave a finished giveaway "Active" for days, so its end date decides too. An
+/// unreadable date keeps the giveaway. `today` is days since 1970-01-01, UTC.
+// ponytail: compares whole days because the feed doesn't name a time zone, so one that ended
+// earlier today still shows, as "Ended", until midnight UTC.
+fn open_on(mut giveaways: Vec<Free>, today: i64) -> Vec<Free> {
+    giveaways.retain(|g| {
+        let Some(date) = g.end_date.as_deref().and_then(|e| e.get(..10)) else { return true };
+        let (y, m, d) = crate::ymd(date);
+        y == 0 || crate::days_from_civil((y, m, d)) >= today
+    });
+    giveaways
 }
 
 fn parse_gamerpower(body: &str, prefix: &str, kind: &str) -> R<Vec<Free>> {
@@ -1425,6 +1440,22 @@ pub(crate) mod unit {
         assert_eq!(next[0].url, "https://store.epicgames.com/p/hades");
         assert_eq!(next[0].image.as_deref(), Some("https://cdn.example/hades.jpg"));
         assert!(super::parse_epic_upcoming("nope").is_err());
+    }
+
+    #[test]
+    fn gamerpower_drops_a_giveaway_past_its_end_date() {
+        let game = |id: &str, end: Option<&str>| super::Free { id: id.into(), end_date: end.map(str::to_string), ..Default::default() };
+        let today = crate::days_from_civil((2026, 11, 5));
+        let kept = super::open_on(vec![
+            game("yesterday", Some("2026-11-04 23:59:00")),
+            game("today", Some("2026-11-05 23:59:00")),
+            game("tomorrow", Some("2026-11-06 00:00:00")),
+            game("no end", None),
+            game("unreadable", Some("soon")),
+            game("multibyte", Some("2026-11-0é")),
+        ], today);
+        let ids: Vec<_> = kept.iter().map(|g| g.id.as_str()).collect();
+        assert_eq!(ids, ["today", "tomorrow", "no end", "unreadable", "multibyte"]);
     }
 
     #[test]

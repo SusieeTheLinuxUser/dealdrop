@@ -56,7 +56,11 @@ fn instance_id(info: &str) -> Option<&str> {
 #[cfg(any(target_os = "linux", test))]
 fn install_command(installation: &str, bundle: &std::path::Path) -> std::process::Command {
     let mut cmd = std::process::Command::new("flatpak-spawn");
-    cmd.args(["--host", "flatpak", "install", installation, "-y", "--reinstall", "--bundle"]).arg(bundle);
+    cmd.arg("--host");
+    // A system-wide install needs the password, but `-y` stops polkit asking, and without `-y`
+    // flatpak answers its own "Proceed?" with no when there's no terminal. pkexec asks first.
+    if installation == "--system" { cmd.arg("pkexec"); }
+    cmd.args(["flatpak", "install", installation, "-y", "--reinstall", "--bundle"]).arg(bundle);
     cmd
 }
 
@@ -83,11 +87,12 @@ pub fn install(bundle: &[u8]) -> Result<(), String> {
         let _ = std::fs::remove_file(&file); // a half-written bundle
         format!("Couldn't save the update to {}: {e}", file.display())
     })?;
-    // No --noninteractive: it also stops polkit from asking for the password a system-wide install needs.
     let out = install_command(installation(&info), &file).output()
         .map_err(|e| format!("Couldn't start Flatpak: {e}"));
     let _ = std::fs::remove_file(&file);
     let out = out?;
+    // pkexec: prompt dismissed, or not authorized (what KDE's Cancel button gives).
+    if matches!(out.status.code(), Some(126 | 127)) { return Err("Cancelled at the password prompt".into()); }
     if !out.status.success() {
         let err = String::from_utf8_lossy(if out.stderr.is_empty() { &out.stdout } else { &out.stderr }).trim().to_string();
         return Err(format!("Flatpak couldn't install the update: {err}"));
@@ -135,16 +140,17 @@ mod tests {
     }
 
     #[test]
-    fn install_command_installs_the_bundle_without_noninteractive() {
+    fn install_command_goes_through_pkexec_only_for_a_system_install() {
         let bundle = std::path::Path::new("/cache/dealdrop-update.flatpak");
-        for flag in ["--user", "--system"] {
+        let args = |flag| -> Vec<String> {
             let cmd = install_command(flag, bundle);
             assert_eq!(cmd.get_program(), "flatpak-spawn");
-            let args: Vec<_> = cmd.get_args().map(|a| a.to_string_lossy().into_owned()).collect();
-            assert_eq!(args, vec!["--host", "flatpak", "install", flag, "-y", "--reinstall", "--bundle", "/cache/dealdrop-update.flatpak"]);
-            // `--noninteractive` also stops polkit from asking for the password (see AGENTS.md)
-            assert!(!args.iter().any(|a| a.contains("noninteractive")));
-        }
+            cmd.get_args().map(|a| a.to_string_lossy().into_owned()).collect()
+        };
+        let install = |flag: &'static str| ["flatpak", "install", flag, "-y", "--reinstall", "--bundle", "/cache/dealdrop-update.flatpak"];
+        assert_eq!(args("--user")[1..], install("--user"));
+        assert_eq!(args("--system")[1..=1], ["pkexec"]);
+        assert_eq!(args("--system")[2..], install("--system"));
     }
 
     #[test]

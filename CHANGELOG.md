@@ -2,6 +2,10 @@
 
 All notable changes to DealDrop are documented in this file.
 
+## [Unreleased]
+- Fixed: **Update** on a system-wide Flatpak install failed with "not allowed for user" and never asked for the password. It now asks. Copies already on v0.10.0 need one update by hand: `sudo flatpak install --system --reinstall --bundle DealDrop_<version>_x86_64.flatpak`.
+- Fixed: a giveaway GamerPower still marks active after its end date no longer shows under Free now or counts towards the sidebar and tray numbers.
+
 ## [v0.10.0] - 2026-10-31
 - Fixed: the sales calendar showed every date a day early west of UTC (the Americas).
 - Fixed: Settings → About → **Check for updates** says GitHub couldn't be reached when the check fails, instead of "You're on the latest version." A failed check also no longer hides an update that was already offered.
