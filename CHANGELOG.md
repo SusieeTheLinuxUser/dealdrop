@@ -2,7 +2,7 @@
 
 All notable changes to DealDrop are documented in this file.
 
-## [Unreleased]
+## [v0.10.1] - 2026-11-05
 - Fixed: **Update** on a system-wide Flatpak install failed with "not allowed for user" and never asked for the password. It now asks. Copies already on v0.10.0 need one update by hand: `sudo flatpak install --system --reinstall --bundle DealDrop_<version>_x86_64.flatpak`.
 - Fixed: a giveaway GamerPower still marks active after its end date no longer shows under Free now or counts towards the sidebar and tray numbers.
 
