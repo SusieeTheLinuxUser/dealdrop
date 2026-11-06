@@ -246,6 +246,8 @@ for (const zone of ['America/Los_Angeles', 'Pacific/Auckland', 'UTC']) {
   process.env.TZ = zone
   assert.equal(h.saleDateLabel(new Date('2026-12-17'), new Date('2026-10-18T12:00:00Z')), 'Dec 17', zone)
   assert.equal(h.saleDateLabel(new Date('2027-01-04'), new Date('2026-10-18T12:00:00Z')), 'Jan 4, 2027', zone)
+  // the year compares with now's UTC year, not the local one (Auckland is already in 2027 while UTC is still 2026)
+  assert.equal(h.saleDateLabel(new Date('2027-01-01'), new Date('2026-12-31T23:30:00Z')), 'Jan 1, 2027', zone)
 }
 if (tz === undefined) delete process.env.TZ; else process.env.TZ = tz
 assert.equal(h.fmtChecked(Date.now()), 'updated just now')

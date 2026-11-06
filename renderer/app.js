@@ -350,7 +350,7 @@ function startDateLabel (dateStr) {
 // "Dec 17" for a SALES day (a date-only string parses as UTC midnight, so print it in UTC:
 // in the Americas the local date would be the day before). The year shows unless it is this year's.
 function saleDateLabel (d, now) {
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC', year: d.getUTCFullYear() === now.getFullYear() ? undefined : 'numeric' })
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC', year: d.getUTCFullYear() === now.getUTCFullYear() ? undefined : 'numeric' })
 }
 
 function fmtChecked (ts) {

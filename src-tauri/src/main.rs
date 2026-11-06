@@ -743,7 +743,11 @@ fn wishlist_notice(fresh: &[&WishItem], proton: &HashMap<String, String>) -> Opt
             let p = w.price_info.as_ref().unwrap();
             Some(Notice {
                 title: format!("🏷️ {} is on sale!", w.name),
-                body: format!("{}% off — now {} on {}{}", p.discount, p.formatted.clone().unwrap_or_default(), store_label(&w.store), proton_suffix(&w.app_id, proton)),
+                // No formatted price (Epic may not send one): name the store, never an empty "now  on" (no $ either: not every price is USD)
+                body: match &p.formatted {
+                    Some(formatted) => format!("{}% off — now {formatted} on {}{}", p.discount, store_label(&w.store), proton_suffix(&w.app_id, proton)),
+                    None => format!("{}% off on {}{}", p.discount, store_label(&w.store), proton_suffix(&w.app_id, proton)),
+                },
             })
         }
         many => {
@@ -1545,6 +1549,19 @@ mod tests {
             price_info: off.map(|discount| Price { discount, formatted: Some("$4.99".into()), ..Default::default() }),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn a_wishlist_notice_without_a_formatted_price_names_the_store() {
+        // Epic may send no formatted price: no doubled-space "now  on", and no invented $ amount (not every price is USD)
+        let bare = WishItem {
+            store: "epic".into(), id: "e1".into(), name: "Hades".into(),
+            price_info: Some(Price { discount: 50, formatted: None, ..Default::default() }),
+            ..Default::default()
+        };
+        assert_eq!(wishlist_notice(&[&bare], &HashMap::new()).unwrap().body, "50% off on Epic Games");
+        let priced = WishItem { price_info: Some(Price { discount: 50, formatted: Some("$4.99".into()), ..Default::default() }), ..bare };
+        assert_eq!(wishlist_notice(&[&priced], &HashMap::new()).unwrap().body, "50% off — now $4.99 on Epic Games");
     }
 
     #[test]
