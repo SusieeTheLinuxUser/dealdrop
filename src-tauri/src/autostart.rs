@@ -190,10 +190,19 @@ pub fn set(on: bool) -> Result<(), String> {
 #[cfg(target_os = "macos")]
 pub fn get() -> bool { entry().is_some_and(|(p, _)| p.exists()) }
 
+/// True when the app runs from a mounted DMG or a Gatekeeper-translocated copy: that path is gone
+/// after eject/reboot, so a LaunchAgent written from it would silently stop working.
+#[cfg(any(target_os = "macos", test))]
+fn transient_mac_path(p: &str) -> bool { p.starts_with("/Volumes/") || p.contains("/AppTranslocation/") }
+
 #[cfg(target_os = "macos")]
 pub fn set(on: bool) -> Result<(), String> {
     let (path, text) = entry().ok_or("Couldn't find your home folder")?;
-    if on { write(&path, &text(&exe()?)) } else { remove(&path) }
+    if on {
+        let exe = exe()?;
+        if transient_mac_path(&exe) { return Err("Move DealDrop to your Applications folder first, then turn this on".into()); }
+        write(&path, &text(&exe))
+    } else { remove(&path) }
 }
 
 #[cfg(target_os = "windows")]
@@ -277,6 +286,13 @@ mod tests {
         let text = launch_agent("/Applications/Deal & <Drop>.app/Contents/MacOS/DealDrop");
         assert!(text.contains("/Applications/Deal &amp; &lt;Drop&gt;.app/Contents/MacOS/DealDrop"));
         assert!(!text.contains("<Drop>"));
+    }
+
+    #[test]
+    fn a_dmg_or_translocated_path_cannot_autostart() {
+        assert!(transient_mac_path("/Volumes/DealDrop/DealDrop.app/Contents/MacOS/dealdrop"));
+        assert!(transient_mac_path("/private/var/folders/xy/T/AppTranslocation/ABC/d/DealDrop.app/Contents/MacOS/dealdrop"));
+        assert!(!transient_mac_path("/Applications/DealDrop.app/Contents/MacOS/dealdrop"));
     }
 
     #[test]

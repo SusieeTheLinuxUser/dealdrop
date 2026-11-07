@@ -220,8 +220,9 @@ pub async fn gog_wishlist(access: &str) -> R<Vec<WishItem>> {
         let info_url = format!("https://api.gog.com/products?ids={list}");
         let price_url = format!("https://api.gog.com/products/prices?ids={list}&countryCode={country}&currency={currency}");
         let (info, prices) = futures::join!(get_json(&info_url), get_json(&price_url));
-        let prices = prices.unwrap_or(Value::Null);
-        let info = info?;
+        // A failed prices call fails the wishlist like a failed products call: priceless rows would
+        // silently disable price targets and replace the last good rows.
+        let (info, prices) = (info?, prices?);
         out.extend(parse_gog_wishlist_products(&info, &prices));
     }
     Ok(out)
