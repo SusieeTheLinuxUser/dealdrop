@@ -394,6 +394,12 @@ fn should_prime(primed: bool, seen_empty: bool, had_errors: bool) -> Prime {
 /// What `last_sale_key` stores: the sale's theme key, or a constant when only the generic "sale is on" flag fired.
 fn live_sale_key(live: Option<&LiveSale>) -> &str { live.map_or("steam-sale", |l| l.key.as_str()) }
 
+/// The generic key and a themed key are one sale seen two ways (the banner rotates in and out of
+/// the spotlight), so only a sale starting from nothing, or a different themed sale, is new.
+fn is_new_sale(last: Option<&str>, key: &str) -> bool {
+    last.is_none_or(|l| l != key && l != "steam-sale" && key != "steam-sale")
+}
+
 async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
     let (settings, steam_id, gog, epic) = st.read(|d| {
         (d.settings.clone(), d.steam_id.clone(), d.gog.clone(), d.epic.clone())
@@ -409,11 +415,12 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
             if on {
                 // Keyed on the stable theme key: the banner's display text can change during one sale.
                 let key = live_sale_key(live.as_ref());
-                if settings.notify_major_sale && st.read(|d| d.last_sale_key.as_deref() != Some(key)) {
+                if settings.notify_major_sale && st.read(|d| is_new_sale(d.last_sale_key.as_deref(), key)) {
                     let name = live.as_ref().map_or("Steam Sale", |l| l.name.as_str());
                     notify(app, "🎉 Steam sale started!", &format!("{name} is live — go grab some deals."));
                 }
-                st.edit(|d| d.last_sale_key = Some(key.into()));
+                // Keep a themed key over the generic one, so the banner coming back isn't a new sale.
+                st.edit(|d| if key != "steam-sale" || d.last_sale_key.is_none() { d.last_sale_key = Some(key.into()) });
             } else {
                 st.edit(|d| d.last_sale_key = None);
             }
@@ -2009,6 +2016,12 @@ mod tests {
         assert_eq!(key(Some(&sale("summer", "Steam Summer Sale"))), key(Some(&sale("summer", "Summer Sale: up to 90% off"))));
         assert_ne!(key(Some(&sale("summer", "Summer Sale"))), key(Some(&sale("winter", "Winter Sale"))));
         assert_eq!(key(None), "steam-sale"); // a sale with no themed banner
+        // Generic first, then the themed banner (or back): still one sale, one notification.
+        assert!(super::is_new_sale(None, "steam-sale"));
+        assert!(!super::is_new_sale(Some("steam-sale"), "autumn"));
+        assert!(!super::is_new_sale(Some("autumn"), "steam-sale"));
+        assert!(!super::is_new_sale(Some("autumn"), "autumn"));
+        assert!(super::is_new_sale(Some("autumn"), "winter"));
     }
 
     #[test]
