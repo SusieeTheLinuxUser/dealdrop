@@ -2,7 +2,7 @@
 
 use crate::sources::{self, Deal, Free};
 use crate::stores;
-use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent};
+use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -210,6 +210,11 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         let Event::Key(key) = event::read()? else {
             continue;
         };
+        // Windows reports the key release too: without this every key would act twice.
+        // Repeats stay, so holding Down keeps moving.
+        if key.kind == KeyEventKind::Release {
+            continue;
+        }
         match key_action(key) {
             Action::Quit => break,
             Action::Refresh => {
