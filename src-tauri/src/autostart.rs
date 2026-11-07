@@ -200,7 +200,7 @@ pub fn set(on: bool) -> Result<(), String> {
     let (path, text) = entry().ok_or("Couldn't find your home folder")?;
     if on {
         let exe = exe()?;
-        if transient_mac_path(&exe) { return Err("Move DealDrop to your Applications folder first, then turn this on".into()); }
+        if transient_mac_path(&exe) { return Err("Quit DealDrop from the tray menu, move it to your Applications folder, open it from there, then turn this on".into()); }
         write(&path, &text(&exe))
     } else { remove(&path) }
 }

@@ -334,7 +334,9 @@ fn keep_or_fail(res: R<Vec<WishItem>>, store: &str, prev: &Snapshot, errors: &mu
         Err(e) => {
             eprintln!("[wishlist:{store}] {e}");
             errors.insert(store.into(), e);
-            prev.wishlist.iter().filter(|w| w.store == store).cloned().collect()
+            // Drop the old "cheaper elsewhere" offer: attach_cheapest only ever sets one, so a stale offer
+            // would outlive its deal. carry_cheapest brings it back when CheapShark gives no answer.
+            prev.wishlist.iter().filter(|w| w.store == store).cloned().map(|mut w| { w.cheapest = None; w }).collect()
         }
     }
 }
@@ -566,7 +568,9 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
     }
     proton.extend(proton_tiers(st, wishlist.iter().map(|w| &w.app_id)).await);
     if settings.notify_wishlist_sale { notify_wishlist(app, st, &wishlist, &proton); }
-    notify_targets(app, st, &wishlist); // setting a target is the opt-in, so no extra toggle
+    // Restored rows carry last poll's prices: a failed store keeps its target state instead of firing on them.
+    let fresh: Vec<WishItem> = wishlist.iter().filter(|w| !wishlist_errors.contains_key(&w.store)).cloned().collect();
+    notify_targets(app, st, &fresh); // setting a target is the opt-in, so no extra toggle
     if settings.notify_big_deal { notify_big_deals(app, st, &deals, &proton); }
 
     Snapshot {
@@ -1916,10 +1920,12 @@ mod tests {
     #[test]
     fn a_failed_wishlist_store_keeps_its_last_good_rows() {
         let gog = |id: &str| WishItem { store: "gog".into(), id: id.into(), name: id.into(), ..Default::default() };
-        let prev = super::Snapshot { wishlist: vec![gog("1"), gog("2")], ..Default::default() };
+        let offer = crate::sources::Cheapest { store: "X".into(), price: 1.0, url: String::new() };
+        let prev = super::Snapshot { wishlist: vec![WishItem { cheapest: Some(offer), ..gog("1") }, gog("2")], ..Default::default() };
         let mut errors = HashMap::new();
         let rows = keep_or_fail(Err("boom".into()), "gog", &prev, &mut errors);
         assert_eq!(rows.iter().map(|w| w.id.as_str()).collect::<Vec<_>>(), ["1", "2"]);
+        assert!(rows.iter().all(|w| w.cheapest.is_none()), "a restored row must not keep a stale offer");
         assert_eq!(errors.get("gog").map(String::as_str), Some("boom"));
         // A store that answered replaces its rows
         let mut errors = HashMap::new();
