@@ -208,9 +208,11 @@ async fn send_auth(url: &str, access: &str) -> R<Value> {
 
 pub async fn gog_wishlist(access: &str) -> R<Vec<WishItem>> {
     let v = send_auth("https://embed.gog.com/user/wishlist.json", access).await?;
-    let ids = parse_gog_wishlist_ids(&v);
+    let ids = parse_gog_wishlist_ids(&v)?;
     if ids.is_empty() { return Ok(vec![]); }
-    let (_, country, currency, _) = gog_user(access).await;
+    // A failed profile call must fail the wishlist (the caller keeps the last good rows), not quietly
+    // re-price everything in US/USD: that would pass the USD-only checks on cheapest offers and targets.
+    let (_, country, currency, _) = parse_gog_user(&send_auth("https://embed.gog.com/userData.json", access).await?);
 
     let mut out = vec![];
     for chunk in ids.chunks(50) {
@@ -225,9 +227,15 @@ pub async fn gog_wishlist(access: &str) -> R<Vec<WishItem>> {
     Ok(out)
 }
 
-fn parse_gog_wishlist_ids(v: &Value) -> Vec<String> {
-    v["wishlist"].as_object().into_iter().flatten()
-        .filter(|(_, on)| **on != false && **on != 0).map(|(k, _)| k.clone()).collect()
+/// An object of ids (value false/0 = not wanted). An empty wishlist may come back as `[]`; any other
+/// shape is an answer we don't understand, so the wishlist fails and the UI shows it instead of going empty.
+fn parse_gog_wishlist_ids(v: &Value) -> R<Vec<String>> {
+    match &v["wishlist"] {
+        Value::Object(map) => Ok(map.iter()
+            .filter(|(_, on)| **on != false && **on != 0).map(|(k, _)| k.clone()).collect()),
+        Value::Array(a) if a.is_empty() => Ok(vec![]),
+        _ => Err("GOG sent a wishlist DealDrop doesn't understand".into()),
+    }
 }
 
 fn parse_gog_wishlist_products(products: &Value, prices: &Value) -> Vec<WishItem> {
@@ -493,11 +501,17 @@ mod unit {
     #[test]
     fn gog_wishlist_ids_skip_off_entries() {
         let v = json!({"wishlist": {"10": true, "20": false, "30": 0, "40": 1}});
-        let mut ids = super::parse_gog_wishlist_ids(&v);
+        let mut ids = super::parse_gog_wishlist_ids(&v).unwrap();
         ids.sort();
         assert_eq!(ids, vec!["10".to_string(), "40".to_string()]);
-        assert!(super::parse_gog_wishlist_ids(&json!({})).is_empty());
-        assert!(super::parse_gog_wishlist_ids(&json!({"wishlist": []})).is_empty());
+        // An empty wishlist can come back as [] — a real empty list, not a broken answer.
+        assert!(super::parse_gog_wishlist_ids(&json!({"wishlist": []})).unwrap().is_empty());
+        // Anything else is a shape we don't know: the wishlist must fail, not go silently empty.
+        let e = "GOG sent a wishlist DealDrop doesn't understand";
+        assert_eq!(super::parse_gog_wishlist_ids(&json!({})).unwrap_err(), e);
+        assert_eq!(super::parse_gog_wishlist_ids(&json!({"wishlist": null})).unwrap_err(), e);
+        assert_eq!(super::parse_gog_wishlist_ids(&json!({"wishlist": ["10"]})).unwrap_err(), e);
+        assert_eq!(super::parse_gog_wishlist_ids(&serde_json::Value::Null).unwrap_err(), e);
     }
 
     #[test]
@@ -813,7 +827,7 @@ mod unit {
         let prices = json!({"_embedded": {"items": [{"_embedded": {"product": {"id": 7}, "prices": [{"basePrice": "999 USD", "finalPrice": "500 USD"}]}}]}});
         for m in mutations(&products) { for w in super::parse_gog_wishlist_products(&m, &prices) { sane("gog products", &w.price_info); } }
         for m in mutations(&prices) { for w in super::parse_gog_wishlist_products(&products, &m) { sane("gog prices", &w.price_info); } }
-        for m in mutations(&json!({"wishlist": {"7": true, "8": 0}})) { super::parse_gog_wishlist_ids(&m); }
+        for m in mutations(&json!({"wishlist": {"7": true, "8": 0}})) { let _ = super::parse_gog_wishlist_ids(&m); }
         let offer = json!({"title": "G", "id": "o1", "offerId": "o1", "productSlug": "g/home", "keyImages": [{"type": "Thumbnail", "url": "u"}],
             "price": {"totalPrice": {"discountPrice": 500, "originalPrice": 1000, "currencyInfo": {"decimals": 2}, "fmtPrice": {"discountPrice": "$5.00"}}}});
         let sales = json!({"data": {"Catalog": {"searchStore": {"elements": [offer.clone()]}}}});

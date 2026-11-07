@@ -133,6 +133,14 @@ fn repaired_entry(text: &str, exec: &str, exists: impl Fn(&str) -> bool) -> Opti
     Some(text.lines().map(|l| if l.starts_with("Exec=") { exec } else { l }).collect::<Vec<_>>().join("\n") + "\n")
 }
 
+/// False when the desktop's own autostart settings switched our entry off: those keep the file and add
+/// `Hidden=true` / `X-GNOME-Autostart-enabled=false`, so the file existing is not "on". Turning it on
+/// again rewrites the whole entry, which drops them.
+#[cfg(any(target_os = "linux", test))]
+fn entry_enabled(text: &str) -> bool {
+    !text.lines().map(str::trim).any(|l| l == "Hidden=true" || l == "X-GNOME-Autostart-enabled=false")
+}
+
 /// Held across reading and writing the entry, so the startup repair and the Settings toggle can't interleave.
 #[cfg(target_os = "linux")]
 static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -157,7 +165,9 @@ pub fn refresh() {
 pub fn refresh() {}
 
 #[cfg(target_os = "linux")]
-pub fn get() -> bool { config_home().is_some_and(|c| desktop_path(&c).exists()) }
+pub fn get() -> bool {
+    config_home().and_then(|c| std::fs::read_to_string(desktop_path(&c)).ok()).is_some_and(|text| entry_enabled(&text))
+}
 
 #[cfg(target_os = "linux")]
 pub fn set(on: bool) -> Result<(), String> {
@@ -268,6 +278,15 @@ mod tests {
         assert!(exec_path("Exec=").is_none());
         assert!(exec_path("Exec").is_none());
         assert!(exec_path(" X-Exec=\"/apps/x\"").is_none());
+    }
+
+    #[test]
+    fn a_desktop_entry_switched_off_by_the_desktop_is_not_on() {
+        let text = desktop_entry(&quoted("/opt/dealdrop"), Path::new("/i.png"));
+        assert!(entry_enabled(&text));
+        assert!(!entry_enabled(&(text.clone() + "Hidden=true\n")));
+        assert!(!entry_enabled(&text.replace("enabled=true", "enabled=false")));
+        assert!(entry_enabled("Hidden=false\nX-GNOME-Autostart-enabled=true\n"));
     }
 
     #[test]
