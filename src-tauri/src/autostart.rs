@@ -138,7 +138,14 @@ fn repaired_entry(text: &str, exec: &str, exists: impl Fn(&str) -> bool) -> Opti
 /// again rewrites the whole entry, which drops them.
 #[cfg(any(target_os = "linux", test))]
 fn entry_enabled(text: &str) -> bool {
-    !text.lines().map(str::trim).any(|l| l == "Hidden=true" || l == "X-GNOME-Autostart-enabled=false")
+    // Only `[Desktop Entry]` keys count (an action group may say Hidden=true), and the spec
+    // allows spaces around `=`.
+    let mut in_entry = true;
+    !text.lines().map(str::trim).any(|l| {
+        if l.starts_with('[') { in_entry = l == "[Desktop Entry]"; return false; }
+        let Some((key, value)) = l.split_once('=') else { return false };
+        in_entry && matches!((key.trim(), value.trim()), ("Hidden", "true") | ("X-GNOME-Autostart-enabled", "false"))
+    })
 }
 
 /// Held across reading and writing the entry, so the startup repair and the Settings toggle can't interleave.
@@ -166,6 +173,7 @@ pub fn refresh() {}
 
 #[cfg(target_os = "linux")]
 pub fn get() -> bool {
+    let _lock = LOCK.lock();
     config_home().and_then(|c| std::fs::read_to_string(desktop_path(&c)).ok()).is_some_and(|text| entry_enabled(&text))
 }
 
@@ -287,6 +295,9 @@ mod tests {
         assert!(!entry_enabled(&(text.clone() + "Hidden=true\n")));
         assert!(!entry_enabled(&text.replace("enabled=true", "enabled=false")));
         assert!(entry_enabled("Hidden=false\nX-GNOME-Autostart-enabled=true\n"));
+        assert!(!entry_enabled(&(text.clone() + "Hidden = true\n")));
+        assert!(!entry_enabled(&text.replace("enabled=true", "enabled = false")));
+        assert!(entry_enabled(&(text.clone() + "\n[Desktop Action Quit]\nHidden=true\n")));
     }
 
     #[test]

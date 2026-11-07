@@ -211,7 +211,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             continue;
         };
         // Windows reports the key release too: without this every key would act twice.
-        if key.kind != KeyEventKind::Press {
+        // Repeats stay, so holding Down keeps moving.
+        if key.kind == KeyEventKind::Release {
             continue;
         }
         match key_action(key) {
