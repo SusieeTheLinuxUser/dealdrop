@@ -133,6 +133,21 @@ fn repaired_entry(text: &str, exec: &str, exists: impl Fn(&str) -> bool) -> Opti
     Some(text.lines().map(|l| if l.starts_with("Exec=") { exec } else { l }).collect::<Vec<_>>().join("\n") + "\n")
 }
 
+/// False when the desktop's own autostart settings switched our entry off: those keep the file and add
+/// `Hidden=true` / `X-GNOME-Autostart-enabled=false`, so the file existing is not "on". Turning it on
+/// again rewrites the whole entry, which drops them.
+#[cfg(any(target_os = "linux", test))]
+fn entry_enabled(text: &str) -> bool {
+    // Only `[Desktop Entry]` keys count (an action group may say Hidden=true), and the spec
+    // allows spaces around `=`.
+    let mut in_entry = true;
+    !text.lines().map(str::trim).any(|l| {
+        if l.starts_with('[') { in_entry = l == "[Desktop Entry]"; return false; }
+        let Some((key, value)) = l.split_once('=') else { return false };
+        in_entry && matches!((key.trim(), value.trim()), ("Hidden", "true") | ("X-GNOME-Autostart-enabled", "false"))
+    })
+}
+
 /// Held across reading and writing the entry, so the startup repair and the Settings toggle can't interleave.
 #[cfg(target_os = "linux")]
 static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -157,7 +172,10 @@ pub fn refresh() {
 pub fn refresh() {}
 
 #[cfg(target_os = "linux")]
-pub fn get() -> bool { config_home().is_some_and(|c| desktop_path(&c).exists()) }
+pub fn get() -> bool {
+    let _lock = LOCK.lock();
+    config_home().and_then(|c| std::fs::read_to_string(desktop_path(&c)).ok()).is_some_and(|text| entry_enabled(&text))
+}
 
 #[cfg(target_os = "linux")]
 pub fn set(on: bool) -> Result<(), String> {
@@ -172,10 +190,19 @@ pub fn set(on: bool) -> Result<(), String> {
 #[cfg(target_os = "macos")]
 pub fn get() -> bool { entry().is_some_and(|(p, _)| p.exists()) }
 
+/// True when the app runs from a mounted DMG or a Gatekeeper-translocated copy: that path is gone
+/// after eject/reboot, so a LaunchAgent written from it would silently stop working.
+#[cfg(any(target_os = "macos", test))]
+fn transient_mac_path(p: &str) -> bool { p.starts_with("/Volumes/") || p.contains("/AppTranslocation/") }
+
 #[cfg(target_os = "macos")]
 pub fn set(on: bool) -> Result<(), String> {
     let (path, text) = entry().ok_or("Couldn't find your home folder")?;
-    if on { write(&path, &text(&exe()?)) } else { remove(&path) }
+    if on {
+        let exe = exe()?;
+        if transient_mac_path(&exe) { return Err("Quit DealDrop from the tray menu, move it to your Applications folder, open it from there, then turn this on".into()); }
+        write(&path, &text(&exe))
+    } else { remove(&path) }
 }
 
 #[cfg(target_os = "windows")]
@@ -262,12 +289,31 @@ mod tests {
     }
 
     #[test]
+    fn a_dmg_or_translocated_path_cannot_autostart() {
+        assert!(transient_mac_path("/Volumes/DealDrop/DealDrop.app/Contents/MacOS/dealdrop"));
+        assert!(transient_mac_path("/private/var/folders/xy/T/AppTranslocation/ABC/d/DealDrop.app/Contents/MacOS/dealdrop"));
+        assert!(!transient_mac_path("/Applications/DealDrop.app/Contents/MacOS/dealdrop"));
+    }
+
+    #[test]
     fn only_our_own_exec_line_is_read_back() {
         assert_eq!(exec_path(r#"Exec="/apps/dealdrop" --hidden"#).as_deref(), Some("/apps/dealdrop"));
         assert!(exec_path("Exec=/apps/dealdrop").is_none()); // not quoted
         assert!(exec_path("Exec=").is_none());
         assert!(exec_path("Exec").is_none());
         assert!(exec_path(" X-Exec=\"/apps/x\"").is_none());
+    }
+
+    #[test]
+    fn a_desktop_entry_switched_off_by_the_desktop_is_not_on() {
+        let text = desktop_entry(&quoted("/opt/dealdrop"), Path::new("/i.png"));
+        assert!(entry_enabled(&text));
+        assert!(!entry_enabled(&(text.clone() + "Hidden=true\n")));
+        assert!(!entry_enabled(&text.replace("enabled=true", "enabled=false")));
+        assert!(entry_enabled("Hidden=false\nX-GNOME-Autostart-enabled=true\n"));
+        assert!(!entry_enabled(&(text.clone() + "Hidden = true\n")));
+        assert!(!entry_enabled(&text.replace("enabled=true", "enabled = false")));
+        assert!(entry_enabled(&(text.clone() + "\n[Desktop Action Quit]\nHidden=true\n")));
     }
 
     #[test]
