@@ -2,6 +2,11 @@
 
 All notable changes to DealDrop are documented in this file.
 
+## [v0.10.3] - 2026-11-08
+- Fixed: GOG wishlist: a sale priced in another currency (e.g. EUR) showed its old price in dollars ("$19.99" next to "4.99 EUR"). Both now use the same currency.
+- Fixed: the sales calendar showed a Steam sale as over during its whole last day. It now counts as live until the day ends (UTC).
+- Fixed: screen readers: filtering Store sales announced "N deals shown". It now says "N store sales shown".
+
 ## [v0.10.2] - 2026-11-08
 - Fixed: one Steam sale could send "Steam sale started!" more than once when Steam rotated its sale banner. It now notifies once per sale.
 - Fixed: a wishlist sale alert with no price shown by the store read "50% off — now  on Steam". It now says "50% off on Steam".
