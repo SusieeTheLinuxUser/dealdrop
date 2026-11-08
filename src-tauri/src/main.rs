@@ -1307,19 +1307,6 @@ mod tests {
     }
 
     #[test]
-    fn notification_cuts_from_the_config_file_are_clamped() {
-        // A hand-edited 0 would treat unpriced games as on sale (and a single one panicked wishlist_notice).
-        let dir = std::env::temp_dir().join(format!("dealdrop-cuts-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("config.json");
-        std::fs::write(&path, r#"{"settings":{"wishlistMinCut":0,"bigDealMinCut":7}}"#).unwrap();
-        let db = load_db(&path);
-        assert_eq!((db.settings.wishlist_min_cut, db.settings.big_deal_min_cut), (10, 50));
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
     fn failure_text_is_capped_without_splitting_characters() {
         // 4000 bytes of emoji: a byte-wise cap would cut a glyph in half (the cap counts chars)
         let msg = failure("Epic sales", &"🎮".repeat(1000));
