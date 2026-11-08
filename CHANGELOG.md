@@ -2,6 +2,15 @@
 
 All notable changes to DealDrop are documented in this file.
 
+## [v0.10.2] - 2026-11-08
+- Fixed: one Steam sale could send "Steam sale started!" more than once when Steam rotated its sale banner. It now notifies once per sale.
+- Fixed: a wishlist sale alert with no price shown by the store read "50% off — now  on Steam". It now says "50% off on Steam".
+- Fixed: near New Year, a sales calendar range could show the year on one date and not the other.
+- Fixed: Linux: "Start when I log in" showed On after you switched it off in KDE's or GNOME's own autostart settings.
+- Fixed: GOG wishlist: when GOG's profile or prices request failed, the wishlist showed prices in USD or no prices at all, with no error. It now keeps the last good list and shows the error. An unexpected answer from GOG also shows an error instead of an empty wishlist.
+- Fixed: Windows: in the terminal UI (`--tui`) every key acted twice.
+- macOS: turning on "Start when I log in" while DealDrop runs from the DMG now asks you to move it to Applications first (the entry stopped working once the DMG was ejected).
+
 ## [v0.10.1] - 2026-11-05
 - Fixed: **Update** on a system-wide Flatpak install failed with "not allowed for user" and never asked for the password. It now asks. Copies already on v0.10.0 need one update by hand: `sudo flatpak install --system --reinstall --bundle DealDrop_<version>_x86_64.flatpak`.
 - Fixed: a giveaway GamerPower still marks active after its end date no longer shows under Free now or counts towards the sidebar and tray numbers.

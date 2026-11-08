@@ -46,7 +46,7 @@ NO_UPLOAD=1 ../scripts/release-linux.sh             # Flatpak bundle → src-tau
 ## Branches
 
 - `main` = what has been released (the fallback; every release is also a `vX.Y.Z` tag). Don't commit work-in-progress to it.
-- `dev` = day-to-day work. Commit and push here; to release, fast-forward `main` to `dev` (`git switch main && git merge --ff-only dev && git push`), then follow Releasing below and switch back to `dev`.
+- `dev` = day-to-day work. Commit and push here, and open PRs against `dev`, never `main` (PRs #6–#8 went to `main` by mistake and the branches split; v0.10.2 joined them with a one-off merge commit, pushed with the linear-history rule switched off for a moment); to release, fast-forward `main` to `dev` (`git switch main && git merge --ff-only dev && git push`), then follow Releasing below and switch back to `dev`.
 - GitHub rulesets: `main`/`dev` can't be deleted or force-pushed and need linear history (PRs merge by rebase or squash; merge commits are off). `v*` tags can't be moved or deleted.
 
 ## Releasing — ALWAYS all three platforms
