@@ -57,7 +57,10 @@ try {
   }
   const note = await waitEvent('notify')
   check('a new free game sends a notification', !!note && /free/i.test(note.summary), note)
-  check('…only one for the poll', events.filter(e => e.notify).length === 1, events.filter(e => e.notify).map(e => e.notify.summary))
+  // Free weekends get their own notification (notify_free_weekend), so allow one of each kind
+  const sent = events.filter(e => e.notify).map(e => e.notify.summary)
+  const kinds = sent.map(t => /weekend/i.test(t) ? 'weekend' : 'free')
+  check('…only one per kind for the poll', kinds.length === new Set(kinds).size, sent)
 } finally {
   await app.quit()
   desktop.kill()
