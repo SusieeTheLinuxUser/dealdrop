@@ -226,7 +226,7 @@ function currentListItems (key) {
 function announceListResults (key) {
   const fields = key === 'wishlist' ? { title: item => item.name, price: item => item.priceInfo?.final ?? Infinity, discount: item => item.priceInfo?.discount ?? 0 } : {}
   const count = filteredSorted(currentListItems(key), key, fields).length
-  announceStatus(`${count} ${key === 'wishlist' ? 'wishlist games' : 'deals'} shown`)
+  announceStatus(`${count} ${{ wishlist: 'wishlist games', storesales: 'store sales' }[key] ?? 'deals'} shown`)
 }
 
 function updateResultCount (key, visible, total) {
@@ -301,13 +301,14 @@ function showFilterEmpty (emptyEl, key, inputId, minDiscountId, render, message,
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
-const fmt$ = n => {
+// `currency`: an ISO code other than USD prints like the backend's GOG prices ("4.99 EUR")
+const fmt$ = (n, currency) => {
   const num = Number(n) || 0
-  return num === 0 ? 'Free' : '$' + num.toFixed(2)
+  return num === 0 ? 'Free' : !currency || currency === 'USD' ? '$' + num.toFixed(2) : `${num.toFixed(2)} ${currency}`
 }
 
-const salePriceDescription = (regular, price, discount, formatted) =>
-  `Was ${fmt$(regular)}, now ${formatted || fmt$(price)}, ${discount}% off`
+const salePriceDescription = (regular, price, discount, formatted, currency) =>
+  `Was ${fmt$(regular, currency)}, now ${formatted || fmt$(price, currency)}, ${discount}% off`
 
 function timeLeft (dateStr) {
   if (!dateStr) return ''
@@ -351,6 +352,12 @@ function startDateLabel (dateStr) {
 // in the Americas the local date would be the day before). The year shows unless it is this year's.
 function saleDateLabel (d, now) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC', year: d.getUTCFullYear() === now.getUTCFullYear() ? undefined : 'numeric' })
+}
+
+// SALES dates are whole UTC days and `end` is the last day, so a sale is live through all of it
+function saleState (s, now) {
+  const today = now.toISOString().slice(0, 10)
+  return s.end < today ? 'past' : s.start <= today ? 'live' : 'upcoming'
 }
 
 function fmtChecked (ts) {
@@ -941,8 +948,8 @@ function makeWishlistSaleRow (w, isNew = false) {
       <div class="deal-name">${escHtml(w.name)}</div>
       <div class="deal-store">${storeTag(w.store)}${w.cheapest ? `<span class="cheapest-tag">↘ ${escHtml(w.cheapest.store)} ${fmt$(w.cheapest.price)}</span>` : ''}${isNew ? NEW_TAG : ''}${wishlistLowestTag(w)}${wishlistTargetTag(w)}${protonTag(w.appId)}</div>
     </div>
-    <span class="sr-only">${escHtml(salePriceDescription(p.initial, p.final, p.discount, p.formatted))}</span>
-    <span class="deal-orig" aria-hidden="true">${fmt$(p.initial)}</span>
+    <span class="sr-only">${escHtml(salePriceDescription(p.initial, p.final, p.discount, p.formatted, p.currency))}</span>
+    <span class="deal-orig" aria-hidden="true">${escHtml(fmt$(p.initial, p.currency))}</span>
     <span class="deal-price" aria-hidden="true">${escHtml(p.formatted ?? fmt$(p.final))}</span>
     <span class="deal-cut" aria-hidden="true">-${escHtml(p.discount)}%</span>`
   main.querySelector('.deal-name').setAttribute('title', w.name)
@@ -974,7 +981,7 @@ function makeWishlistRow (w, isNew = false) {
   const info  = document.createElement('div')
   const priceStr = p?.formatted
     ? (onSale
-        ? `<span class="sr-only">${escHtml(salePriceDescription(p.initial, p.final, p.discount, p.formatted))}</span><span aria-hidden="true" style="color:var(--amber)">-${escHtml(p.discount)}% · ${escHtml(p.formatted)}</span>`
+        ? `<span class="sr-only">${escHtml(salePriceDescription(p.initial, p.final, p.discount, p.formatted, p.currency))}</span><span aria-hidden="true" style="color:var(--amber)">-${escHtml(p.discount)}% · ${escHtml(p.formatted)}</span>`
         : `<span style="color:var(--text2)">${escHtml(p.formatted)}</span>`)
     : ''
   const cheap = w.cheapest ? ` <span class="cheapest-tag">${ARROW_DOWN} cheaper at ${escHtml(w.cheapest.store)}: ${fmt$(w.cheapest.price)}</span>` : ''
@@ -1379,7 +1386,7 @@ function renderSalesCalendar () {
   const now      = new Date()
   timeline.innerHTML = ''
 
-  const next = SALES.find(s => new Date(s.start) > now)
+  const next = SALES.find(s => saleState(s, now) === 'upcoming')
   if (next) {
     const days = Math.ceil((new Date(next.start) - now) / 86400000)
     banner.style.cursor = 'pointer'
@@ -1411,8 +1418,8 @@ function renderSalesCalendar () {
   SALES.forEach(s => {
     const start  = new Date(s.start)
     const end    = new Date(s.end)
-    const isPast = end < now
-    const isLive = start <= now && end >= now
+    const isPast = saleState(s, now) === 'past'
+    const isLive = saleState(s, now) === 'live'
     const isNext = s === next
     const item   = document.createElement('div')
     item.className = 'timeline-item clickable' + (isPast ? ' past' : '') + (isNext ? ' next' : '')
