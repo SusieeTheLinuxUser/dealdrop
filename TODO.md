@@ -9,7 +9,7 @@ Left over from the 2026-10-18/19 overnight work (shipped in v0.9.0):
 - **Flatpak start at login and self-update: done 2026-11-05** in a clean Plasma 6.8 VM, against the real v0.10.0 release: user and system-wide updates, offline, cancelling the password prompt, **Check for updates**, settings surviving, a real reboot into the tray, turning it off, taking over an AppImage entry. This found the system-wide update never worked (fixed in v0.10.1).
 - **Tray on a real panel: done 2026-10-31** on the v0.10.0 Flatpak in Plasma 6: the icon shows and its menu reads Open DealDrop, Free now (23), Wishlist (70), Refresh all, Quit.
 - **Rerun with the desktop unlocked: done 2026-10-31** on the v0.10.0 Flatpak: `flatpak.mjs`, `hidden-start.mjs`, `tray.mjs` and `close-to-tray.mjs` all pass.
-- **Self-update hardening, deliberately left** (Codex review 2026-10-22): restricting the update client's redirects to GitHub hosts, and a signature/checksum on the bundle. Both only matter if github.com or the repo is compromised, which would also let an attacker change the code. Revisit if the bundle is ever served from somewhere else. Also left: a backend guard against two `install_update` calls at once (the UI disables the button).
+- **Self-update hardening:** the bundle's `.sha256` check and the GitHub-only redirect list shipped in v0.10.4 (a checksum from the same release only catches a broken or swapped download, not a compromised repo; a signature would). Still left: a backend guard against two `install_update` calls at once (the UI disables the button).
 
 ## Minimize animation on KDE Plasma (Wayland) flies to the pointer
 

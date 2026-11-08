@@ -184,19 +184,71 @@ fn newer_version(final_url: &str, current: &str) -> Option<String> {
 
 /// The newer release, once this platform's file is attached (Windows/macOS files follow the Linux one).
 pub async fn latest_release() -> R<Option<Update>> {
-    let res = send(client().head(format!("{RELEASES}/latest"))).await?;
+    let res = send(update_client().head(format!("{RELEASES}/latest"))).await?;
     let Some(version) = newer_version(res.url().as_str(), env!("CARGO_PKG_VERSION")) else { return Ok(None) };
     let file = format!("{RELEASES}/download/v{version}/{}", asset(&version));
-    let status = client().head(&file).send().await.map_err(|e| e.without_url().to_string())?.status();
+    let status = update_client().head(&file).send().await.map_err(|e| e.without_url().to_string())?.status();
     if status.is_success() { return Ok(update_for(version, true)); }
     if status == reqwest::StatusCode::NOT_FOUND { return Ok(None); }
     Err(format!("HTTP {}", status.as_u16()))
 }
 
-/// A release file: GitHub redirects it to its download host; 10 minutes instead of the usual 25 s.
+/// Hosts the update client may be redirected to: github.com and its release download hosts.
+const UPDATE_HOSTS: [&str; 3] = ["github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com"];
+
+fn update_host(url: &reqwest::Url) -> bool {
+    url.scheme() == "https" && url.host_str().is_some_and(|h| UPDATE_HOSTS.contains(&h))
+}
+
+/// The client for release checks and downloads: like `client()`, but it only follows redirects to `UPDATE_HOSTS`.
+fn update_client() -> &'static reqwest::Client {
+    static C: OnceLock<reqwest::Client> = OnceLock::new();
+    C.get_or_init(|| {
+        reqwest::Client::builder()
+            .user_agent(UA)
+            .timeout(Duration::from_secs(25))
+            .redirect(reqwest::redirect::Policy::custom(|a| {
+                if a.previous().len() >= 10 { a.error("too many redirects") }
+                else if update_host(a.url()) { a.follow() }
+                else { a.error("redirected away from GitHub") }
+            }))
+            .build()
+            .expect("http client")
+    })
+}
+
+/// The SHA-256 (lowercase hex) for `file` from a `sha256sum` line: `<64 hex>  <file>` (`*<file>` in binary mode).
+fn parse_sha256(text: &str, file: &str) -> Option<String> {
+    let mut parts = text.split_whitespace();
+    let (hash, name) = (parts.next()?, parts.next()?);
+    let ok = parts.next().is_none() && hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit())
+        && name.strip_prefix('*').unwrap_or(name) == file;
+    ok.then(|| hash.to_ascii_lowercase())
+}
+
+/// `Ok` when `bundle` matches the checksum file `sums` published for `file`.
+fn verify_sha256(bundle: &[u8], sums: &str, file: &str) -> R<()> {
+    use sha2::{Digest, Sha256};
+    let want = parse_sha256(sums, file).ok_or("The update's checksum file isn't valid, so it wasn't installed")?;
+    if format!("{:x}", Sha256::digest(bundle)) == want { Ok(()) }
+    else { Err("The downloaded update doesn't match its checksum, so it wasn't installed. Try again later".into()) }
+}
+
+/// A release file and its `<url>.sha256` (published with every release from v0.10.4 on), checked
+/// against each other. GitHub redirects both to its download host; 10 minutes instead of the usual 25 s.
 pub async fn download(url: &str) -> R<Vec<u8>> {
-    let res = send(client().get(url).timeout(Duration::from_secs(600))).await.map_err(|e| format!("Download failed: {e}"))?;
-    res.bytes().await.map(|b| b.to_vec()).map_err(|e| format!("Download failed: {e}"))
+    let fail = |e: reqwest::Error| if e.is_redirect() { "Download failed: GitHub sent it somewhere other than its own download hosts".to_string() }
+        else { format!("Download failed: {}", e.without_url()) };
+    let file = url.rsplit('/').next().unwrap_or_default();
+    let res = update_client().get(format!("{url}.sha256")).send().await.map_err(fail)?;
+    if res.status() == reqwest::StatusCode::NOT_FOUND {
+        return Err(format!("The update has no checksum file ({file}.sha256), so it wasn't installed"));
+    }
+    let sums = res.error_for_status().map_err(fail)?.text().await.map_err(fail)?;
+    let res = update_client().get(url).timeout(Duration::from_secs(600)).send().await.map_err(fail)?;
+    let bundle = res.error_for_status().map_err(fail)?.bytes().await.map_err(fail)?.to_vec();
+    verify_sha256(&bundle, &sums, file)?;
+    Ok(bundle)
 }
 
 fn num(v: &Value) -> Option<f64> {
@@ -1082,6 +1134,15 @@ mod live {
         let version = newer_version(&latest, "0.0.1").unwrap_or_else(|| panic!("no vX.Y.Z tag in {latest}"));
         println!("latest release: v{version}; offered to this build: {:?}", latest_release().await);
     }
+    #[tokio::test] #[ignore] async fn update_download_live() {
+        // v0.10.2's bundle: GitHub redirects it to its download host, which the update client must follow
+        let url = format!("{RELEASES}/download/v0.10.2/DealDrop_0.10.2_x86_64.flatpak");
+        let res = send(update_client().head(&url)).await.expect("redirect to GitHub's download host");
+        println!("served from {}", res.url().host_str().unwrap_or_default());
+        // Releases before v0.10.4 have no .sha256, so the download stops before fetching the bundle
+        let e = download(&url).await.unwrap_err();
+        assert!(e.contains("no checksum file"), "{e}");
+    }
     #[tokio::test] #[ignore] async fn steam_sales_live() { show("steam sales", steam_sales().await) }
     #[tokio::test] #[ignore] async fn gog_sales_live() { show("gog sales", gog_sales().await) }
     #[tokio::test] #[ignore] async fn deal_title_lookup_live() {
@@ -1169,6 +1230,34 @@ pub(crate) mod unit {
         assert_eq!(super::asset_for("macos", "aarch64", "0.10.0"), "DealDrop_0.10.0_universal.dmg"); // one universal build
         assert_eq!(super::asset_for("linux", "x86_64", "0.10.0"), "DealDrop_0.10.0_x86_64.flatpak");
         assert_eq!(super::asset_for("linux", "aarch64", "0.10.0"), "DealDrop_0.10.0_aarch64.flatpak");
+    }
+
+    #[test]
+    fn an_update_installs_only_when_its_sha256_file_matches() {
+        let f = "DealDrop_0.10.4_x86_64.flatpak";
+        // sha256 of "abc"
+        let h = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+        assert!(super::verify_sha256(b"abc", &format!("{h}  {f}\n"), f).is_ok()); // what sha256sum writes
+        assert!(super::verify_sha256(b"abc", &format!("{}  *{f}", h.to_uppercase()), f).is_ok()); // binary mode, upper-case hex
+        let bad = super::verify_sha256(b"abd", &format!("{h}  {f}\n"), f).unwrap_err();
+        assert!(bad.contains("doesn't match"), "{bad}");
+        for sums in ["", "\n", h, &format!("{h}  other.flatpak"), &format!("{}  {f}", &h[1..]), &format!("{}  {f}", h.replace('b', "g")),
+                     &format!("{h}  {f}\n{h}  {f}"), &format!("md5 {h}  {f}"), "<html>Not Found</html>"] {
+            let e = super::verify_sha256(b"abc", sums, f).unwrap_err();
+            assert!(e.contains("isn't valid"), "{sums:?}: {e}");
+        }
+    }
+
+    #[test]
+    fn the_update_client_follows_redirects_only_to_github() {
+        let ok = |u: &str| super::update_host(&reqwest::Url::parse(u).unwrap());
+        assert!(ok("https://github.com/SusieeTheLinuxUser/dealdrop/releases/tag/v0.10.2"));
+        assert!(ok("https://release-assets.githubusercontent.com/github-production-release-asset/1/x?sig=y")); // where assets go today
+        assert!(ok("https://objects.githubusercontent.com/github-production-release-asset-2e65be/1/x"));
+        for u in ["http://github.com/x", "https://evil.com/x", "https://github.com.evil.com/x", "https://evilgithub.com/x",
+                  "https://raw.githubusercontent.com/x", "https://user@evil.com/x", "https://140.82.121.4/x"] {
+            assert!(!ok(u), "{u}");
+        }
     }
 
     #[test]
