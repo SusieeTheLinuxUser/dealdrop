@@ -10,7 +10,7 @@ function between (start, end) {
 }
 
 const sales = app.match(/const SALES = \[[\s\S]*?\n\]/)?.[0]
-const nextSale = app.match(/const next = (SALES\.find\(s => new Date\(s.start\) > now\))/)?.[1]
+const nextSale = app.match(/const next = (SALES\.find\(s => saleState\(s, now\) === 'upcoming'\))/)?.[1]
 assert(sales && nextSale, 'Could not find the sale data or next-sale expression')
 const label = { textContent: '' }
 const context = vm.createContext({ document: { getElementById: () => label } })
@@ -35,7 +35,7 @@ vm.runInContext([
   between('const targetKey', '\nfunction wishlistTargetTag'),
   between('const nextIndex', '\n// Moves focus between'),
   between('const fmt$ =', '\n// CSP forbids inline onerror'),
-  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge, mergeUiPrefs, dealShops, parseClaimed, pruneClaimed, toggleClaimed, claimedLast, normalizeTitle, hiddenTitle, searchRank, parseSeen, newIds, mergeSeen, wishlistKey, seenIds, salesSeenIds, PAGE_SIZE, pageSlice, nextTheme, targetKey, targetPrice, targetHit, parseTarget, protonTier, protonText, protonTag, nextIndex, fmt$, salePriceDescription, dataSig, timeLeft, endsFirst, endDateLabel, startDateLabel, saleDateLabel, fmtChecked, gameStoreName, srcIcon, wishlistLowestTag, saleKey, updateAfterCheck, BASE_THEMES, SALE_THEMES }',
+  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge, mergeUiPrefs, dealShops, parseClaimed, pruneClaimed, toggleClaimed, claimedLast, normalizeTitle, hiddenTitle, searchRank, parseSeen, newIds, mergeSeen, wishlistKey, seenIds, salesSeenIds, PAGE_SIZE, pageSlice, nextTheme, targetKey, targetPrice, targetHit, parseTarget, protonTier, protonText, protonTag, nextIndex, fmt$, salePriceDescription, dataSig, timeLeft, endsFirst, endDateLabel, startDateLabel, saleDateLabel, saleState, fmtChecked, gameStoreName, srcIcon, wishlistLowestTag, saleKey, updateAfterCheck, BASE_THEMES, SALE_THEMES }',
 ].join('\n'), context)
 
 const h = context.helpers
@@ -152,6 +152,11 @@ assert.equal(h.pageSlice([], 100).left, 0)
 
 context.now = new Date('2026-10-18T12:00:00Z')
 assert.equal(vm.runInContext(nextSale, context).name, 'Winter Sale') // Steam Scream is a fest, not listed in SALES
+// the listed end day is still live (Winter Sale ends 2027-01-04), in UTC days
+assert.equal(h.saleState(h.SALES[3], new Date('2027-01-04T20:00:00Z')), 'live')
+assert.equal(h.saleState(h.SALES[3], new Date('2027-01-05T00:00:00Z')), 'past')
+assert.equal(h.saleState(h.SALES[3], new Date('2026-12-16T23:59:00Z')), 'upcoming')
+assert.equal(h.saleState(h.SALES[3], new Date('2026-12-17T00:00:00Z')), 'live')
 h.state.lastChecked = Date.now() - 7 * 60_000
 h.updateRefreshAge()
 assert.equal(label.textContent, 'Updated 7 min ago')
@@ -213,7 +218,10 @@ assert.equal(h.fmt$(4.999), '$5.00')
 assert.equal(h.fmt$('n/a'), 'Free')
 assert.equal(h.salePriceDescription(19.99, 4.99, 75, ''), 'Was $19.99, now $4.99, 75% off')
 assert.equal(h.salePriceDescription(19.99, 4.99, 75, '$4.99'), 'Was $19.99, now $4.99, 75% off')
-assert.equal(h.salePriceDescription(19.99, 4.99, 75, '4.99 EUR'), 'Was $19.99, now 4.99 EUR, 75% off')
+assert.equal(h.salePriceDescription(19.99, 4.99, 75, '4.99 EUR', 'EUR'), 'Was 19.99 EUR, now 4.99 EUR, 75% off') // GOG can price in the account's currency
+assert.equal(h.fmt$(19.99, 'EUR'), '19.99 EUR')
+assert.equal(h.fmt$(19.99, 'USD'), '$19.99')
+assert.equal(h.fmt$(0, 'EUR'), 'Free')
 assert.equal(h.salePriceDescription(0, 0, 100, ''), 'Was Free, now Free, 100% off')
 
 // How long a giveaway still has: days, then hours, then "soon"
