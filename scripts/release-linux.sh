@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build the Linux Flatpak bundle (DealDrop_<version>_x86_64.flatpak) and publish it to the GitHub
-# release for the current version. Installed copies find it there and update themselves (update.rs).
+# release for the current version, with its .sha256. Installed copies find it there and update themselves (update.rs).
 # Needs: flatpak, flatpak-builder (or the org.flatpak.Builder Flatpak), gh. The GNOME SDK and Rust
 # extension the manifest names are installed per-user from Flathub. Version comes from src-tauri/tauri.conf.json.
 set -euo pipefail
@@ -21,11 +21,13 @@ flatpak remote-add --user --if-not-exists flathub "$flathub"
   --repo="$work/repo" --state-dir="$work/state" "$work/build" flatpak/$id.yml
 # --runtime-repo: `flatpak install` fetches the GNOME runtime from Flathub when it's missing
 flatpak build-bundle --runtime-repo="$flathub" "$work/repo" "$work/$f" $id
-ls -lh "$work/$f"
+# The app refuses an update without a matching .sha256 (sources.rs `download`); bare file name, as sha256sum writes it
+(cd "$work" && sha256sum "$f" > "$f.sha256")
+ls -lh "$work/$f" "$work/$f.sha256"
 [ "${NO_UPLOAD:-}" ] && exit 0
 if gh release view "$tag" --repo SusieeTheLinuxUser/dealdrop >/dev/null 2>&1; then
-  gh release upload "$tag" "$work/$f" --repo SusieeTheLinuxUser/dealdrop --clobber
+  gh release upload "$tag" "$work/$f" "$work/$f.sha256" --repo SusieeTheLinuxUser/dealdrop --clobber
 else
-  gh release create "$tag" "$work/$f" --repo SusieeTheLinuxUser/dealdrop --target main \
+  gh release create "$tag" "$work/$f" "$work/$f.sha256" --repo SusieeTheLinuxUser/dealdrop --target main \
     --title "DealDrop $tag" --notes "${RELEASE_NOTES:-Linux Flatpak first for testing; Windows .msi and macOS .dmg follow once it is confirmed working.}"
 fi
