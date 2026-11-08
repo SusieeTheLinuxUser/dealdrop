@@ -47,6 +47,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
         run: |
           shopt -s nullglob
           sum=(sha256sum); command -v sha256sum >/dev/null || sum=(shasum -a 256)
@@ -54,5 +55,5 @@ jobs:
           [ ${#files[@]} -gt 0 ] || { echo "no .msi/.dmg found" >&2; exit 1; }
           for f in "${files[@]}"; do
             (cd "$(dirname "$f")" && "${sum[@]}" "$(basename "$f")" > "$(basename "$f").sha256" && cat "$(basename "$f").sha256")
-            gh release upload "${{ inputs.tag }}" "$f.sha256" --clobber
+            gh release upload "$TAG" "$f.sha256" --clobber
           done
