@@ -35,7 +35,7 @@ vm.runInContext([
   between('const targetKey', '\nfunction wishlistTargetTag'),
   between('const nextIndex', '\n// Moves focus between'),
   between('const fmt$ =', '\n// CSP forbids inline onerror'),
-  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge, mergeUiPrefs, dealShops, parseClaimed, pruneClaimed, toggleClaimed, claimedLast, normalizeTitle, hiddenTitle, searchRank, parseSeen, newIds, mergeSeen, wishlistKey, seenIds, salesSeenIds, PAGE_SIZE, pageSlice, nextTheme, targetKey, targetPrice, targetHit, parseTarget, protonTier, protonText, protonTag, nextIndex, fmt$, salePriceDescription, dataSig, timeLeft, endsFirst, endDateLabel, startDateLabel, saleDateLabel, saleState, fmtChecked, gameStoreName, srcIcon, wishlistLowestTag, saleKey, updateAfterCheck, BASE_THEMES, SALE_THEMES }',
+  'globalThis.helpers = { SALES, state, filteredSorted, storeKeyFor, escHtml, updateRefreshAge, mergeUiPrefs, dealShops, parseClaimed, pruneClaimed, toggleClaimed, claimedLast, normalizeTitle, hiddenTitle, searchRank, parseSeen, newIds, mergeSeen, wishlistKey, seenIds, salesSeenIds, PAGE_SIZE, pageSlice, nextTheme, targetKey, targetPrice, targetHit, parseTarget, protonTier, protonText, protonTag, nextIndex, fmt$, salePriceDescription, dataSig, timeLeft, endsFirst, endDateLabel, startDateLabel, saleDateLabel, saleState, fmtChecked, gameStoreName, srcIcon, wishlistLowestTag, saleKey, updateAfterCheck, offeredUpdate, BASE_THEMES, SALE_THEMES }',
 ].join('\n'), context)
 
 const h = context.helpers
@@ -384,6 +384,9 @@ const offered = { version: '0.10.0' }
 assert.equal(h.updateAfterCheck(offered, null, false), offered)
 assert.equal(h.updateAfterCheck(null, null, false), null)
 assert.equal(h.updateAfterCheck(offered, null, true), null) // reached, and nothing newer: the offer is gone
+assert.equal(h.offeredUpdate(offered), offered)
+assert.equal(h.offeredUpdate({ version: '1.0.0', viaRepo: true }), null) // a repo install: no button
+assert.equal(h.offeredUpdate(null), null)
 assert.equal(h.updateAfterCheck(null, offered, true), offered)
 
 // Countdowns: the d/h/soon split is the floor of the exact instant delta (never a wall-clock

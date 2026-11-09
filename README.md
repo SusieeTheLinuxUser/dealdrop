@@ -45,7 +45,7 @@ Optional store sign-in enables wishlist alerts. No API keys or telemetry; DealDr
 - **Bundled fonts** — DM Sans and DM Mono load locally, with no third-party font requests
 - **Safe settings** — an unreadable `config.json` is kept aside as `config.bad.json` instead of being overwritten
 - Native Rust backend (Tauri) — small download, low memory
-- **Updates itself** on Linux: when a new release is out, the sidebar shows **Update to vX.Y.Z**; one click installs it and restarts (Windows/macOS: opens the download page). Settings → About → **Check for updates** checks right away
+- **Updates itself** on Linux: when a new release is out, the sidebar shows **Update to vX.Y.Z**; one click installs it and restarts (Windows/macOS: opens the download page; a copy from the signed Flatpak repo updates through `flatpak update` or your software center). Settings → About → **Check for updates** checks right away
 
 ---
 
@@ -76,7 +76,7 @@ Already installed from a `.flatpak` file? Run this once to switch; settings and 
 flatpak remote-add --user --if-not-exists dealdrop https://susieethelinuxuser.github.io/dealdrop/dealdrop.flatpakrepo && flatpak install --user --reinstall dealdrop com.dealdrop.desktop
 ```
 
-On a repo install, update with `flatpak update` or your software center. The **Update to vX.Y.Z** button in the app can't update it and shows an error.
+On a repo install, update with `flatpak update` or your software center. The app doesn't show the **Update to vX.Y.Z** button there; Settings → About → **Check for updates** tells you when a new version is out.
 
 The repo is signed with the key `EE8C 2F12 1453 708D 4927 2956 C834 AC19 F6C1 37D8`.
 

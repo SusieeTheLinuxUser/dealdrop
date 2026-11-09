@@ -146,10 +146,10 @@
       case 'check_now': sample.lastChecked = Date.now(); return snapshot()
       case 'get_accounts': return clone(accounts)
       case 'launchers': return launchers()
-      // ?update=1 offers v99.0.0 (installing it fails, to show the error path); ?update=fail makes the check fail
+      // ?update=1 offers v99.0.0 (installing it fails, to show the error path); ?update=fail makes the check fail; ?update=repo is a repo install (no button)
       case 'check_update':
         if (flags.get('update') === 'fail') throw new Error('Preview: GitHub unreachable')
-        return flags.get('update') ? { version: '99.0.0', page: 'https://github.com/SusieeTheLinuxUser/dealdrop/releases/tag/v99.0.0', canInstall: true } : null
+        return flags.get('update') ? { version: '99.0.0', page: 'https://github.com/SusieeTheLinuxUser/dealdrop/releases/tag/v99.0.0', canInstall: flags.get('update') !== 'repo', viaRepo: flags.get('update') === 'repo' } : null
       case 'install_update': await new Promise(resolve => setTimeout(resolve, 800)); throw new Error('Preview: Flatpak couldn\'t install the update')
       case 'get_autostart': return autostart
       case 'set_autostart': autostart = args.on; return undefined

@@ -76,6 +76,36 @@ fn restart_command(id: &str) -> std::process::Command {
     cmd
 }
 
+/// The remote name the README and the `.flatpakref` give the signed repo. A `.flatpak` bundle gets `*-origin`.
+#[cfg(any(target_os = "linux", test))]
+const REPO_REMOTE: &str = "dealdrop";
+
+/// The host's `flatpak info --show-origin` for this copy. `timeout`: a hung host call must not hold up the update check.
+#[cfg(any(target_os = "linux", test))]
+fn origin_command(installation: &str) -> std::process::Command {
+    let mut cmd = std::process::Command::new("timeout");
+    cmd.args(["-k", "1", "5", "flatpak-spawn", "--host", "flatpak", "info", installation, "--show-origin", APP_ID]);
+    cmd
+}
+
+/// `origin` is the host's answer, `None` when it couldn't give one. No answer counts as a bundle:
+/// a bundle user wrongly told "not for you" would silently never update again, while a repo user
+/// wrongly shown the button only gets the old error, and the next check (or the click) asks again.
+#[cfg(any(target_os = "linux", test))]
+fn is_repo_origin(origin: Option<&str>) -> bool { origin.is_some_and(|o| o.trim() == REPO_REMOTE) }
+
+/// This copy came from the signed repo, so `flatpak update` updates it and the unsigned bundle can't.
+/// Blocks on the host; not cached, so a failed answer is retried on the next check.
+#[cfg(target_os = "linux")]
+pub fn from_repo() -> bool {
+    let Some(info) = info() else { return false };
+    let out = origin_command(installation(&info)).output().ok().filter(|o| o.status.success());
+    is_repo_origin(out.map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).as_deref())
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn from_repo() -> bool { false }
+
 /// Installs the downloaded bundle over this copy and schedules the restart. The caller exits next.
 #[cfg(target_os = "linux")]
 pub fn install(bundle: &[u8]) -> Result<(), String> {
@@ -151,6 +181,23 @@ mod tests {
         assert_eq!(args("--user")[1..], install("--user"));
         assert_eq!(args("--system")[1..=1], ["pkexec"]);
         assert_eq!(args("--system")[2..], install("--system"));
+    }
+
+    #[test]
+    fn only_the_signed_repo_counts_as_a_repo_install() {
+        assert!(is_repo_origin(Some("dealdrop\n")));
+        assert!(!is_repo_origin(Some("dealdrop-origin\n"))); // only the exact name
+        assert!(!is_repo_origin(Some("desktop-origin\n"))); // what flatpak really names it
+        assert!(!is_repo_origin(Some("")));
+        assert!(!is_repo_origin(None)); // the host didn't answer: keep the bundle's update
+    }
+
+    #[test]
+    fn origin_command_asks_the_host_about_this_installation() {
+        let cmd = origin_command("--user");
+        assert_eq!(cmd.get_program(), "timeout");
+        let args: Vec<_> = cmd.get_args().map(|a| a.to_string_lossy().into_owned()).collect();
+        assert_eq!(args[3..], ["flatpak-spawn", "--host", "flatpak", "info", "--user", "--show-origin", APP_ID]);
     }
 
     #[test]

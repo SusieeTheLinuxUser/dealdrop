@@ -152,6 +152,8 @@ pub struct Update {
     pub bundle: Option<String>,
     /// This copy can install it itself (the Flatpak); otherwise the UI opens `page`.
     pub can_install: bool,
+    /// This copy came from the signed repo: `flatpak update` brings it, so the UI offers no button.
+    pub via_repo: bool,
 }
 
 /// This platform's release file name for `os`/`arch`
@@ -171,7 +173,7 @@ fn asset(version: &str) -> String {
 fn update_for(version: String, present: bool) -> Option<Update> {
     if !present { return None; }
     let file = format!("{RELEASES}/download/v{version}/{}", asset(&version));
-    Some(Update { page: format!("{RELEASES}/tag/v{version}"), version, bundle: cfg!(target_os = "linux").then_some(file), can_install: false })
+    Some(Update { page: format!("{RELEASES}/tag/v{version}"), version, bundle: cfg!(target_os = "linux").then_some(file), can_install: false, via_repo: false })
 }
 
 /// `releases/latest` redirects to `releases/tag/vX.Y.Z`: that version when it's newer than `current`

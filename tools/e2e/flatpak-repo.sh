@@ -10,7 +10,8 @@ ref=app/$id/$(flatpak --default-arch)/master
 port=${PORT:-18765}
 url=http://127.0.0.1:$port/
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/dealdrop-repo-e2e.XXXXXX")
-export FLATPAK_USER_DIR=$tmp/user
+# .local/share/flatpak: how the app tells a per-user install from a system one (update::installation)
+export FLATPAK_USER_DIR=$tmp/.local/share/flatpak
 trap 'kill "${server:-}" 2>/dev/null || true; for h in "$tmp"/gpg-*; do gpgconf --homedir "$h" --kill gpg-agent || true; done; rm -rf "$tmp"' EXIT
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -74,6 +75,7 @@ pass "signed app store data lists it"
 if [ -z "${SKIP_APP:-}" ]; then
   DEALDROP_BIN=$root/tools/e2e/flatpak.sh "$root/tools/e2e/run.sh" "$root/tools/e2e/flatpak.mjs" || fail "app doesn't start"
   pass "app starts"
+  [ -z "${E2E_OLD_BUILD:-}" ] || { E2E_EXPECT=repo DEALDROP_BIN=$root/tools/e2e/flatpak.sh "$root/tools/e2e/run.sh" "$root/tools/e2e/update-origin.mjs" || fail "update offer on a repo install"; pass "repo install: no update button"; }
 fi
 
 # 2. A new published build reaches `flatpak update`
@@ -115,4 +117,14 @@ cat "$tmp"/www/*.flatpakre* "$tmp/www/repo/config" | grep -E '[A-Za-z0-9._%+-]+@
 case $(git -C "$tmp/pages.git" log -1 --format=%ae gh-pages) in *@users.noreply.github.com) ;; *) fail "gh-pages commit has a personal email" ;; esac
 [ "$(gpg --list-packets "$pub" | grep -c '^:secret')" = 0 ] || fail "private key material in the public key file"
 pass "served files have no key or personal email"
+
+# 5. A bundle install of the same build keeps its button
+if [ "${E2E_OLD_BUILD:-}" ]; then
+  flatpak uninstall --user -y --noninteractive $id >/dev/null
+  flatpak build-bundle "$tmp/work/repo" "$tmp/bundle.flatpak" $id
+  flatpak install --user -y --noninteractive --bundle "$tmp/bundle.flatpak" >/dev/null
+  [ "$(flatpak info --user --show-origin $id)" != dealdrop ] || fail "a bundle install has the repo's origin"
+  E2E_EXPECT=bundle DEALDROP_BIN=$root/tools/e2e/flatpak.sh "$root/tools/e2e/run.sh" "$root/tools/e2e/update-origin.mjs" || fail "update offer on a bundle install"
+  pass "bundle install (origin $(flatpak info --user --show-origin $id)): update button shown"
+fi
 echo "ALL PASSED"
