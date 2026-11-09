@@ -24,7 +24,7 @@ try {
   check('…and keeps the desktop\'s own settings', entry.includes('Hidden=true') && entry.includes('Icon=/i.png'), entry)
   const up = await app.execAsync('const cb = arguments[arguments.length - 1]; window.api.checkUpdate().then(u => cb({ ok: true, u }), e => cb({ ok: false, e: String(e) }))')
   check('update check answers', up.ok, up)
-  check('update button matches it', await app.exec('return document.getElementById("sidebar-update").style.display') === (up.u ? 'block' : 'none'), up.u)
+  check('update button matches it', await app.exec('return document.getElementById("sidebar-update").style.display') === (up.u && !up.u.viaRepo ? 'block' : 'none'), up.u)
   // A newer release that can't be installed here: the button names it (clicking would open the release page)
   const btn = await app.execAsync(`const cb = arguments[arguments.length - 1]
     window.api.checkUpdate = async () => ({ version: '99.0.0', page: 'https://github.com/SusieeTheLinuxUser/dealdrop/releases/tag/v99.0.0', canInstall: false })

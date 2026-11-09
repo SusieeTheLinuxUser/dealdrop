@@ -1064,9 +1064,11 @@ fn set_autostart(on: bool) -> Result<(), String> { autostart::set(on) }
 
 /// `Ok(None)` means this platform is up to date. An error stays an error: the UI reads `None`
 /// as "You're on the latest version", so a GitHub failure must not look like that.
-fn offered_update(found: Result<Option<Update>, String>, in_flatpak: bool) -> Result<Option<Update>, String> {
-    found.map(|up| up.map(|u| Update { can_install: u.bundle.is_some() && in_flatpak, ..u }))
+fn offered_update(found: Result<Option<Update>, String>, in_flatpak: bool, from_repo: bool) -> Result<Option<Update>, String> {
+    found.map(|up| up.map(|u| Update { can_install: u.bundle.is_some() && in_flatpak && !from_repo, via_repo: from_repo, ..u }))
 }
+
+async fn from_repo() -> bool { tauri::async_runtime::spawn_blocking(update::from_repo).await.unwrap_or(false) }
 
 /// A newer release for this platform, if any (the UI asks at start and every 6 hours).
 /// Errors reject the command so Settings → About can say GitHub couldn't be reached.
@@ -1076,12 +1078,14 @@ async fn check_update() -> Result<Option<Update>, String> {
         Ok(up) => Ok(up),
         Err(e) => { eprintln!("[update check] {e}"); Err(e) }
     };
-    offered_update(found, update::in_flatpak())
+    let repo = matches!(found, Ok(Some(_))) && from_repo().await;
+    offered_update(found, update::in_flatpak(), repo)
 }
 
 /// Flatpak only: downloads the newest release's bundle, installs it and restarts into it.
 #[tauri::command]
 async fn install_update(app: AppHandle) -> Result<(), String> {
+    if from_repo().await { return Err("This copy updates through flatpak update or your software center".into()); }
     let url = latest_release().await?.and_then(|u| u.bundle).ok_or("There's no newer Flatpak release to install")?;
     let bundle = download(&url).await?;
     tauri::async_runtime::spawn_blocking(move || update::install(&bundle)).await.map_err(|e| e.to_string())??;
@@ -1256,16 +1260,20 @@ mod tests {
             page: "https://github.com/SusieeTheLinuxUser/dealdrop/releases/tag/v0.10.0".into(),
             bundle: bundle.clone(),
             can_install: false,
+            via_repo: false,
         };
-        let flatpak = offered_update(Ok(Some(up.clone())), true).unwrap().unwrap();
+        let flatpak = offered_update(Ok(Some(up.clone())), true, false).unwrap().unwrap();
         assert!(flatpak.can_install); // only the Flatpak installs the bundle itself
         assert_eq!(flatpak.bundle, bundle);
-        let other = offered_update(Ok(Some(up)), false).unwrap().unwrap();
+        assert!(!flatpak.via_repo);
+        let repo = offered_update(Ok(Some(up.clone())), true, true).unwrap().unwrap();
+        assert!(repo.via_repo && !repo.can_install); // a repo install is told about it, but gets no button
+        let other = offered_update(Ok(Some(up)), false, false).unwrap().unwrap();
         assert!(!other.can_install); // Windows, macOS, and a non-Flatpak Linux build open the release page
-        assert!(!offered_update(Ok(Some(Update { bundle: None, ..other })), true).unwrap().unwrap().can_install);
-        assert_eq!(offered_update(Ok(None), true).unwrap(), None); // a real "nothing newer"
+        assert!(!offered_update(Ok(Some(Update { bundle: None, ..other })), true, false).unwrap().unwrap().can_install);
+        assert_eq!(offered_update(Ok(None), true, false).unwrap(), None); // a real "nothing newer"
         // the About button reads a rejected command as "Couldn't reach GitHub", not as up to date
-        assert_eq!(offered_update(Err("HTTP 503".into()), true), Err("HTTP 503".into()));
+        assert_eq!(offered_update(Err("HTTP 503".into()), true, false), Err("HTTP 503".into()));
     }
 
     #[cfg(unix)]

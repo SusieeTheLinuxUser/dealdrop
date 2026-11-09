@@ -2032,6 +2032,9 @@ function updateAfterCheck (shown, answer, reached) {
   return reached ? answer : shown
 }
 
+// A repo install gets updates from `flatpak update`: no button (the unsigned bundle can't replace it).
+function offeredUpdate (up) { return up?.viaRepo ? null : up }
+
 // "Update to vX.Y.Z" above the error box when GitHub has a newer release for this platform.
 // The Flatpak installs it and restarts; other builds open the release page.
 // Returns false when the check itself failed; the 6-hourly calls stay silent about that,
@@ -2040,12 +2043,13 @@ async function checkUpdate () {
   let reached = true
   const answer = await window.api.checkUpdate().catch(() => { reached = false; return null })
   state.update = updateAfterCheck(state.update, answer, reached)
-  if (reached && !state.update && state.updateError) { state.updateError = null; renderErrors() } // the failed update is gone (installed by hand, or withdrawn)
+  const offered = offeredUpdate(state.update)
+  if (reached && !offered && state.updateError) { state.updateError = null; renderErrors() } // the failed update is gone (installed by hand, or withdrawn)
   const box = document.getElementById('sidebar-update')
   const btn = document.getElementById('btn-update')
   if (!box || !btn || btn.disabled) return reached
-  box.style.display = state.update ? 'block' : 'none'
-  if (state.update) btn.textContent = `Update to v${state.update.version}`
+  box.style.display = offered ? 'block' : 'none'
+  if (offered) btn.textContent = `Update to v${offered.version}`
   return reached
 }
 
@@ -2059,6 +2063,7 @@ async function checkUpdateNow () {
   try {
     const ok = await checkUpdate()
     if (!ok) status.textContent = "Couldn't reach GitHub. Try again later."
+    else if (state.update?.viaRepo) status.textContent = `v${state.update.version} is available: get it with "flatpak update" or your software center.`
     else if (state.update) status.textContent = `v${state.update.version} is available: use "Update to v${state.update.version}" in the sidebar.`
     else status.textContent = "You're on the latest version."
   } finally {
