@@ -22,12 +22,12 @@ newkey() { # dir name
 }
 publish() { # gpg-home pubkey pages.git
   git init --quiet --bare "$3"
-  FLATPAK_WORK=$tmp/work SITE_URL=$url PAGES_REMOTE=$3 DEALDROP_GPG_HOME=$1 DEALDROP_GPG_PUBKEY=$2 \
+  FLATPAK_WORK=$tmp/work SITE_URL=$url PAGES_REMOTE=file://$3 DEALDROP_GPG_HOME=$1 DEALDROP_GPG_PUBKEY=$2 \
     "$root/scripts/publish-flatpak-repo.sh" >/dev/null
   serve "$3"
 }
 serve() { # pages.git: only what was committed is served, like GitHub Pages
-  rm -rf "$tmp/www"; git clone --quiet --branch gh-pages "$1" "$tmp/www"; rm -rf "$tmp/www/.git"
+  rm -rf "$tmp/www"; git clone --quiet --branch gh-pages "file://$1" "$tmp/www"; # not a plain path: local clones hardlink and can fail rm -rf "$tmp/www/.git"
 }
 new_build() { # label: a real new commit of the app with one changed file
   rm -rf "$tmp/co"

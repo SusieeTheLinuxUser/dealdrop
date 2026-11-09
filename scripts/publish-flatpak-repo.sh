@@ -22,7 +22,7 @@ sign=(--gpg-sign="$key" --gpg-homedir="$gpg_home")
 
 # Start from what's live, so earlier versions stay available and clients keep their history
 rm -rf "$site"
-rc=0; git ls-remote --exit-code --heads "$remote" gh-pages >/dev/null || rc=$?
+rc=0; live=$(git ls-remote --exit-code --heads "$remote" refs/heads/gh-pages | cut -f1) || rc=$?
 case $rc in
   0) git clone --quiet --depth 1 --branch gh-pages "$remote" "$site"; rm -rf "$site/.git" ;;
   2) mkdir -p "$site" ;; # first publish
@@ -67,5 +67,6 @@ git -C "$site" init --quiet --initial-branch=gh-pages
 git -C "$site" add --all --force .
 git -C "$site" -c user.name=SusieeTheFemboy -c user.email=96988330+SusieeTheLinuxUser@users.noreply.github.com \
   commit --quiet --message "Flatpak repo from $(git rev-parse --short HEAD)"
-git -C "$site" push --quiet --force "$remote" HEAD:refs/heads/gh-pages
+# The lease refuses the push if gh-pages changed since the clone above (empty: it must still not exist)
+git -C "$site" push --quiet --force-with-lease="refs/heads/gh-pages:${live:-}" "$remote" HEAD:refs/heads/gh-pages
 echo "Published to ${url}"
