@@ -108,7 +108,10 @@ update >/dev/null
 pass "the untampered third build installs"
 
 # 4. Nothing secret went out
-grep -rlaE 'BEGIN PGP PRIVATE|@gmail\.com' "$tmp/www" && fail "secret or personal email in the served files"
+grep -rlaE 'BEGIN PGP PRIVATE' "$tmp/www" && fail "private key in the served files"
+# Only the text files: compressed objects can match an email pattern by chance
+cat "$tmp"/www/*.flatpakre* "$tmp/www/repo/config" | grep -E '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[a-z]{2,}' && fail "an email in the served files"
+case $(git -C "$tmp/pages.git" log -1 --format=%ae gh-pages) in *@users.noreply.github.com) ;; *) fail "gh-pages commit has a personal email" ;; esac
 [ "$(gpg --list-packets "$pub" | grep -c '^:secret')" = 0 ] || fail "private key material in the public key file"
 pass "served files have no key or personal email"
 echo "ALL PASSED"
