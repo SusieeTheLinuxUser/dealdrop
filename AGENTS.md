@@ -58,7 +58,14 @@ Every release ships **Linux Flatpak + Windows .msi + macOS .dmg (universal: Inte
 1. On `dev`: bump the version in all three places (see Rules); update the docs; commit; then fast-forward `main` to `dev` and push both.
 2. **Linux first:** `RELEASE_NOTES="…" scripts/release-linux.sh` builds the Flatpak bundle inside the GNOME SDK and publishes it to the release. Needs `flatpak` and `flatpak-builder` (or the `org.flatpak.Builder` Flatpak); the SDK and Rust extension are installed per-user from Flathub. The maintainer tests it. Installed Flatpaks see it on their next check (start, then every 6 h) and offer **Update to vX.Y.Z**.
 3. **Only after the Linux build is confirmed working:** `gh workflow run release.yml -f tag=vX.Y.Z` — `.github/workflows/release.yml` builds the Windows .msi and macOS .dmg on GitHub runners and attaches them to that same release. (Windows/macOS can't be built locally on Linux; don't ship them for a build that's known broken.)
-4. Check the release has all three assets before announcing it.
+4. Check the release has all three assets and their three `.sha256` files before announcing it.
+
+Testing before publishing (how v0.10.4 was done):
+
+- `release-linux.sh` rebuilds on every run, so to publish the exact bundle you tested: build with `NO_UPLOAD=1`, test it, then fast-forward `main` and run the script's own `gh release create … --target main` line by hand. `main` and `v*` tags can't be moved back, so test before moving them.
+- Test without touching an installed copy: `export FLATPAK_USER_DIR=$(mktemp -d)`, `flatpak install --user --noninteractive -y --bundle <file>`, then `DEALDROP_BIN=tools/e2e/flatpak.sh tools/e2e/run.sh tools/e2e/flatpak.mjs` (`flatpak.sh` keeps that variable; `flatpak.mjs` passes on a locked desktop). It can't exercise the install itself or the `.sha256` check (no `flatpak-spawn --host` in its private bus); unit tests in `sources.rs` cover those.
+- Keep a build from taking over the PC: `nice -n 10 taskset -c 0-5 scripts/release-linux.sh`. flatpak-builder and Cargo both follow the CPU mask.
+- `gh workflow run` uses `release.yml` from `main`, so fast-forward `main` first. The `.msi.sha256` has a `*` before the file name (Git Bash's `sha256sum`); `sha256sum -c` accepts it.
 
 Builds are unsigned: Windows SmartScreen ("More info → Run anyway") and macOS Gatekeeper (right-click → Open, or `xattr -dr com.apple.quarantine /Applications/DealDrop.app`) will warn on first launch.
 
