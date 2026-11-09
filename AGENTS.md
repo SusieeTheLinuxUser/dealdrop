@@ -63,7 +63,7 @@ Every release ships **Linux Flatpak + Windows .msi + macOS .dmg (universal: Inte
 Testing before publishing (how v0.10.4 was done):
 
 - `release-linux.sh` rebuilds on every run, so to publish the exact bundle you tested: build with `NO_UPLOAD=1`, test it, then fast-forward `main` and run the script's own `gh release create … --target main` line by hand. `main` and `v*` tags can't be moved back, so test before moving them.
-- Test without touching an installed copy: `export FLATPAK_USER_DIR=$(mktemp -d)`, `flatpak install --user --noninteractive -y --bundle <file>`, then `DEALDROP_BIN=tools/e2e/flatpak.sh tools/e2e/run.sh tools/e2e/flatpak.mjs` (`flatpak.sh` keeps that variable; `flatpak.mjs` passes on a locked desktop). It can't exercise the install itself or the `.sha256` check (no `flatpak-spawn --host` in its private bus); unit tests in `sources.rs` cover those.
+- Test without touching an installed copy: `export FLATPAK_USER_DIR=$(mktemp -d)`, `flatpak install --user --noninteractive -y --bundle <file>`, then `DEALDROP_BIN=tools/e2e/flatpak.sh tools/e2e/run.sh tools/e2e/flatpak.mjs` (`flatpak.sh` keeps that variable; `flatpak.mjs` passes on a locked desktop). It doesn't run an update: installing needs `flatpak-spawn --host`, which its private bus doesn't have. The `.sha256` check has unit tests in `sources.rs`; a real install isn't tested here.
 - Keep a build from taking over the PC: `nice -n 10 taskset -c 0-5 scripts/release-linux.sh`. flatpak-builder and Cargo both follow the CPU mask.
 - `gh workflow run` uses `release.yml` from `main`, so fast-forward `main` first. The `.msi.sha256` has a `*` before the file name (Git Bash's `sha256sum`); `sha256sum -c` accepts it.
 
