@@ -63,14 +63,31 @@ Open `DealDrop_*.dmg` and drag DealDrop to Applications. Unsigned build: on firs
 
 ### Linux (Flatpak)
 
-Download the latest `DealDrop_*_x86_64.flatpak` from [Releases](../../releases), then open it with your software center (Discover, GNOME Software) or run:
+Install from DealDrop's signed Flatpak repo. Updates then arrive through `flatpak update` and your software center (Discover, GNOME Software):
+
+```bash
+flatpak install --user https://susieethelinuxuser.github.io/dealdrop/com.dealdrop.desktop.flatpakref
+flatpak run com.dealdrop.desktop
+```
+
+Already installed from a `.flatpak` file? Run this once to switch; settings and sign-ins stay (installed system-wide? Use `--system` instead of `--user`):
+
+```bash
+flatpak remote-add --user --if-not-exists dealdrop https://susieethelinuxuser.github.io/dealdrop/dealdrop.flatpakrepo && flatpak install --user --reinstall dealdrop com.dealdrop.desktop
+```
+
+On a repo install, update with `flatpak update` or your software center. The **Update to vX.Y.Z** button in the app can't update it and shows an error.
+
+The repo is signed with the key `EE8C 2F12 1453 708D 4927 2956 C834 AC19 F6C1 37D8`.
+
+Or download the latest `DealDrop_*_x86_64.flatpak` from [Releases](../../releases), then open it with your software center or run:
 
 ```bash
 flatpak install --user DealDrop_*_x86_64.flatpak
 flatpak run com.dealdrop.desktop
 ```
 
-It needs Flatpak with the Flathub remote (the GNOME runtime is fetched from there on first install). After that DealDrop updates itself: click **Update to vX.Y.Z** in the sidebar when it appears.
+It needs Flatpak with the Flathub remote (the GNOME runtime is fetched from there on first install). A copy installed this way updates itself: click **Update to vX.Y.Z** in the sidebar when it appears.
 
 Coming from the AppImage (v0.9.2 and older)? Install the Flatpak and delete the AppImage: settings, sign-ins and "Start when I log in" carry over (the Flatpak uses the same `~/.config/dealdrop/`). The AppImage gets no more updates.
 

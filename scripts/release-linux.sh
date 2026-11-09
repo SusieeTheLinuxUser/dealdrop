@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Build the Linux Flatpak bundle (DealDrop_<version>_x86_64.flatpak) and publish it to the GitHub
 # release for the current version, with its .sha256. Installed copies find it there and update themselves (update.rs).
+# Then signs the same build into the Flatpak repo (publish-flatpak-repo.sh).
 # Needs: flatpak, flatpak-builder (or the org.flatpak.Builder Flatpak), gh. The GNOME SDK and Rust
 # extension the manifest names are installed per-user from Flathub. Version comes from src-tauri/tauri.conf.json.
 set -euo pipefail
@@ -31,3 +32,4 @@ else
   gh release create "$tag" "$work/$f" "$work/$f.sha256" --repo SusieeTheLinuxUser/dealdrop --target main \
     --title "DealDrop $tag" --notes "${RELEASE_NOTES:-Linux Flatpak first for testing; Windows .msi and macOS .dmg follow once it is confirmed working.}"
 fi
+scripts/publish-flatpak-repo.sh

@@ -17,10 +17,12 @@ It polls store APIs, shows free games / store sales / hot deals / wishlists, and
 | `src-tauri/src/tui.rs` | Optional read-only terminal UI (`dealdrop --tui`) for public free games, hot deals, and store sales |
 | `.github/workflows/ci.yml` | Every push to `dev`/`main` and every PR → `cargo test` + `node tools/preview/selfcheck.mjs` on Linux, `cargo test` on Windows and macOS |
 | `.github/workflows/release.yml` | Manual dispatch → builds Windows .msi + macOS .dmg and attaches them (each with a `.sha256`) to an existing release |
-| `scripts/release-linux.sh` | Builds the Flatpak bundle `DealDrop_<ver>_x86_64.flatpak` + its `.sha256` (in `src-tauri/target/flatpak/`) and publishes them to the release (`NO_UPLOAD=1`: build only) |
+| `scripts/release-linux.sh` | Builds the Flatpak bundle `DealDrop_<ver>_x86_64.flatpak` + its `.sha256` (in `src-tauri/target/flatpak/`) and publishes them to the release (`NO_UPLOAD=1`: build only), then runs `publish-flatpak-repo.sh` |
+| `scripts/publish-flatpak-repo.sh` | Signs the built Flatpak into the public OSTree repo and force-pushes it as the single commit on `gh-pages` (see "Flatpak repo") |
 | `renderer/api.js` | `window.api` → Tauri `invoke` bridge (the only place the UI calls backend commands; `app.js` also calls two Tauri window/app APIs directly) |
 | `renderer/app.js` | All UI rendering. `renderer/index.html`, `renderer/style.css`, `renderer/onboarding.js` / `onboarding.css` (first-run guide + tour) |
 | `tools/preview/` | Dev-only browser preview harness with a local mock Tauri bridge; never bundled. Mock flags: `?stress=1&accounts=1&bigwishlist=1&sale=<key>` (also `errors`, `empty`, `stale`, `onboarded`, `update`; see its README). `selfcheck.mjs` asserts the pure helpers in `app.js` |
+| `tools/e2e/flatpak-repo.sh` | Signed Flatpak repo, end to end, on 127.0.0.1 in a throwaway `FLATPAK_USER_DIR`: install, start, update, and refusing a tampered, wrongly signed or unsigned repo |
 | `tools/e2e/` | Dev-only headless checks of the real release app: `run.sh <check.mjs>` isolates it (temp home, private D-Bus, `kwin_wayland --virtual`) and the check drives the webview through WebKitWebDriver (see its README). `DEALDROP_BIN=tools/e2e/flatpak.sh … flatpak.mjs` drives the installed Flatpak |
 
 ## Backend notes
@@ -56,20 +58,32 @@ Every release ships **Linux Flatpak + Windows .msi + macOS .dmg (universal: Inte
 **Every release from v0.10.4 on must also attach a `.sha256` next to each file** (`DealDrop_<ver>_x86_64.flatpak.sha256` etc., `sha256sum` format with the bare file name). `release-linux.sh` and `release.yml` publish them; if you upload a file by hand, upload its `.sha256` too. The Flatpak's self-update (`download` in `sources.rs`) refuses a bundle without a matching checksum, and it only installs releases newer than itself, so a missing `.sha256` is an error, not a fallback. Releases up to v0.10.3 have none, which is fine: no checksum-checking build ever installs them.
 
 1. On `dev`: bump the version in all three places (see Rules); update the docs; commit; then fast-forward `main` to `dev` and push both.
-2. **Linux first:** `RELEASE_NOTES="…" scripts/release-linux.sh` builds the Flatpak bundle inside the GNOME SDK and publishes it to the release. Needs `flatpak` and `flatpak-builder` (or the `org.flatpak.Builder` Flatpak); the SDK and Rust extension are installed per-user from Flathub. The maintainer tests it. Installed Flatpaks see it on their next check (start, then every 6 h) and offer **Update to vX.Y.Z**.
+2. **Linux first:** `RELEASE_NOTES="…" scripts/release-linux.sh` builds the Flatpak bundle inside the GNOME SDK and publishes it to the release. Needs `flatpak` and `flatpak-builder` (or the `org.flatpak.Builder` Flatpak); the SDK and Rust extension are installed per-user from Flathub. It then signs the build into the Flatpak repo (`publish-flatpak-repo.sh`), so repo installs get it from `flatpak update`/Discover. The maintainer tests it. Bundle installs see it on their next check (start, then every 6 h) and offer **Update to vX.Y.Z**.
 3. **Only after the Linux build is confirmed working:** `gh workflow run release.yml -f tag=vX.Y.Z` — `.github/workflows/release.yml` builds the Windows .msi and macOS .dmg on GitHub runners and attaches them to that same release. (Windows/macOS can't be built locally on Linux; don't ship them for a build that's known broken.)
 4. Check the release has all three assets and their three `.sha256` files before announcing it.
 
 Testing before publishing (how v0.10.4 was done):
 
-- `release-linux.sh` rebuilds on every run, so to publish the exact bundle you tested: build with `NO_UPLOAD=1`, test it, then fast-forward `main` and run the script's own `gh release create … --target main` line by hand. `main` and `v*` tags can't be moved back, so test before moving them.
+- `release-linux.sh` rebuilds on every run, so to publish the exact bundle you tested: build with `NO_UPLOAD=1`, test it, then fast-forward `main` and run the script's own `gh release create … --target main` line by hand, then `scripts/publish-flatpak-repo.sh` (it signs the build already in `src-tauri/target/flatpak/repo`, no rebuild). `main` and `v*` tags can't be moved back, so test before moving them.
 - Test without touching an installed copy: `export FLATPAK_USER_DIR=$(mktemp -d)`, `flatpak install --user --noninteractive -y --bundle <file>`, then `DEALDROP_BIN=tools/e2e/flatpak.sh tools/e2e/run.sh tools/e2e/flatpak.mjs` (`flatpak.sh` keeps that variable; `flatpak.mjs` passes on a locked desktop). It doesn't run an update: installing needs `flatpak-spawn --host`, which its private bus doesn't have. The `.sha256` check has unit tests in `sources.rs`; a real install isn't tested here.
+- The signed repo: `TMPDIR=<big enough folder> tools/e2e/flatpak-repo.sh` after a build. It uses throwaway keys unless `E2E_GPG_HOME` names one.
 - Keep a build from taking over the PC: `nice -n 10 taskset -c 0-5 scripts/release-linux.sh`. flatpak-builder and Cargo both follow the CPU mask.
 - `gh workflow run` uses `release.yml` from `main`, so fast-forward `main` first. The `.msi.sha256` has a `*` before the file name (Git Bash's `sha256sum`); `sha256sum -c` accepts it.
 
 Builds are unsigned: Windows SmartScreen ("More info → Run anyway") and macOS Gatekeeper (right-click → Open, or `xattr -dr com.apple.quarantine /Applications/DealDrop.app`) will warn on first launch.
 
 Platform code: launcher detection (`has_scheme` in `launchers.rs`) is per-OS via `cfg` — `xdg-mime` on Linux, a registry query on Windows, an app-bundle check on macOS. Keep any new OS-specific code behind `cfg` so all three keep compiling.
+
+## Flatpak repo
+
+`https://susieethelinuxuser.github.io/dealdrop/` is a GPG-signed OSTree repo: `repo/`, `dealdrop.flatpakrepo` and `com.dealdrop.desktop.flatpakref`. GitHub Pages serves the root of the `gh-pages` branch. `publish-flatpak-repo.sh` starts from what's on that branch, adds the new build (keeping 3), and force-pushes one commit, so old objects don't pile up in clones. No workflow or CI secret is involved.
+
+- **Signing happens on the maintainer's PC**, where the Flatpak is already built. The key is `DealDrop Flatpak Repo` (fingerprint `EE8C2F121453708D49272956C834AC19F6C137D8`, no email, no passphrase, no expiry), in its own GnuPG folder `~/.local/share/dealdrop-flatpak-gpg` (mode 700). Never print it, commit it, or hand it to a subagent.
+- **Public key:** `flatpak/dealdrop-repo.gpg`; the script embeds it in both descriptor files and signs with the key it names. Never turn GPG verification off, in the repo, docs or tests.
+- **New PC or lost folder:** `mkdir -m 700 ~/.local/share/dealdrop-flatpak-gpg && gpg --homedir ~/.local/share/dealdrop-flatpak-gpg --import <backup .asc>`. A lost key can't be replaced quietly: every user would have to re-add the remote with a new key.
+- **`RuntimeRepo` only works in the `.flatpakref`**: Flatpak ignores it in `.flatpakrepo`, so the `.flatpakref` is the install path for people without Flathub.
+- **Switching an existing install** needs `flatpak remote-add` + `flatpak install --reinstall dealdrop …` (README). `--reinstall` with the `.flatpakref` URL fails with "already installed".
+- **The in-app Update button can't update a repo install** (see TODO.md): the bundle isn't signed, so the signed remote refuses it, the app stays put and shows the error.
 
 ## Themes & sale themes
 
