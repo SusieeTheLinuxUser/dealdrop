@@ -27,7 +27,8 @@ publish() { # gpg-home pubkey pages.git
   serve "$3"
 }
 serve() { # pages.git: only what was committed is served, like GitHub Pages
-  rm -rf "$tmp/www"; git clone --quiet --branch gh-pages "file://$1" "$tmp/www"; # not a plain path: local clones hardlink and can fail rm -rf "$tmp/www/.git"
+  # file://, not a plain path: local clones hardlink and fail now and then
+  rm -rf "$tmp/www"; git clone --quiet --branch gh-pages "file://$1" "$tmp/www"; rm -rf "$tmp/www/.git"
 }
 new_build() { # label: a real new commit of the app with one changed file
   rm -rf "$tmp/co"
