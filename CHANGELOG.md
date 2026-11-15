@@ -2,6 +2,11 @@
 
 All notable changes to DealDrop are documented in this file.
 
+## [v0.10.5] - 2026-11-15
+- Linux: DealDrop now has its own signed Flatpak repository, so `flatpak update` and Discover / GNOME Software can keep it up to date (see the README for how to add it).
+- A copy installed from that repository no longer shows the in-app **Update** button; About says to use `flatpak update` or your software center instead.
+- Fixed: starting two updates at once is now refused, so they can't install over each other.
+
 ## [v0.10.4] - 2026-11-09
 - Flatpak updates are safer: the app now checks the downloaded update against the release's `.sha256` checksum and won't install it if the checksum is missing or doesn't match. Update checks and downloads only follow redirects to GitHub's own addresses.
 

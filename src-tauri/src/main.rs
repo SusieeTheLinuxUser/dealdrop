@@ -1082,9 +1082,23 @@ async fn check_update() -> Result<Option<Update>, String> {
     offered_update(found, update::in_flatpak(), repo)
 }
 
+static INSTALLING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Held while an update installs; a second `install_update` meanwhile is refused instead of running two installs.
+struct Installing;
+impl Installing {
+    fn start() -> Result<Self, String> {
+        if INSTALLING.swap(true, std::sync::atomic::Ordering::SeqCst) { Err("An update is already being installed".into()) } else { Ok(Installing) }
+    }
+}
+impl Drop for Installing {
+    fn drop(&mut self) { INSTALLING.store(false, std::sync::atomic::Ordering::SeqCst); }
+}
+
 /// Flatpak only: downloads the newest release's bundle, installs it and restarts into it.
 #[tauri::command]
 async fn install_update(app: AppHandle) -> Result<(), String> {
+    let _busy = Installing::start()?;
     if from_repo().await { return Err("This copy updates through flatpak update or your software center".into()); }
     let url = latest_release().await?.and_then(|u| u.bundle).ok_or("There's no newer Flatpak release to install")?;
     let bundle = download(&url).await?;
@@ -1251,6 +1265,14 @@ fn main() {
 mod tests {
     use super::{LiveSale, answered_rows, days_from_civil, sale_soon_notice, sale_starting_tomorrow, SALES, clamp_cut, dedupe_free, failure, free_notice, fresh_big_deals, fresh_free, fresh_wishlist, is_hidden, keep_or_fail, keep_prices, carry_cheapest, carry_deal_lowest, normalize_hidden, normalize_targets, target_hits, target_notice, price_failure, CS_BLOCKED, normalize_title, remember_big_deals, remember_free, remember_wishlist, restore_by_prefix, safe_https, sale_key, should_prime, store_label, tray_counts, tray_tooltip, with_count, wishlist_notice, load_db, proton_suffix, Acct, Db, Deal, Free, Price, Prime, Settings, SteamProfile, Tokens, Update, WishItem, accounts, offered_update, same_refresh, BIG_DEAL_CUTS, WISHLIST_CUTS};
     use std::collections::{HashMap, HashSet};
+
+    #[test]
+    fn a_second_update_install_is_refused_while_one_runs() {
+        let first = super::Installing::start().unwrap();
+        assert!(super::Installing::start().is_err());
+        drop(first); // a failed or finished install frees it again
+        assert!(super::Installing::start().is_ok());
+    }
 
     #[test]
     fn a_failed_update_check_is_not_the_same_as_being_up_to_date() {
