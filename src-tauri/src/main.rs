@@ -602,13 +602,16 @@ const PROTON_TTL_MS: u64 = 7 * 86_400_000;
 const PROTON_FORGET_MS: u64 = 30 * 86_400_000;
 /// Lookups per poll (4 at a time): a big wishlist fills in over a few polls instead of hammering ProtonDB.
 const PROTON_PER_POLL: usize = 60;
+/// Steam store searches per call (twice a poll): they share Steam's rate limit with the sales and wishlist
+/// fetches, so a big GOG/Epic wishlist is matched over a few polls instead.
+const STEAM_MATCH_PER_POLL: usize = 20;
 
-/// Keys that need a lookup: missing from the cache or older than a week, at most `PROTON_PER_POLL`.
-fn proton_stale(cache: &HashMap<String, ProtonEntry>, ids: &[String], now: u64) -> Vec<String> {
+/// Keys that need a lookup: missing from the cache or older than a week, at most `cap`.
+fn proton_stale(cache: &HashMap<String, ProtonEntry>, ids: &[String], now: u64, cap: usize) -> Vec<String> {
     let mut uniq = HashSet::new();
     ids.iter().filter(|id| uniq.insert(*id))
         .filter(|id| cache.get(*id).is_none_or(|e| now.saturating_sub(e.at) > PROTON_TTL_MS))
-        .take(PROTON_PER_POLL).cloned().collect()
+        .take(cap).cloned().collect()
 }
 
 /// Store this round's answers (`Err` keeps the old entry, so it is retried) and drop
@@ -629,14 +632,14 @@ fn proton_known(cache: &HashMap<String, ProtonEntry>, ids: &[String]) -> HashMap
 }
 
 /// Cached answers for `keys` (`Db.proton` or `Db.steam_ids`, picked by `cache`/`cache_mut`),
-/// first asking `ask` about the missing and week-old ones, 4 at a time.
+/// first asking `ask` about the missing and week-old ones (at most `cap`), 4 at a time.
 async fn proton_cached<F: std::future::Future<Output = R<Option<String>>>>(
-    st: &AppState, keys: &[String],
+    st: &AppState, keys: &[String], cap: usize,
     cache: fn(&Db) -> &HashMap<String, ProtonEntry>, cache_mut: fn(&mut Db) -> &mut HashMap<String, ProtonEntry>,
     ask: impl Fn(String) -> F,
 ) -> HashMap<String, String> {
     let now = now_ms();
-    let stale: Vec<String> = st.read(|d| proton_stale(cache(d), keys, now));
+    let stale: Vec<String> = st.read(|d| proton_stale(cache(d), keys, now, cap));
     use futures::StreamExt;
     let got: Vec<(String, R<Option<String>>)> = futures::stream::iter(stale)
         .map(|k| { let a = ask(k.clone()); async move { (k, a.await) } })
@@ -652,7 +655,7 @@ async fn proton_tiers<'a>(st: &AppState, ids: impl IntoIterator<Item = &'a Strin
     if !cfg!(target_os = "linux") { return HashMap::new(); }
     let mut uniq = HashSet::new();
     let ids: Vec<String> = ids.into_iter().filter(|id| uniq.insert(*id)).cloned().collect();
-    proton_cached(st, &ids, |d| &d.proton, |d| &mut d.proton, |id| async move { protondb_tier(&id).await }).await
+    proton_cached(st, &ids, PROTON_PER_POLL, |d| &d.proton, |d| &mut d.proton, |id| async move { protondb_tier(&id).await }).await
 }
 
 /// Listed title → Steam appid for games listed without one (Epic, GOG, other stores), matched by
@@ -663,7 +666,7 @@ async fn steam_matches<'a>(st: &AppState, titles: impl IntoIterator<Item = &'a S
     let mut uniq = HashSet::new();
     let titles: Vec<&String> = titles.into_iter().filter(|t| uniq.insert(*t)).collect();
     let keys: Vec<String> = titles.iter().map(|t| norm_title(t)).filter(|k| !k.is_empty()).collect();
-    let ids = proton_cached(st, &keys, |d| &d.steam_ids, |d| &mut d.steam_ids, |k| async move { steam_appid_for_title(&k).await }).await;
+    let ids = proton_cached(st, &keys, STEAM_MATCH_PER_POLL, |d| &d.steam_ids, |d| &mut d.steam_ids, |k| async move { steam_appid_for_title(&k).await }).await;
     titles.into_iter().filter_map(|t| Some((t.clone(), ids.get(&norm_title(t))?.clone()))).collect()
 }
 
@@ -1399,17 +1402,19 @@ mod tests {
             ..Default::default()
         };
         // exactly a week old is still fresh; a tick past it is looked up again
-        assert!(super::proton_stale(&db.proton, &["1".into()], week).is_empty());
-        assert_eq!(super::proton_stale(&db.proton, &["1".into()], week + 1), ["1"]);
+        assert!(super::proton_stale(&db.proton, &["1".into()], week, super::PROTON_PER_POLL).is_empty());
+        assert_eq!(super::proton_stale(&db.proton, &["1".into()], week + 1, super::PROTON_PER_POLL), ["1"]);
         // "no rating yet" entries go stale the same way, so pending games are re-asked later
         db.proton.insert("3".into(), super::ProtonEntry { tier: None, at: 0 });
-        assert_eq!(super::proton_stale(&db.proton, &["1".into(), "2".into(), "3".into(), "4".into(), "2".into()], week + 1),
+        assert_eq!(super::proton_stale(&db.proton, &["1".into(), "2".into(), "3".into(), "4".into(), "2".into()], week + 1, super::PROTON_PER_POLL),
             ["1", "3", "4"]); // "1" is a tick past its week, "2" is not yet; duplicates collapse
         // at most PROTON_PER_POLL per poll, the first ones in list order
         let many: Vec<String> = (0..(super::PROTON_PER_POLL as u64 + 10)).map(|i| (1000 + i).to_string()).collect();
-        let stale = super::proton_stale(&db.proton, &many, week + 1);
+        let stale = super::proton_stale(&db.proton, &many, week + 1, super::PROTON_PER_POLL);
         assert_eq!(stale.len(), super::PROTON_PER_POLL);
         assert_eq!(stale[0], "1000");
+        // the Steam title searches use a smaller cap
+        assert_eq!(super::proton_stale(&db.steam_ids, &many, week + 1, super::STEAM_MATCH_PER_POLL).len(), super::STEAM_MATCH_PER_POLL);
     }
 
     #[test]
@@ -1784,6 +1789,9 @@ mod tests {
         assert_eq!(free_notice(&[&epic], false, &proton).unwrap().body, "Hades™ is free on Epic Games! · ProtonDB: Platinum");
         // its own appid always wins over a title match ("Control" above is matched to Hades on purpose)
         assert_eq!(proton_suffix(&Some("2".into()), "Control", &proton), "");
+        // a GOG wishlist game without an appid too
+        let gog = WishItem { store: "gog".into(), app_id: None, ..wish("g1", "Hades™", Some(50)) };
+        assert_eq!(wishlist_notice(&[&gog], &proton).unwrap().body, "50% off — now $4.99 on GOG · ProtonDB: Platinum");
     }
 
     #[test]

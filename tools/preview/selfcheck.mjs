@@ -199,6 +199,7 @@ for (const id of [null, undefined, '9', '7', '8', 'constructor']) assert.equal(h
 h.state.steamIds = { 'Hades™': '440', Odd: '7' }
 assert.equal(h.protonTier(null, 'Hades™'), 'gold')
 assert.equal(h.protonText(undefined, 'Hades™'), 'ProtonDB: Gold')
+assert.match(h.protonTag(null, 'Hades™'), /class="proton-tag gold".*🐧 Gold/)
 assert.equal(h.protonTier('9', 'Hades™'), null)
 for (const title of ['Odd', 'Hades', 'constructor', '__proto__', 'toString', undefined]) assert.equal(h.protonTag(null, title), '', String(title))
 h.state.steamIds = {}

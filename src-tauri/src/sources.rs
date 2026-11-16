@@ -1387,6 +1387,8 @@ pub(crate) mod unit {
         // two different apps with the same name: ambiguous, no badge
         assert_eq!(pick("Doom", json!([app(2280, "DOOM"), app(379720, "DOOM")])), None);
         assert_eq!(pick("Doom", json!([app(2280, "DOOM"), app(2280, "Doom")])).as_deref(), Some("2280"));
+        // two different apps equal only after the suffix is dropped: ambiguous too
+        assert_eq!(pick("Hades Deluxe Edition", json!([app(1, "Hades Gold Edition"), app(2, "Hades Standard Edition")])), None);
         // only apps with a numeric id count; garbage never matches
         assert_eq!(pick("Hades", json!([{"type": "sub", "id": 1, "name": "Hades"}, {"type": "app", "id": "x", "name": "Hades"}])), None);
         assert_eq!(super::pick_steam_match("Hades", &json!({"items": "nope"})), None);
