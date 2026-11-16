@@ -1099,6 +1099,44 @@ fn parse_cheapest_deal(deals: &Value, stores: &HashMap<String, String>) -> Optio
 
 const PROTON_TIERS: [&str; 5] = ["platinum", "gold", "silver", "bronze", "borked"];
 
+/// Title as compared for a Steam match: lowercase, ™®© dropped, punctuation as spaces, single-spaced.
+pub fn norm_title(t: &str) -> String {
+    let t: String = t.chars().filter(|c| !matches!(c, '™' | '®' | '©'))
+        .flat_map(|c| if c.is_alphanumeric() { c.to_lowercase().collect::<Vec<_>>() } else { vec![' '] }).collect();
+    t.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// A normalised title without one trailing purchase-tier suffix ("deluxe edition", "goty").
+/// Never "definitive", "remastered" and the like: those are often separate Steam apps.
+fn base_title(norm: &str) -> &str {
+    const TIERS: [&str; 10] = ["digital deluxe edition", "game of the year edition", "standard edition", "deluxe edition",
+        "premium edition", "gold edition", "ultimate edition", "complete edition", "goty edition", "goty"];
+    TIERS.iter().find_map(|t| norm.strip_suffix(t)?.strip_suffix(' ').filter(|b| !b.is_empty())).unwrap_or(norm)
+}
+
+/// The Steam appid for `title` from a storesearch answer, only when exactly one app matches:
+/// first by the normalised title, else by both sides' `base_title`. A wrong badge is worse than none.
+fn pick_steam_match(title: &str, found: &Value) -> Option<String> {
+    let apps: Vec<(String, String)> = found["items"].as_array()?.iter()
+        .filter(|v| v["type"] == "app")
+        .filter_map(|v| Some((v["id"].as_u64()?.to_string(), norm_title(v["name"].as_str()?)))).collect();
+    let want = norm_title(title);
+    let only = |same: &dyn Fn(&str) -> bool| -> Option<Option<String>> {
+        let ids: std::collections::HashSet<&String> = apps.iter().filter(|(_, n)| same(n)).map(|(id, _)| id).collect();
+        match ids.len() { 0 => None, 1 => Some(ids.into_iter().next().cloned()), _ => Some(None) }
+    };
+    if want.is_empty() { return None; }
+    only(&|n| n == want).or_else(|| only(&|n| base_title(n) == base_title(&want))).flatten()
+}
+
+/// Steam appid for a non-Steam listing, matched by title through Steam's own store search
+/// (not CheapShark, so its shared 429 budget stays for prices). Ok(None): no confident match.
+pub async fn steam_appid_for_title(title: &str) -> R<Option<String>> {
+    if norm_title(title).is_empty() { return Ok(None); }
+    let v = get_json(&format!("https://store.steampowered.com/api/storesearch/?term={}&cc=us&l=english", urlenc(title))).await?;
+    Ok(pick_steam_match(title, &v))
+}
+
 /// ProtonDB's community rating for a Steam app: how well it runs on Linux through Proton.
 /// Ok(None) when there's no settled rating: no reports yet (404) or still "pending".
 pub async fn protondb_tier(app_id: &str) -> R<Option<String>> {
@@ -1203,6 +1241,10 @@ mod live {
         println!("Hades on ProtonDB: {hades:?}");
         assert!(hades.is_some(), "a heavily reported game has no tier");
         assert_eq!(protondb_tier("1").await, Ok(None)); // no such app: 404 means no rating, not an error
+    }
+    #[tokio::test] #[ignore] async fn steam_title_match_live() {
+        assert_eq!(steam_appid_for_title("Hades").await.expect("Steam store search").as_deref(), Some("1145360"));
+        assert_eq!(steam_appid_for_title("No Such Game Xq7 Zz").await, Ok(None));
     }
 }
 
@@ -1310,6 +1352,46 @@ pub(crate) mod unit {
         assert_eq!(sales[0].title, "合同会社 🎮 Cafe\u{301} & Co");
         let ftk = super::parse_steam_free_to_keep(&search_body(&html.replace(r#"data-discount="50" data-price-final="500""#, r#"data-price-final="0" data-discount="100""#))).unwrap();
         assert_eq!(ftk[0].title, sales[0].title);
+    }
+
+    #[test]
+    fn titles_normalise_for_steam_matching() {
+        use super::{base_title, norm_title};
+        assert_eq!(norm_title("DOOM® Eternal™"), "doom eternal");
+        assert_eq!(norm_title("Hades: Battle out of Hell"), norm_title("HADES - Battle Out of Hell"));
+        assert_eq!(norm_title("  Café — Ōkami ©  "), "café ōkami");
+        assert_eq!(norm_title("™®:"), "");
+        assert_eq!(base_title("hogwarts legacy deluxe edition"), "hogwarts legacy");
+        assert_eq!(base_title("cyberpunk 2077 digital deluxe edition"), "cyberpunk 2077");
+        assert_eq!(base_title("the witcher 3 game of the year edition"), "the witcher 3");
+        assert_eq!(base_title("borderlands goty"), "borderlands");
+        assert_eq!(base_title("age of empires ii definitive edition"), "age of empires ii definitive edition");
+        assert_eq!(base_title("tomb raider remastered"), "tomb raider remastered");
+        assert_eq!(base_title("superdeluxe edition"), "superdeluxe edition"); // whole words only
+        assert_eq!(base_title("deluxe edition"), "deluxe edition"); // never down to nothing
+    }
+
+    #[test]
+    fn steam_title_match_takes_only_one_confident_app() {
+        use serde_json::{json, Value};
+        let pick = |title: &str, items: Value| super::pick_steam_match(title, &json!({ "total": 9, "items": items }));
+        let app = |id: u64, name: &str| json!({"type": "app", "id": id, "name": name});
+        // exact (normalised) hit; a near miss next to it is ignored
+        assert_eq!(pick("Hades", json!([app(1145360, "Hades™"), app(1145350, "Hades II")])).as_deref(), Some("1145360"));
+        assert_eq!(pick("Hades", json!([app(1145350, "Hades II")])), None);
+        // a purchase tier falls back to the base game; "Definitive Edition" does not
+        assert_eq!(pick("Hogwarts Legacy Deluxe Edition", json!([app(990080, "Hogwarts Legacy")])).as_deref(), Some("990080"));
+        assert_eq!(pick("Age of Empires II: Definitive Edition", json!([app(221380, "Age of Empires II (2013)"), app(1, "Age of Empires II")])), None);
+        // the exact name wins over a base-title match
+        assert_eq!(pick("Control Ultimate Edition", json!([app(870780, "Control Ultimate Edition"), app(2, "Control")])).as_deref(), Some("870780"));
+        // two different apps with the same name: ambiguous, no badge
+        assert_eq!(pick("Doom", json!([app(2280, "DOOM"), app(379720, "DOOM")])), None);
+        assert_eq!(pick("Doom", json!([app(2280, "DOOM"), app(2280, "Doom")])).as_deref(), Some("2280"));
+        // only apps with a numeric id count; garbage never matches
+        assert_eq!(pick("Hades", json!([{"type": "sub", "id": 1, "name": "Hades"}, {"type": "app", "id": "x", "name": "Hades"}])), None);
+        assert_eq!(super::pick_steam_match("Hades", &json!({"items": "nope"})), None);
+        assert_eq!(super::pick_steam_match("Hades", &json!(null)), None);
+        assert_eq!(pick("™", json!([app(1, "")])), None);
     }
 
     #[test]

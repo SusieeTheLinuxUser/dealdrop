@@ -106,6 +106,8 @@
     lastChecked,
     // Sent by Linux builds only; one of each tier across the pages
     proton: empty ? {} : { 440: 'platinum', 570: 'gold', 441: 'silver', 442: 'bronze', 443: 'borked', 124: 'gold' },
+    // Linux only too: a title match for a game listed without a Steam appid
+    steamIds: empty ? {} : { 'Skyward Bound': '570' },
   }
   const syncWishlist = () => { sample.wishlist = empty ? [] : wishlistItems.filter(item => signedStores.has(item.store)) }
   if (stress) {
