@@ -134,6 +134,7 @@ const state = {
   dataLoaded:   false,
   lastChecked:  null,
   proton:       {},   // Steam appid → ProtonDB tier (Linux only)
+  steamIds:     {},   // title → matched Steam appid, for games listed without one (Linux only)
   selectedWishlistDeal: null,
   wishlistPages: { sale: {}, all: {} }, // renderPaged state per list
   revealTitle: '', // set by openSearchResult so the page renders far enough to show that row
@@ -840,13 +841,18 @@ function parseTarget (value) {
   return n >= 0.01 && n <= 10000 ? n : null
 }
 
-// ProtonDB tier by Steam appid; the backend only sends them on Linux, so elsewhere nothing shows
+// ProtonDB tier by Steam appid, or for a game listed without one (Epic, GOG) by its title match (`steamIds`);
+// the backend only sends them on Linux, so elsewhere nothing shows
 const PROTON_TIERS = ['platinum', 'gold', 'silver', 'bronze', 'borked']
-const protonTier = appId => { const t = appId == null ? null : state.proton[appId]; return PROTON_TIERS.includes(t) ? t : null }
+const protonTier = (appId, title) => {
+  const id = appId ?? (Object.hasOwn(state.steamIds, title) ? state.steamIds[title] : null)
+  const t = id == null ? null : state.proton[id]
+  return PROTON_TIERS.includes(t) ? t : null
+}
 const protonLabel = t => t[0].toUpperCase() + t.slice(1)
-const protonText = appId => { const t = protonTier(appId); return t ? `ProtonDB: ${protonLabel(t)}` : '' }
-function protonTag (appId) {
-  const t = protonTier(appId)
+const protonText = (appId, title) => { const t = protonTier(appId, title); return t ? `ProtonDB: ${protonLabel(t)}` : '' }
+function protonTag (appId, title) {
+  const t = protonTier(appId, title)
   return t ? ` <span class="proton-tag ${t}" title="ProtonDB: ${protonLabel(t)} (how it runs on Linux)" aria-hidden="true">🐧 ${protonLabel(t)}</span><span class="sr-only"> ProtonDB: ${protonLabel(t)}.</span>` : ''
 }
 
@@ -946,7 +952,7 @@ function makeWishlistSaleRow (w, isNew = false) {
   main.innerHTML = `
     <div>
       <div class="deal-name">${escHtml(w.name)}</div>
-      <div class="deal-store">${storeTag(w.store)}${w.cheapest ? `<span class="cheapest-tag">↘ ${escHtml(w.cheapest.store)} ${fmt$(w.cheapest.price)}</span>` : ''}${isNew ? NEW_TAG : ''}${wishlistLowestTag(w)}${wishlistTargetTag(w)}${protonTag(w.appId)}</div>
+      <div class="deal-store">${storeTag(w.store)}${w.cheapest ? `<span class="cheapest-tag">↘ ${escHtml(w.cheapest.store)} ${fmt$(w.cheapest.price)}</span>` : ''}${isNew ? NEW_TAG : ''}${wishlistLowestTag(w)}${wishlistTargetTag(w)}${protonTag(w.appId, w.name)}</div>
     </div>
     <span class="sr-only">${escHtml(salePriceDescription(p.initial, p.final, p.discount, p.formatted, p.currency))}</span>
     <span class="deal-orig" aria-hidden="true">${escHtml(fmt$(p.initial, p.currency))}</span>
@@ -985,7 +991,7 @@ function makeWishlistRow (w, isNew = false) {
         : `<span style="color:var(--text2)">${escHtml(p.formatted)}</span>`)
     : ''
   const cheap = w.cheapest ? ` <span class="cheapest-tag">${ARROW_DOWN} cheaper at ${escHtml(w.cheapest.store)}: ${fmt$(w.cheapest.price)}</span>` : ''
-  info.innerHTML = `<div class="wishlist-name">${storeTag(w.store)}${escHtml(w.name)}</div><div class="wishlist-sub">${priceStr}${cheap}${isNew ? NEW_TAG : ''}${wishlistLowestTag(w)}${wishlistTargetTag(w)}${protonTag(w.appId)}</div>`
+  info.innerHTML = `<div class="wishlist-name">${storeTag(w.store)}${escHtml(w.name)}</div><div class="wishlist-sub">${priceStr}${cheap}${isNew ? NEW_TAG : ''}${wishlistLowestTag(w)}${wishlistTargetTag(w)}${protonTag(w.appId, w.name)}</div>`
   info.querySelector('.wishlist-name').setAttribute('title', w.name)
 
   main.append(thumb, info)
@@ -1192,10 +1198,10 @@ function makeFreeCard (g, tagClass, tagText, claimable = false, hideable = true)
     <div class="game-title">${escHtml(g.title)}</div>
       <div class="price-row">
         <span class="${tagClass}">${tagText}</span>
-        ${g.endDate ? `<span class="time-left">${escHtml(endDateLabel(g.endDate))}</span>` : ''}${protonTag(g.appId)}
+        ${g.endDate ? `<span class="time-left">${escHtml(endDateLabel(g.endDate))}</span>` : ''}${protonTag(g.appId, g.title)}
       </div>
     </div></div>`
-  card.appendChild(makeCardOpenButton(g.source, g.url, g.title, [g.endDate && endDateLabel(g.endDate), protonText(g.appId), claimed && 'Claimed'].filter(Boolean).join('. ')))
+  card.appendChild(makeCardOpenButton(g.source, g.url, g.title, [g.endDate && endDateLabel(g.endDate), protonText(g.appId, g.title), claimed && 'Claimed'].filter(Boolean).join('. ')))
   const actions = makeCardActions(g.source, g.url, g.appId, g.title)
   if (hideable) actions.appendChild(makeHideButton(g.title))
   card.appendChild(actions)
@@ -1288,10 +1294,10 @@ function makeDealRow (d, isNew = false) {
     if (d.ratingText) tag.append(Object.assign(document.createElement('span'), { className: 'deal-rating-text', textContent: ` · ${d.ratingText}` }))
     content.querySelector('.deal-price-line').append(tag)
   }
-  content.querySelector('.deal-price-line').insertAdjacentHTML('beforeend', protonTag(d.appId))
+  content.querySelector('.deal-price-line').insertAdjacentHTML('beforeend', protonTag(d.appId, d.title))
   const main = document.createElement('button')
   main.type = 'button'; main.className = 'deal-row-main'
-  main.setAttribute('aria-label', `Open ${d.title} on ${d.shop}. ${salePriceDescription(d.regular, d.price, d.cut)}${lowestTag ? '. Lowest price ever' : ''}${rating ? `. ${rating}` : ''}${protonTier(d.appId) ? `. ${protonText(d.appId)}` : ''}${isNew ? '. New' : ''}`)
+  main.setAttribute('aria-label', `Open ${d.title} on ${d.shop}. ${salePriceDescription(d.regular, d.price, d.cut)}${lowestTag ? '. Lowest price ever' : ''}${rating ? `. ${rating}` : ''}${protonTier(d.appId, d.title) ? `. ${protonText(d.appId, d.title)}` : ''}${isNew ? '. New' : ''}`)
   // Steam deals use their app id; GOG/Epic are looked up only when clicked and fall back to CheapShark.
   const open = () => {
     const store = storeKeyFor(d.shop)
@@ -1358,10 +1364,10 @@ function makeSaleCard (d, isNew = false) {
         <span class="sr-only">${escHtml(salePriceDescription(d.regular, d.price, d.cut))}</span>
         <span class="price-was" aria-hidden="true">${fmt$(d.regular)}</span>
         <span class="price-now" aria-hidden="true">${fmt$(d.price)}</span>
-        <span class="tag-sale" aria-hidden="true">-${escHtml(d.cut)}%</span>${isNew ? '<span class="tag-new" aria-hidden="true">New</span>' : ''}${protonTag(d.appId)}
+        <span class="tag-sale" aria-hidden="true">-${escHtml(d.cut)}%</span>${isNew ? '<span class="tag-new" aria-hidden="true">New</span>' : ''}${protonTag(d.appId, d.title)}
       </div>
     </div></div>`
-  card.appendChild(makeCardOpenButton(src, d.url, d.title, salePriceDescription(d.regular, d.price, d.cut) + (protonTier(d.appId) ? `. ${protonText(d.appId)}` : '') + (isNew ? '. New' : '')))
+  card.appendChild(makeCardOpenButton(src, d.url, d.title, salePriceDescription(d.regular, d.price, d.cut) + (protonTier(d.appId, d.title) ? `. ${protonText(d.appId, d.title)}` : '') + (isNew ? '. New' : '')))
   const actions = makeCardActions(src, d.url, d.appId ?? d.id, d.title)
   actions.appendChild(makeHideButton(d.title))
   card.appendChild(actions)
@@ -2119,6 +2125,7 @@ function applyData (data) {
   if (state.page === 'settings' && state.liveSale?.key !== saleWas) renderThemeGrid()
   state.wishlist     = data.wishlist ?? []
   state.proton       = data.proton ?? {}
+  state.steamIds     = data.steamIds ?? {}
   state.wishlistErrors  = data.wishlistErrors ?? {}
   state.wishlistPrivate = !!data.wishlistPrivate
   if (state.selectedWishlistDeal && !state.wishlist.some(w => w.appId === state.selectedWishlistDeal.appId)) {

@@ -195,6 +195,14 @@ assert.equal(h.protonTier('440'), 'gold')
 assert.equal(h.protonText('440'), 'ProtonDB: Gold')
 assert.match(h.protonTag('440'), /class="proton-tag gold".*🐧 Gold.*ProtonDB: Gold\./)
 for (const id of [null, undefined, '9', '7', '8', 'constructor']) assert.equal(h.protonTag(id), '', String(id)) // unknown or unexpected tiers never render
+// a game listed without an appid (Epic, GOG) gets its title match's tier; its own appid always wins
+h.state.steamIds = { 'Hades™': '440', Odd: '7' }
+assert.equal(h.protonTier(null, 'Hades™'), 'gold')
+assert.equal(h.protonText(undefined, 'Hades™'), 'ProtonDB: Gold')
+assert.match(h.protonTag(null, 'Hades™'), /class="proton-tag gold".*🐧 Gold/)
+assert.equal(h.protonTier('9', 'Hades™'), null)
+for (const title of ['Odd', 'Hades', 'constructor', '__proto__', 'toString', undefined]) assert.equal(h.protonTag(null, title), '', String(title))
+h.state.steamIds = {}
 h.state.proton = {}
 const targeted = { store: 'gog', id: 'g1', priceInfo: { final: 15, currency: 'USD' }, cheapest: { price: 9.5 } }
 assert.equal(h.targetKey(targeted), 'gog:g1')

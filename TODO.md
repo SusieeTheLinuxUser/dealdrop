@@ -10,7 +10,6 @@ Left over from the 2026-10-18/19 overnight work (shipped in v0.9.0):
 - **Tray on a real panel: done 2026-10-31** on the v0.10.0 Flatpak in Plasma 6: the icon shows and its menu reads Open DealDrop, Free now (23), Wishlist (70), Refresh all, Quit.
 - **Rerun with the desktop unlocked: done 2026-10-31** on the v0.10.0 Flatpak: `flatpak.mjs`, `hidden-start.mjs`, `tray.mjs` and `close-to-tray.mjs` all pass.
 - **Self-update hardening:** the bundle's `.sha256` check and the GitHub-only redirect list shipped in v0.10.4 (a checksum from the same release only catches a broken or swapped download, not a compromised repo; a signature would). The backend also refuses a second `install_update` while one runs (v0.10.5).
-- **ProtonDB badges for non-Steam games** (Epic free games, other-store deals): match to a Steam appid via the CheapShark deal's `steamAppID` when present, else by title; Epic free games currently show none.
 
 ## Minimize animation on KDE Plasma (Wayland) flies to the pointer
 
