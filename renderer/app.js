@@ -985,10 +985,11 @@ function makeWishlistRow (w, isNew = false) {
   thumb.style.visibility = w.image ? '' : 'hidden'
 
   const info  = document.createElement('div')
-  const priceStr = p?.formatted
+  const formatted = p ? (p.formatted ?? fmt$(p.final, p.currency)) : ''
+  const priceStr = formatted
     ? (onSale
-        ? `<span class="sr-only">${escHtml(salePriceDescription(p.initial, p.final, p.discount, p.formatted, p.currency))}</span><span aria-hidden="true" style="color:var(--amber)">-${escHtml(p.discount)}% · ${escHtml(p.formatted)}</span>`
-        : `<span style="color:var(--text2)">${escHtml(p.formatted)}</span>`)
+        ? `<span class="sr-only">${escHtml(salePriceDescription(p.initial, p.final, p.discount, formatted, p.currency))}</span><span aria-hidden="true" style="color:var(--amber)">-${escHtml(p.discount)}% · ${escHtml(formatted)}</span>`
+        : `<span style="color:var(--text2)">${escHtml(formatted)}</span>`)
     : ''
   const cheap = w.cheapest ? ` <span class="cheapest-tag">${ARROW_DOWN} cheaper at ${escHtml(w.cheapest.store)}: ${fmt$(w.cheapest.price)}</span>` : ''
   info.innerHTML = `<div class="wishlist-name">${storeTag(w.store)}${escHtml(w.name)}</div><div class="wishlist-sub">${priceStr}${cheap}${isNew ? NEW_TAG : ''}${wishlistLowestTag(w)}${wishlistTargetTag(w)}${protonTag(w.appId, w.name)}</div>`
@@ -1945,6 +1946,8 @@ function renderAccounts () {
     row.querySelector('.acct-out')?.addEventListener('click', async () => {
       setAccounts(await window.api.logout(s))
       state.wishlist = state.wishlist.filter(w => w.store !== s)
+      updateBadges()
+      renderErrors()
       navigate(state.page)
     })
     const inBtn = row.querySelector('.acct-btn')

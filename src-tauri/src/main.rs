@@ -13,6 +13,7 @@ use sources::*;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use stores::Tokens;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
@@ -158,6 +159,7 @@ struct AppState {
     db: Mutex<Db>,
     snapshot: Mutex<Option<Snapshot>>,
     poll_lock: AsyncMutex<()>,
+    account_generation: AtomicU64,
     wake: Notify,
     /// Why the last config write failed; the next one that works clears it. Shown in the error box like `CONFIG_STUCK`.
     save_error: Mutex<Option<String>>,
@@ -245,10 +247,14 @@ fn title_key(title: &str) -> String { title.to_lowercase().chars().filter(|c| c.
 fn dedupe_free(list: Vec<Free>) -> Vec<Free> {
     let mut seen = HashSet::new();
     list.into_iter().filter(|g| {
-        let mut key = title_key(&g.title);
-        if key.is_empty() { key = normalize_title(&g.title); } // "???" and "★★★" are different games
-        seen.insert(format!("{}:{key}", g.kind))
+        seen.insert(free_key(g))
     }).collect()
+}
+
+fn free_key(g: &Free) -> String {
+    let mut key = title_key(&g.title);
+    if key.is_empty() { key = normalize_title(&g.title); }
+    format!("{}:{key}", g.kind)
 }
 
 /// Loot that is already a free game (Steam's free-to-keep DLC, which it titles "… (DLC)") is shown once, as the game.
@@ -312,8 +318,14 @@ async fn poll(app: &AppHandle) -> Snapshot {
         let _ = st.poll_lock.lock().await;
         return st.snapshot.lock().unwrap().clone().unwrap_or_default();
     };
-    let snap = run_poll(app, &st).await;
-    *st.snapshot.lock().unwrap() = Some(snap.clone());
+    let snap = loop {
+        let generation = st.account_generation.load(Ordering::SeqCst);
+        let snap = run_poll(app, &st).await;
+        let mut snapshot = st.snapshot.lock().unwrap();
+        if st.account_generation.load(Ordering::SeqCst) != generation { continue; }
+        *snapshot = Some(snap.clone());
+        break snap;
+    };
     let _ = app.emit("data-update", &snap);
     update_tray(app, &snap);
     snap
@@ -493,8 +505,10 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
     let (mut deals, deals_source, deals_error) = hot;
     if deals_error.is_some() { deals = prev.deals.clone(); } else { carry_deal_lowest(&mut deals, &prev.deals); } // keep the last good hot deals
 
-    let free_games = dedupe_free([ef, sf, sk, gp].concat());
-    let free_weekends = dedupe_free(sw);
+    let raw_free_games = [ef, sf, sk, gp].concat();
+    let raw_free_weekends = sw;
+    let free_games = dedupe_free(raw_free_games.clone());
+    let free_weekends = dedupe_free(raw_free_weekends.clone());
     let free_loot = drop_listed_loot(free_loot, &free_games);
 
     // Before the free-game alerts so they can name the tier; free games are looked up first.
@@ -511,15 +525,15 @@ async fn run_poll(app: &AppHandle, st: &AppState) -> Snapshot {
     let had_errors = *free_failed.lock().unwrap();
     match st.read(|d| should_prime(d.primed, d.seen_free_ids.is_empty(), had_errors)) {
         Prime::Notify { mark } => {
-            if settings.notify_free_game { notify_new_free(app, st, &free_games, false, &proton); }
-            if settings.notify_free_weekend { notify_new_free(app, st, &free_weekends, true, &proton); }
+            if settings.notify_free_game { notify_new_free(app, st, &free_games, &raw_free_games, false, &proton); }
+            if settings.notify_free_weekend { notify_new_free(app, st, &free_weekends, &raw_free_weekends, true, &proton); }
             if mark { st.edit(|d| d.primed = true); }
         }
         Prime::Record => {
             // Only prime from a complete baseline: a failed source would otherwise notify in a burst once it recovers.
             st.edit(|d| {
                 d.primed = true;
-                d.seen_free_ids.extend(free_games.iter().chain(free_weekends.iter()).map(|g| g.id.clone()));
+                d.seen_free_ids.extend(raw_free_games.iter().chain(raw_free_weekends.iter()).map(|g| g.id.clone()));
             });
         }
         Prime::Wait => {} // errors on the first poll: leave it unprimed so a later clean poll can seed
@@ -742,9 +756,9 @@ fn normalize_hidden(hidden: Vec<String>) -> Vec<String> {
     out
 }
 
-/// Ids already in `seen` have been notified.
-fn fresh_free<'a>(items: &'a [Free], seen: &HashSet<String>, hidden: &[String]) -> Vec<&'a Free> {
-    items.iter().filter(|g| !seen.contains(&g.id) && !is_hidden(hidden, &g.title)).collect()
+/// Already notified when `seen` has the id of any raw (pre-dedupe) row for the same game, from any source.
+fn fresh_free<'a>(items: &'a [Free], raw: &[Free], seen: &HashSet<String>, hidden: &[String]) -> Vec<&'a Free> {
+    items.iter().filter(|g| !raw.iter().any(|r| free_key(r) == free_key(g) && seen.contains(&r.id)) && !is_hidden(hidden, &g.title)).collect()
 }
 
 /// One game gets its own notice. Several share one, listing every title.
@@ -767,10 +781,14 @@ fn remember_free(seen: &mut HashSet<String>, games: &[Free]) {
     seen.extend(games.iter().map(|g| g.id.clone()));
 }
 
-fn notify_new_free(app: &AppHandle, st: &AppState, games: &[Free], weekend: bool, proton: &Proton) {
-    let (fresh, unseen) = st.read(|d| (fresh_free(games, &d.seen_free_ids, &d.settings.hidden), games.iter().any(|g| !d.seen_free_ids.contains(&g.id))));
+fn notify_new_free(app: &AppHandle, st: &AppState, games: &[Free], raw: &[Free], weekend: bool, proton: &Proton) {
+    let (fresh, unseen) = st.read(|d| {
+        let fresh = fresh_free(games, raw, &d.seen_free_ids, &d.settings.hidden);
+        let unseen = raw.iter().any(|r| !d.seen_free_ids.contains(&r.id));
+        (fresh, unseen)
+    });
     if !unseen { return; }
-    st.edit(|d| remember_free(&mut d.seen_free_ids, games));
+    st.edit(|d| remember_free(&mut d.seen_free_ids, raw));
     if let Some(n) = free_notice(&fresh, weekend, proton) { notify(app, &n.title, &n.body); }
 }
 
@@ -986,6 +1004,7 @@ async fn steam_login(app: AppHandle) -> Result<Accounts, String> {
     let id = stores::steam_login(&app).await?;
     let (name, avatar) = steam_profile(&id).await;
     st.edit(|d| steam_signed_in(d, id, name, avatar));
+    st.account_generation.fetch_add(1, Ordering::SeqCst);
     *st.snapshot.lock().unwrap() = None;
     Ok(accounts(&st))
 }
@@ -995,6 +1014,7 @@ async fn gog_login(app: AppHandle) -> Result<Accounts, String> {
     let st = app.state::<AppState>();
     let t = stores::gog_login(&app).await?;
     st.edit(|d| d.gog = Some(t));
+    st.account_generation.fetch_add(1, Ordering::SeqCst);
     *st.snapshot.lock().unwrap() = None;
     Ok(accounts(&st))
 }
@@ -1004,6 +1024,7 @@ async fn epic_login(app: AppHandle) -> Result<Accounts, String> {
     let st = app.state::<AppState>();
     let t = stores::epic_login(&app).await?;
     st.edit(|d| d.epic = Some(t));
+    st.account_generation.fetch_add(1, Ordering::SeqCst);
     *st.snapshot.lock().unwrap() = None;
     Ok(accounts(&st))
 }
@@ -1022,6 +1043,7 @@ fn signed_out(d: &mut Db, store: &str) {
 #[tauri::command]
 fn logout(st: State<AppState>, store: String) -> Accounts {
     st.edit(|d| signed_out(d, &store));
+    st.account_generation.fetch_add(1, Ordering::SeqCst);
     if let Some(s) = st.snapshot.lock().unwrap().as_mut() { s.wishlist.retain(|w| w.store != store); }
     accounts(&st)
 }
@@ -1219,6 +1241,7 @@ fn main() {
                 path,
                 snapshot: Mutex::new(None),
                 poll_lock: AsyncMutex::new(()),
+                account_generation: AtomicU64::new(0),
                 wake: Notify::new(),
                 save_error: Mutex::new(None),
             });
@@ -1678,7 +1701,7 @@ mod tests {
     fn hidden_titles_suppress_all_notification_types() {
         let hidden = vec!["HADES".to_string()];
         let free = vec![game("steam-1", " Hades ", "steam", "free"), game("steam-2", "Control", "steam", "free")];
-        assert_eq!(fresh_free(&free, &HashSet::new(), &hidden).iter().map(|g| g.id.as_str()).collect::<Vec<_>>(), ["steam-2"]);
+        assert_eq!(fresh_free(&free, &free, &HashSet::new(), &hidden).iter().map(|g| g.id.as_str()).collect::<Vec<_>>(), ["steam-2"]);
         let wishlist = vec![wish("1", "Hades", Some(40)), wish("2", "Control", Some(40))];
         assert_eq!(fresh_wishlist(&wishlist, &HashSet::new(), &hidden, 20).iter().map(|w| w.id.as_str()).collect::<Vec<_>>(), ["2"]);
         let deals = vec![Deal { id: "1".into(), title: "Hades".into(), cut: 90, ..Default::default() }, Deal { id: "2".into(), title: "Control".into(), cut: 90, ..Default::default() }];
@@ -1690,9 +1713,9 @@ mod tests {
         let hidden = vec!["Hades".to_string()];
         let free = vec![game("steam-1", "Hades", "steam", "free")];
         let mut seen = HashSet::new();
-        assert!(fresh_free(&free, &seen, &hidden).is_empty());
+        assert!(fresh_free(&free, &free, &seen, &hidden).is_empty());
         remember_free(&mut seen, &free);
-        assert!(fresh_free(&free, &seen, &[]).is_empty());
+        assert!(fresh_free(&free, &free, &seen, &[]).is_empty());
 
         let wishlist = vec![wish("1", "Hades", Some(40)), wish("2", "Control", Some(10))];
         let mut seen = HashSet::new();
@@ -1712,13 +1735,13 @@ mod tests {
     fn new_free_id_notifies_once_then_is_recorded() {
         let games = vec![game("steam-ftk-1", "Hades", "steam", "free")];
         let mut seen = HashSet::new();
-        let fresh = fresh_free(&games, &seen, &[]);
+        let fresh = fresh_free(&games, &games, &seen, &[]);
         let n = free_notice(&fresh, false, &super::Proton::default()).unwrap();
         assert_eq!(n.title, "Free: Hades");
         assert_eq!(n.body, "Hades is free on Steam!");
         seen.extend(fresh.iter().map(|g| g.id.clone()));
-        assert!(fresh_free(&games, &seen, &[]).is_empty());
-        assert!(free_notice(&fresh_free(&games, &seen, &[]), false, &super::Proton::default()).is_none());
+        assert!(fresh_free(&games, &games, &seen, &[]).is_empty());
+        assert!(free_notice(&fresh_free(&games, &games, &seen, &[]), false, &super::Proton::default()).is_none());
     }
 
     #[test]
@@ -1728,10 +1751,26 @@ mod tests {
             game("epic-2", "New", "epic", "free"),
         ];
         let seen = HashSet::<String>::from(["steam-10".into()]);
-        let fresh = fresh_free(&games, &seen, &[]);
+        let fresh = fresh_free(&games, &games, &seen, &[]);
         assert_eq!(fresh.iter().map(|g| g.id.as_str()).collect::<Vec<_>>(), ["epic-2"]);
         let seen = HashSet::<String>::from(["steam-10".into(), "epic-2".into()]);
-        assert!(fresh_free(&games, &seen, &[]).is_empty());
+        assert!(fresh_free(&games, &games, &seen, &[]).is_empty());
+    }
+
+    #[test]
+    fn cross_source_free_ids_prevent_duplicate_notice_after_epic_ends() {
+        let raw = vec![game("epic-x", "Control", "epic", "free"), game("gp-1", "Control", "epic", "free")];
+        let deduped = dedupe_free(raw.clone());
+        let seen = HashSet::from(["gp-1".to_string()]);
+        assert!(fresh_free(&deduped, &raw, &seen, &[]).is_empty());
+    }
+
+    #[test]
+    fn cross_source_free_ids_prevent_duplicate_notice_after_gamerpower_first() {
+        let raw = vec![game("gp-1", "Control", "epic", "free"), game("epic-x", "Control", "epic", "free")];
+        let deduped = dedupe_free(raw.clone());
+        let seen = HashSet::from(["epic-x".to_string()]);
+        assert!(fresh_free(&deduped, &raw, &seen, &[]).is_empty());
     }
 
     #[test]
@@ -1744,29 +1783,30 @@ mod tests {
             game("steam-ftk-2", "Control", "steam", "free"),
         ];
         let mut seen = HashSet::<String>::from(["steam-10".into(), "epic-1".into()]);
-        let fresh = fresh_free(&games, &seen, &[]);
+        let fresh = fresh_free(&games, &games, &seen, &[]);
         assert_eq!(fresh.iter().map(|g| g.id.as_str()).collect::<Vec<_>>(), ["steam-ftk-1", "steam-ftk-2"]);
         let n = free_notice(&fresh, false, &super::Proton::default()).unwrap();
         assert_eq!(n.title, "2 free games available");
         assert_eq!(n.body, "Hades, Control");
         seen.extend(fresh.iter().map(|g| g.id.clone()));
-        assert!(fresh_free(&games, &seen, &[]).is_empty());
+        assert!(fresh_free(&games, &games, &seen, &[]).is_empty());
     }
 
     #[test]
     fn weekend_and_free_notices_use_different_wording() {
         let seen = HashSet::new();
-        let free = free_notice(&fresh_free(&[game("steam-1", "Hades", "steam", "free")], &seen, &[]), false, &super::Proton::default()).unwrap();
+        let hades = [game("steam-1", "Hades", "steam", "free")];
+        let free = free_notice(&fresh_free(&hades, &hades, &seen, &[]), false, &super::Proton::default()).unwrap();
         assert_eq!(free.title, "Free: Hades");
         assert_eq!(free.body, "Hades is free on Steam!");
         let weekends = vec![
             game("steam-fw-1", "Hades", "steam", "weekend"),
             game("steam-fw-2", "Control", "steam", "weekend"),
         ];
-        let grouped = free_notice(&fresh_free(&weekends, &seen, &[]), true, &super::Proton::default()).unwrap();
+        let grouped = free_notice(&fresh_free(&weekends, &weekends, &seen, &[]), true, &super::Proton::default()).unwrap();
         assert_eq!(grouped.title, "2 free weekend games available");
         assert_eq!(grouped.body, "Hades, Control");
-        let one = free_notice(&fresh_free(&weekends[..1], &seen, &[]), true, &super::Proton::default()).unwrap();
+        let one = free_notice(&fresh_free(&weekends[..1], &weekends[..1], &seen, &[]), true, &super::Proton::default()).unwrap();
         assert_eq!(one.title, "Free weekend: Hades");
         assert_eq!(one.body, "Hades is free on Steam!");
     }
@@ -1873,7 +1913,7 @@ mod tests {
         ]);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].id, "steam-ftk-1091500");
-        let n = free_notice(&fresh_free(&rows, &HashSet::new(), &[]), false, &super::Proton::default()).unwrap();
+        let n = free_notice(&fresh_free(&rows, &rows, &HashSet::new(), &[]), false, &super::Proton::default()).unwrap();
         assert_eq!(n.title, "Free: Hades");
         assert_eq!(n.body, "Hades is free on Steam!");
     }
@@ -2073,6 +2113,7 @@ mod tests {
             db: std::sync::Mutex::new(db),
             snapshot: std::sync::Mutex::new(None),
             poll_lock: tokio::sync::Mutex::new(()),
+            account_generation: std::sync::atomic::AtomicU64::new(0),
             wake: tokio::sync::Notify::new(),
             save_error: std::sync::Mutex::new(None),
         }
