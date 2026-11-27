@@ -118,7 +118,7 @@ DealDrop is designed so **no secrets ever live in the source code**.
 - Sign-in tokens are stored locally in the OS config dir (`~/.config/dealdrop/config.json` on Linux), never in the repo
 - Steam login uses OpenID — DealDrop never sees your password, only your public Steam ID
 - External API calls run in the Rust/Tauri backend; the renderer does not call external APIs
-- No telemetry or analytics; network requests go to Steam, GOG, Epic, GamerPower and CheapShark
+- No telemetry or analytics; network requests go to Steam, GOG, Epic, GamerPower, CheapShark, ProtonDB (Linux game ratings) and GitHub (update checks and downloads)
 - Full details in [SECURITY.md](SECURITY.md)
 
 **APIs DealDrop talks to:**
@@ -126,6 +126,8 @@ DealDrop is designed so **no secrets ever live in the source code**.
 | Endpoint | Purpose | Auth |
 |---|---|---|
 | `store.steampowered.com/api/featured`, `/featuredcategories` | Free Steam games, sale & free-weekend detection | None |
+| `store.steampowered.com/api/appdetails` | Identify qualifying Steam free-to-keep DLC | None |
+| `store.steampowered.com/api/storesearch` | Match non-Steam listings to Steam games by title | None |
 | `store.steampowered.com/search/results?specials=1` | Steam sales list | None |
 | `api.steampowered.com/IWishlistService/GetWishlist` | Steam wishlist (app ids) | None (profile must be public) |
 | `api.steampowered.com/IStoreBrowseService/GetItems` | Names & prices for many apps in one request | None |
@@ -138,6 +140,8 @@ DealDrop is designed so **no secrets ever live in the source code**.
 | `account-public-service-prod03.ol.epicgames.com`, `launcher.store.epicgames.com/graphql` | Epic sign-in & wishlist | Entered on Epic's own page |
 | `www.gamerpower.com/api/giveaways` | PC giveaway aggregation | None |
 | `www.cheapshark.com/api/1.0` | Hot deals, cheapest store for a wishlist game | None |
+| `www.protondb.com/api/v1/reports/summaries/<appid>.json` | Linux ProtonDB compatibility tier | None |
+| `github.com/SusieeTheLinuxUser/dealdrop/releases/...` | Check for and download app updates (asset downloads redirect to GitHub's release hosts) | None |
 
 ---
 
