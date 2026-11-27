@@ -230,10 +230,13 @@ pub async fn gog_wishlist(access: &str) -> R<Vec<WishItem>> {
 
 /// An object of ids (value false/0 = not wanted). An empty wishlist may come back as `[]`; any other
 /// shape is an answer we don't understand, so the wishlist fails and the UI shows it instead of going empty.
+/// The ids go into `products?ids=…` / `prices?ids=…&countryCode=…`, so a key that is not a plain
+/// product id (GOG ids are digits) is skipped instead of reaching the URL.
 fn parse_gog_wishlist_ids(v: &Value) -> R<Vec<String>> {
     match &v["wishlist"] {
         Value::Object(map) => Ok(map.iter()
-            .filter(|(_, on)| **on != false && **on != 0).map(|(k, _)| k.clone()).collect()),
+            .filter(|(k, on)| !k.is_empty() && k.bytes().all(|b| b.is_ascii_digit()) && **on != false && **on != 0)
+            .map(|(k, _)| k.clone()).collect()),
         Value::Array(a) if a.is_empty() => Ok(vec![]),
         _ => Err("GOG sent a wishlist DealDrop doesn't understand".into()),
     }
@@ -359,11 +362,17 @@ async fn epic_gql(url: &str, ua: &str, bearer: Option<&str>, query: &str, vars: 
     gql_checked(v, bearer)
 }
 
-fn epic_image(o: &Value) -> Option<String> {
+/// First `keyImages` entry whose `type` matches `types` in order, else `None`.
+/// Shared by the sale/wishlist cards (`epic_image`) and the free-games thumb (`sources::epic_thumb`).
+pub(crate) fn epic_image_of(o: &Value, types: &[&str]) -> Option<String> {
     let imgs = o["keyImages"].as_array()?;
-    ["OfferImageWide", "OfferImageTall", "Thumbnail"].iter()
+    types.iter()
         .find_map(|t| imgs.iter().find(|i| i["type"] == *t))
         .and_then(|i| i["url"].as_str().map(str::to_string))
+}
+
+fn epic_image(o: &Value) -> Option<String> {
+    epic_image_of(o, &["OfferImageWide", "OfferImageTall", "Thumbnail"])
 }
 
 fn epic_page(o: &Value) -> String {
@@ -505,6 +514,10 @@ mod unit {
         let mut ids = super::parse_gog_wishlist_ids(&v).unwrap();
         ids.sort();
         assert_eq!(ids, vec!["10".to_string(), "40".to_string()]);
+        // Ids go into products?ids=…/prices?ids=…&countryCode=…: a key that is not a plain
+        // product id must not reach the URL (it could change the query's meaning).
+        let v = json!({"wishlist": {"10": true, "7&currency=EUR": true, "9,8": true, " 11": true, "": true, "12x": true}});
+        assert_eq!(super::parse_gog_wishlist_ids(&v).unwrap(), vec!["10".to_string()]);
         // An empty wishlist can come back as [] — a real empty list, not a broken answer.
         assert!(super::parse_gog_wishlist_ids(&json!({"wishlist": []})).unwrap().is_empty());
         // Anything else is a shape we don't know: the wishlist must fail, not go silently empty.
