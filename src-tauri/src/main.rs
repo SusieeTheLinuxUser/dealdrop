@@ -2427,4 +2427,28 @@ mod tests {
         carry_deal_lowest(&mut now, &prev);
         assert_eq!(now.map(|d| d.lowest), [Some(4.0), None, Some(3.0), None]); // carried, price moved, fresh wins, new deal
     }
+
+    #[test]
+    fn a_carried_offer_must_be_strictly_cheaper_with_a_half_cent_of_slack() {
+        use super::Cheapest;
+        let offer = Cheapest { store: "GMG".into(), price: 9.996, url: String::new() };
+        let mut old = vec![wish("1", "A", Some(0))];
+        old[0].cheapest = Some(offer.clone());
+        old[0].price_info.as_mut().unwrap().fin = 10.0;
+        let mut now = vec![wish("1", "A", Some(0))];
+        now[0].price_info.as_mut().unwrap().fin = 10.0;
+        keep_prices(&mut now, &old);
+        assert!(now[0].cheapest.is_none(), "9.996 is not cheaper than 10.00 (0.4¢, within the slack)");
+        now[0].price_info.as_mut().unwrap().fin = 10.01;
+        keep_prices(&mut now, &old);
+        assert_eq!(now[0].cheapest.as_ref().map(|c| c.price), Some(9.996));
+    }
+
+    #[test]
+    fn price_targets_round_to_cents_on_save() {
+        let kept = |v: f64| normalize_targets(HashMap::from([("steam:a".to_string(), v)])).get("steam:a").copied();
+        assert_eq!(kept(19.999), Some(20.0));
+        assert_eq!(kept(0.125), Some(0.13)); // 12.5¢ rounds away from zero
+        assert_eq!(kept(2.674), Some(2.67));
+    }
 }

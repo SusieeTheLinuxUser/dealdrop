@@ -684,8 +684,11 @@ fn parse_epic_free(body: &str) -> R<Vec<Free>> {
     let v: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
     Ok(v["data"]["Catalog"]["searchStore"]["elements"].as_array().into_iter().flatten()
         .filter_map(|g| {
-            let offer = &g["promotions"]["promotionalOffers"][0]["promotionalOffers"][0];
-            if offer["discountSetting"]["discountPercentage"] != 0 { return None; }
+            // An element can carry several current windows (a plain discount next to the giveaway):
+            // any window at 0% makes it free now, like the upcoming parser below.
+            let offer = g["promotions"]["promotionalOffers"].as_array()?.iter()
+                .flat_map(|o| o["promotionalOffers"].as_array().into_iter().flatten())
+                .find(|o| o["discountSetting"]["discountPercentage"] == 0)?;
             Some(Free {
                 id: format!("epic-{}", s(&g["id"])?),
                 title: s(&g["title"])?,
@@ -1592,6 +1595,27 @@ pub(crate) mod unit {
     }
 
     #[test]
+    fn epic_free_finds_the_free_window_among_current_discounts() {
+        // An element can carry several current windows (a plain discount and the giveaway):
+        // any window at 0% makes it free now, like the upcoming parser
+        let body = r#"{"data":{"Catalog":{"searchStore":{"elements":[
+            {"title":"Overlap","id":"o1","productSlug":"overlap",
+             "promotions":{"promotionalOffers":[{"promotionalOffers":[
+                {"endDate":"2026-12-01T15:00:00.000Z","discountSetting":{"discountPercentage":20}},
+                {"endDate":"2026-12-08T15:00:00.000Z","discountSetting":{"discountPercentage":0}}]}]}}
+        ]}}}}"#;
+        let v = super::parse_epic_free(body).unwrap();
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].id, "epic-o1");
+        assert_eq!(v[0].end_date.as_deref(), Some("2026-12-08T15:00:00.000Z"));
+        // A discounted-only element is still not free
+        assert!(super::parse_epic_free(r#"{"data":{"Catalog":{"searchStore":{"elements":[
+            {"title":"Paid","id":"o2","promotions":{"promotionalOffers":[{"promotionalOffers":[
+                {"endDate":"e","discountSetting":{"discountPercentage":20}}]}]}}
+        ]}}}}"#).unwrap().is_empty());
+    }
+
+    #[test]
     fn epic_upcoming_keeps_only_free_offers() {
         let body = r#"{
             "data": {"Catalog": {"searchStore": {"elements": [
@@ -2208,5 +2232,93 @@ pub(crate) mod unit {
         assert_eq!(super::unescape("&#38;lt; &#x26;amp;"), "&lt; &amp;"); // an entity that decodes to "&" is not decoded again
         assert_eq!(super::unescape("a &bogus; b &#; &#xZZ; &#99999999; &#0; &#1; & &amp"), "a &bogus; b &#; &#xZZ; &#99999999; &#0; &#1; & &amp");
         assert_eq!(super::unescape("&#xD800; &#55296;"), "&#xD800; &#55296;"); // surrogates are not characters
+    }
+
+    #[test]
+    fn checksum_files_parse_strictly() {
+        // sha256 of "abc"
+        let h = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+        let f = "DealDrop_0.10.5_x86_64.flatpak";
+        assert_eq!(super::parse_sha256(&format!("{h}  {f}\n"), f).as_deref(), Some(h));
+        assert_eq!(super::parse_sha256(&format!("{h}  *{f}"), f).as_deref(), Some(h)); // binary mode marker
+        assert_eq!(super::parse_sha256(&format!("{}  {f}", h.to_uppercase()), f).as_deref(), Some(h)); // lowercased
+        assert_eq!(super::parse_sha256(&format!("{h}  {f}\r\n"), f).as_deref(), Some(h));
+        for bad in [format!("{h}  ./sub/{f}"), format!("{h}  {f} extra"), format!("{}  {f}", &h[..63]),
+                    format!("{}  {f}", h.replace('a', "g")), format!("{h}  other.flatpak"), format!("{h}  {f} \t x"),
+                    format!("{h}  {f}\n{h}  {f}"), String::new(), h.to_string() ] {
+            assert_eq!(super::parse_sha256(&bad, f), None, "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn gamerpower_open_on_reads_both_date_shapes() {
+        let game = |id: &str, end: &str| super::Free { id: id.into(), end_date: Some(end.into()), ..Default::default() };
+        let today = crate::days_from_civil((2026, 11, 27));
+        let kept = super::open_on(vec![
+            game("space", "2026-11-27 23:59:59"),   // GamerPower's shape
+            game("iso", "2026-11-27T23:59:59.000Z"), // an ISO stamp reads the same
+            game("ended", "2026-11-26 23:59:59"),
+        ], today);
+        assert_eq!(kept.iter().map(|g| g.id.as_str()).collect::<Vec<_>>(), ["space", "iso"]);
+    }
+
+    #[test]
+    fn version_components_compare_as_numbers() {
+        let tag = |t: &str| format!("https://github.com/SusieeTheLinuxUser/dealdrop/releases/tag/{t}");
+        assert_eq!(super::newer_version(&tag("v0.10.10"), "0.10.5").as_deref(), Some("0.10.10")); // 10 > 5, not "10" < "5"
+        assert_eq!(super::newer_version(&tag("v0.10.15"), "0.10.5").as_deref(), Some("0.10.15"));
+        assert!(super::newer_version(&tag("v0.10.4"), "0.10.5").is_none());
+    }
+
+    #[test]
+    fn retry_after_capped_at_two_hours() {
+        use super::cooldown_after;
+        let now = 1_000_000;
+        assert_eq!(cooldown_after(0, Some("7200"), now), (now + 7200, 900));
+        assert_eq!(cooldown_after(0, Some("7201"), now), (now + 7200, 900)); // a hair over the cap
+        assert_eq!(cooldown_after(0, Some("86400"), now), (now + 7200, 900));
+    }
+
+    #[test]
+    fn epic_free_images_use_the_square_thumbnail() {
+        use serde_json::json;
+        let wide = json!([{"type": "OfferImageWide", "url": "https://cdn.example/wide.jpg"}, {"type": "Thumbnail", "url": "https://cdn.example/thumb.jpg"}]);
+        assert_eq!(super::epic_thumb(&json!({"keyImages": wide})).as_deref(), Some("https://cdn.example/thumb.jpg"));
+        assert_eq!(super::epic_thumb(&json!({"keyImages": [{"type": "OfferImageTall", "url": "u"}]})), None);
+        assert_eq!(super::epic_thumb(&json!({})), None);
+    }
+
+    #[test]
+    fn gamerpower_falls_back_to_the_plain_open_giveaway_field() {
+        let body = r#"[{"id":9,"title":"No Url Field","status":"Active","platforms":"PC","open_giveaway":"https://www.gamerpower.com/open/no-url-field"}]"#;
+        let v = super::parse_gamerpower(body, "gp-", "free").unwrap();
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].url, "https://www.gamerpower.com/open/no-url-field");
+    }
+
+    #[test]
+    fn cheapshark_lowest_accepts_a_number_price() {
+        // the games?ids= lookup may send the price as a number, not a string
+        assert_eq!(super::parse_cheapshark_lowest(r#"{"10":{"cheapestPriceEver":{"price":4.25}}}"#).get("10"), Some(&4.25));
+        assert_eq!(super::parse_cheapshark_lowest(r#"{"10":{"cheapestPriceEver":{"price":4}}}"#).get("10"), Some(&4.0));
+    }
+
+    #[test]
+    fn gamerpower_titles_clean_more_noise_shapes() {
+        assert_eq!(super::gp_title("Foo (GOG.COM) Giveaway"), "Foo"); // the alternation also covers gog.com
+        assert_eq!(super::gp_title("Foo (Free Game)"), "Foo");
+        assert_eq!(super::gp_title("Foo Steam Key Giveaway"), "Foo"); // without parentheses
+        assert_eq!(super::gp_title("Foo (dlc)"), "Foo");
+    }
+
+    #[test]
+    fn steam_items_ignore_an_original_below_the_final_price() {
+        use serde_json::json;
+        let v = json!({"response": {"store_items": [
+            {"appid": 7, "name": "Odd", "best_purchase_option": {"final_price_in_cents": "500", "original_price_in_cents": "100", "discount_pct": 50}}
+        ]}});
+        let m = super::parse_steam_items(&v);
+        let p = m["7"].price.as_ref().unwrap();
+        assert_eq!((p.discount, p.fin, p.initial), (50, 5.0, 10.0)); // the bogus original is dropped, the cut derives it
     }
 }
