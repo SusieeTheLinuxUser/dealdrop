@@ -684,8 +684,11 @@ fn parse_epic_free(body: &str) -> R<Vec<Free>> {
     let v: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
     Ok(v["data"]["Catalog"]["searchStore"]["elements"].as_array().into_iter().flatten()
         .filter_map(|g| {
-            let offer = &g["promotions"]["promotionalOffers"][0]["promotionalOffers"][0];
-            if offer["discountSetting"]["discountPercentage"] != 0 { return None; }
+            // An element can carry several current windows (a plain discount next to the giveaway):
+            // any window at 0% makes it free now, like the upcoming parser below.
+            let offer = g["promotions"]["promotionalOffers"].as_array()?.iter()
+                .flat_map(|o| o["promotionalOffers"].as_array().into_iter().flatten())
+                .find(|o| o["discountSetting"]["discountPercentage"] == 0)?;
             Some(Free {
                 id: format!("epic-{}", s(&g["id"])?),
                 title: s(&g["title"])?,
@@ -1589,6 +1592,27 @@ pub(crate) mod unit {
         assert!(v[0].app_id.is_none());
         assert!(super::parse_epic_free("nope").is_err());
         assert!(super::parse_epic_free("{}").unwrap().is_empty());
+    }
+
+    #[test]
+    fn epic_free_finds_the_free_window_among_current_discounts() {
+        // An element can carry several current windows (a plain discount and the giveaway):
+        // any window at 0% makes it free now, like the upcoming parser
+        let body = r#"{"data":{"Catalog":{"searchStore":{"elements":[
+            {"title":"Overlap","id":"o1","productSlug":"overlap",
+             "promotions":{"promotionalOffers":[{"promotionalOffers":[
+                {"endDate":"2026-12-01T15:00:00.000Z","discountSetting":{"discountPercentage":20}},
+                {"endDate":"2026-12-08T15:00:00.000Z","discountSetting":{"discountPercentage":0}}]}]}}
+        ]}}}}"#;
+        let v = super::parse_epic_free(body).unwrap();
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].id, "epic-o1");
+        assert_eq!(v[0].end_date.as_deref(), Some("2026-12-08T15:00:00.000Z"));
+        // A discounted-only element is still not free
+        assert!(super::parse_epic_free(r#"{"data":{"Catalog":{"searchStore":{"elements":[
+            {"title":"Paid","id":"o2","promotions":{"promotionalOffers":[{"promotionalOffers":[
+                {"endDate":"e","discountSetting":{"discountPercentage":20}}]}]}}
+        ]}}}}"#).unwrap().is_empty());
     }
 
     #[test]
