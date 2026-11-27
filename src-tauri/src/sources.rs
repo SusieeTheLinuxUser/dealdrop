@@ -726,7 +726,9 @@ fn parse_epic_upcoming(body: &str) -> R<Vec<Free>> {
 }
 
 fn epic_thumb(g: &Value) -> Option<String> {
-    g["keyImages"].as_array().and_then(|k| k.iter().find(|i| i["type"] == "Thumbnail")).and_then(|i| s(&i["url"]))
+    // The free-games card keeps the square Thumbnail first (as before), but falls back
+    // to the sale card's wide/tall art when Epic ships no Thumbnail at all.
+    crate::stores::epic_image_of(g, &["Thumbnail", "OfferImageWide", "OfferImageTall"])
 }
 
 pub fn epic_url(g: &Value) -> String {
@@ -1595,6 +1597,23 @@ pub(crate) mod unit {
     }
 
     #[test]
+    fn epic_free_falls_back_to_wide_art_when_the_thumbnail_is_missing() {
+        // Some giveaways ship no "Thumbnail" keyImage at all; the card must still get an image
+        let body = r#"{"data":{"Catalog":{"searchStore":{"elements":[
+            {"title":"No Thumb","id":"nt1","productSlug":"no-thumb",
+             "promotions":{"promotionalOffers":[{"promotionalOffers":[
+                {"endDate":"2026-12-01T15:00:00.000Z","discountSetting":{"discountPercentage":0}}]}]},
+             "keyImages":[{"type":"OfferImageWide","url":"https://cdn.example/wide.jpg"},{"type":"OfferImageTall","url":"https://cdn.example/tall.jpg"}]}
+        ]}}}}"#;
+        let v = super::parse_epic_free(body).unwrap();
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].image.as_deref(), Some("https://cdn.example/wide.jpg"));
+        // The upcoming parser falls back the same way
+        let up = super::parse_epic_upcoming(body).unwrap();
+        assert!(up.is_empty());
+    }
+
+    #[test]
     fn epic_free_finds_the_free_window_among_current_discounts() {
         // An element can carry several current windows (a plain discount and the giveaway):
         // any window at 0% makes it free now, like the upcoming parser
@@ -2284,7 +2303,8 @@ pub(crate) mod unit {
         use serde_json::json;
         let wide = json!([{"type": "OfferImageWide", "url": "https://cdn.example/wide.jpg"}, {"type": "Thumbnail", "url": "https://cdn.example/thumb.jpg"}]);
         assert_eq!(super::epic_thumb(&json!({"keyImages": wide})).as_deref(), Some("https://cdn.example/thumb.jpg"));
-        assert_eq!(super::epic_thumb(&json!({"keyImages": [{"type": "OfferImageTall", "url": "u"}]})), None);
+        // No Thumbnail: the wide/tall art fills in instead of no image
+        assert_eq!(super::epic_thumb(&json!({"keyImages": [{"type": "OfferImageTall", "url": "u"}]})), Some("u".to_string()));
         assert_eq!(super::epic_thumb(&json!({})), None);
     }
 

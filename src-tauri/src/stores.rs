@@ -359,11 +359,17 @@ async fn epic_gql(url: &str, ua: &str, bearer: Option<&str>, query: &str, vars: 
     gql_checked(v, bearer)
 }
 
-fn epic_image(o: &Value) -> Option<String> {
+/// First `keyImages` entry whose `type` matches `types` in order, else `None`.
+/// Shared by the sale/wishlist cards (`epic_image`) and the free-games thumb (`sources::epic_thumb`).
+pub(crate) fn epic_image_of(o: &Value, types: &[&str]) -> Option<String> {
     let imgs = o["keyImages"].as_array()?;
-    ["OfferImageWide", "OfferImageTall", "Thumbnail"].iter()
+    types.iter()
         .find_map(|t| imgs.iter().find(|i| i["type"] == *t))
         .and_then(|i| i["url"].as_str().map(str::to_string))
+}
+
+fn epic_image(o: &Value) -> Option<String> {
+    epic_image_of(o, &["OfferImageWide", "OfferImageTall", "Thumbnail"])
 }
 
 fn epic_page(o: &Value) -> String {
