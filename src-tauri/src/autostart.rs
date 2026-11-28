@@ -44,7 +44,10 @@ fn exec_line() -> Result<String, String> {
 /// icon next to config.json.
 #[cfg(any(target_os = "linux", test))]
 fn desktop_entry(exec: &str, icon: &Path) -> String {
-    format!("[Desktop Entry]\nType=Application\nName=DealDrop\n{exec}\nIcon={}\nX-GNOME-Autostart-enabled=true\n", icon.display())
+    // Icon is a desktop-file string value: a backslash must be doubled and a newline written as
+    // `\n`, or the desktop eats the backslash / breaks the entry when it reads the file back.
+    let icon = icon.display().to_string().replace('\\', "\\\\").replace('\n', "\\n");
+    format!("[Desktop Entry]\nType=Application\nName=DealDrop\n{exec}\nIcon={icon}\nX-GNOME-Autostart-enabled=true\n")
 }
 
 #[cfg(target_os = "linux")]
@@ -271,6 +274,38 @@ mod tests {
         assert!(fixed.lines().any(|l| l == flatpak) && fixed.contains("Hidden=true\n") && fixed.contains("Icon=/i.png"));
         assert!(repaired_entry(&fixed, &flatpak, |_| false).is_none()); // already the Flatpak's
         assert!(repaired_entry(&fixed, &quoted("/opt/dealdrop"), |_| false).is_none()); // a source build doesn't take it back
+    }
+
+    #[test]
+    fn the_icon_path_is_escaped_for_the_desktop_file() {
+        // Icon is a string value: the desktop reads `\\` back as one `\`, so a raw backslash in the
+        // path would be eaten (and a raw newline would break the entry into two lines)
+        let text = desktop_entry(&quoted("/opt/dealdrop"), Path::new(r#"/ünï/back\slash/i.png"#));
+        assert!(text.contains(r#"Icon=/ünï/back\\slash/i.png"#), "{text}");
+        assert_eq!(text.lines().count(), 6, "one line per key: {text}");
+        let text = desktop_entry(&quoted("/opt/dealdrop"), Path::new("/a\nb/icon.png"));
+        assert!(text.contains("Icon=/a\\nb/icon.png"), "{text}");
+        assert_eq!(text.lines().count(), 6, "one line per key: {text}");
+    }
+
+    #[test]
+    fn exec_quoting_round_trips_nasty_paths() {
+        for p in [
+            "/opt/Deal Drop (2026)/dealdrop", // spaces and parentheses
+            r#"/a "q" $b `c` \d 100%% /e"#,   // every escaped character, and a doubled field code
+            "/ünï/çøDE/DealDrop",             // unicode
+            "%leading", "trailing%", "%%",    // field codes at the edges
+            "\"", "$", "`", "\\", "\\%$`\"",  // bare escape characters, and all of them in a row
+        ] {
+            assert_eq!(exec_path(&quoted(p)).as_deref(), Some(p), "{p}");
+        }
+    }
+
+    #[test]
+    fn launch_agent_quotes_are_legal_xml_text() {
+        // Only & < > need escaping in element text; " and ' pass through (launchd parses it as XML)
+        let text = launch_agent(r#"/Applications/Deal"Drop 'X'.app/Contents/MacOS/dealdrop"#);
+        assert!(text.contains(r#"<string>/Applications/Deal"Drop 'X'.app/Contents/MacOS/dealdrop</string>"#), "{text}");
     }
 
     #[test]

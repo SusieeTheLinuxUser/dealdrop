@@ -397,6 +397,41 @@ assert.equal(h.offeredUpdate({ version: '1.0.0', viaRepo: true }), null) // a re
 assert.equal(h.offeredUpdate(null), null)
 assert.equal(h.updateAfterCheck(null, offered, true), offered)
 
+// the sidebar "Update to vX" box is not a live region: a newly offered version must be said once
+// through #app-status (a repeat of the same version stays silent, a newer one is announced again)
+{
+  const appStatus = { textContent: '' }
+  const box = { style: {} }, btn = { textContent: '', disabled: false }
+  const api = { answer: null }
+  const ctx = vm.createContext({
+    document: { getElementById: id => id === 'app-status' ? appStatus : id === 'sidebar-update' ? box : id === 'btn-update' ? btn : null },
+    state: { updateError: null },
+    renderErrors: () => {},
+    api,
+  })
+  vm.runInContext([
+    between('function announceStatus (', '\n// a hidden live region'),
+    'const window = { api: { checkUpdate: () => Promise.resolve(api.answer) } }',
+    between('function updateAfterCheck (', '\nasync function checkUpdateNow'),
+  ].join('\n'), ctx)
+  const check = answer => { api.answer = answer; return vm.runInContext('checkUpdate()', ctx) }
+  await check({ version: '0.10.0', canInstall: true })
+  assert.equal(appStatus.textContent, 'Update to v0.10.0 available', 'a first offered update must be announced')
+  assert.equal(box.style.display, 'block')
+  assert.equal(btn.textContent, 'Update to v0.10.0')
+  appStatus.textContent = ''
+  await check({ version: '0.10.0', canInstall: true })
+  assert.equal(appStatus.textContent, '', 'the same offered version must not be announced again on the next check')
+  await check({ version: '0.11.0', canInstall: true })
+  assert.equal(appStatus.textContent, 'Update to v0.11.0 available', 'a newer offered version must be announced')
+  assert.equal(btn.textContent, 'Update to v0.11.0')
+  await check(null) // up to date again: the offer is gone
+  assert.equal(box.style.display, 'none')
+  appStatus.textContent = ''
+  await check({ version: '0.11.0', canInstall: true })
+  assert.equal(appStatus.textContent, 'Update to v0.11.0 available', 'a version offered again after the offer went away must be announced')
+}
+
 // Countdowns: the d/h/soon split is the floor of the exact instant delta (never a wall-clock
 // day count, which would shift across a DST night); relative durations keep this runnable any day
 for (const [ms, label] of [[2.5 * 86400000, '2d left'], [86400000 + 60000, '1d left'], [86400000 - 60000, '23h left'], [5 * 3600000 - 60000, '4h left'], [3600000 + 60000, '1h left'], [3600000 - 60000, 'ending soon']]) {

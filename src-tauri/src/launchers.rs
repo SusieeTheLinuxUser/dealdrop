@@ -137,6 +137,35 @@ mod tests {
     }
 
     #[test]
+    fn gog_ids_and_slugs_reject_the_odd_shapes_remote_data_can_send() {
+        for bad in ["", " ", "gog-", "gog- 1", "gog-1 2", "gog-1/2", "gog-1?2", "gog-1#2", "gog-..", "gog-1¾", "-5", "gog--", "gog-1+2"] {
+            assert_eq!(numeric(Some(bad)), None, "{bad}");
+        }
+        assert_eq!(numeric(None), None);
+        assert_eq!(numeric(Some("gog-99999999999999999999")), Some("99999999999999999999")); // huge: still a plain digit string
+        assert_eq!(numeric(Some("gog-01234")), Some("01234")); // leading zeros are not the link's business
+        for bad in ["", "/", "//", " ", "a b", "a/b", "a?b", "a#b", "..", "café", "bad%2Fslug", "a+b"] {
+            assert_eq!(slug(bad), None, "{bad}");
+        }
+        assert_eq!(slug("ok_slug-123"), Some("ok_slug-123"));
+        assert_eq!(slug("trailing/"), Some("trailing"));
+    }
+
+    #[test]
+    fn link_values_cannot_change_the_scheme_or_add_query_parts() {
+        let u = |s: &str| Url::parse(s).unwrap();
+        let gog = u("https://www.gog.com/en/game/x");
+        for id in ["gog-1?a=b", "gog-1#f", "steam://evil", "gog-1/2", "gog-1 2"] {
+            assert!(link("gog", "native", &gog, Some(id)).is_none(), "{id}");
+        }
+        assert_eq!(link("gog", "native", &gog, Some("gog-1207664643")).unwrap(), "goggalaxy://openGameView/1207664643");
+        // the URL's own query and fragment are dropped with the path
+        let epic = u("https://store.epicgames.com/en-US/p/slug?injected=1#frag");
+        assert_eq!(link("epic", "native", &epic, None).unwrap(), "com.epicgames.launcher://store/p/slug");
+        assert_eq!(link("steam", "native", &u("https://store.steampowered.com/app/60/?utm=1"), None).unwrap(), "steam://store/60");
+    }
+
+    #[test]
     fn deep_links() {
         let gog = Url::parse("https://www.gog.com/en/game/the_witcher_3_wild_hunt").unwrap();
         assert_eq!(link("gog", "native", &gog, Some("gog-1207664643")).unwrap(), "goggalaxy://openGameView/1207664643");

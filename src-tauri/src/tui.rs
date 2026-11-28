@@ -330,6 +330,51 @@ fn open_link(raw: &str) -> Result<(), String> {
 mod tests {
     use super::*;
     #[test]
+    fn every_key_the_help_promises_is_bound() {
+        let key = |code| key_action(KeyEvent::from(code));
+        assert_eq!(key(KeyCode::Char('q')), Action::Quit);
+        assert_eq!(key(KeyCode::Esc), Action::Quit);
+        assert_eq!(key(KeyCode::Char('r')), Action::Refresh);
+        assert_eq!(key(KeyCode::Up), Action::Up);
+        assert_eq!(key(KeyCode::Char('k')), Action::Up);
+        assert_eq!(key(KeyCode::Down), Action::Down);
+        assert_eq!(key(KeyCode::Char('j')), Action::Down);
+        assert_eq!(key(KeyCode::Tab), Action::NextTab);
+        assert_eq!(key(KeyCode::Char('l')), Action::NextTab);
+        assert_eq!(key(KeyCode::BackTab), Action::PreviousTab);
+        assert_eq!(key(KeyCode::Char('h')), Action::PreviousTab);
+        assert_eq!(key(KeyCode::Char('1')), Action::SelectTab(0));
+        assert_eq!(key(KeyCode::Char('2')), Action::SelectTab(1));
+        assert_eq!(key(KeyCode::Char('3')), Action::SelectTab(2));
+        assert_eq!(key(KeyCode::Enter), Action::Open);
+        assert_eq!(key(KeyCode::Char('x')), Action::Ignore);
+        assert_eq!(key(KeyCode::F(5)), Action::Ignore);
+    }
+
+    #[test]
+    fn rows_keep_long_wide_and_empty_pieces() {
+        // CJK and emoji pass through as text: ratatui clips the display, not the string
+        let wide = Row { title: "宇宙戦艦🚀ゲーム".into(), store: "Steam".into(), detail: String::new(), url: String::new() };
+        assert_eq!(row_text(&wide), "宇宙戦艦🚀ゲーム  [Steam]");
+        let long = Row { title: "x".repeat(500), store: "GOG".into(), detail: "ends 2026-12-31".into(), url: String::new() };
+        assert_eq!(row_text(&long).chars().count(), 500 + "  [GOG]  ends 2026-12-31".chars().count());
+        // a deal always names a price, even $0.00
+        let deal = deal_row(&Deal { title: "Freeish".into(), shop: "Steam".into(), price: 0.0, cut: 100, url: "u".into(), ..Default::default() });
+        assert_eq!(deal.detail, "$0.00 · 100% off");
+        // a giveaway without an end date has no detail at all
+        let endless = free_row(&Free { title: "QWOP".into(), source: "epic".into(), ..Default::default() });
+        assert_eq!(row_text(&endless), "QWOP  [epic]");
+    }
+
+    #[test]
+    fn open_link_refuses_everything_that_is_not_plain_https() {
+        // these must fail before the opener is ever touched (the tests never open anything)
+        for bad in ["file:///etc/passwd", "javascript:alert(1)", "-flag", "steam://store/60", "", "not a url"] {
+            assert!(open_link(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
     fn key_bindings_map_to_actions() {
         assert_eq!(key_action(KeyEvent::from(KeyCode::Char('j'))), Action::Down);
         assert_eq!(
