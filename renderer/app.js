@@ -2073,6 +2073,7 @@ async function checkUpdate () {
   state.update = updateAfterCheck(state.update, answer, reached)
   const offered = offeredUpdate(state.update)
   if (reached && !offered && state.updateError) { state.updateError = null; renderErrors() } // the failed update is gone (installed by hand, or withdrawn)
+  if (!offered) announcedUpdate = undefined // the offer is gone (even mid-install): a new offer speaks up again
   const box = document.getElementById('sidebar-update')
   const btn = document.getElementById('btn-update')
   if (!box || !btn || btn.disabled) return reached
@@ -2083,8 +2084,6 @@ async function checkUpdate () {
       announcedUpdate = offered.version
       announceStatus(`Update to v${offered.version} available`)
     }
-  } else {
-    announcedUpdate = undefined // the offer is gone: a new offer speaks up again
   }
   return reached
 }
