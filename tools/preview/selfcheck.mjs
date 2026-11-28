@@ -425,5 +425,14 @@ assert.match(index, /id="btn-github"[^>]*aria-label="DealDrop on GitHub"/, 'icon
 // a click handler on a span is invisible to keyboard users: the signed-in store avatar opens the profile
 assert.match(app, /const icoAttrs = a \? ` role="button" tabindex="0" aria-label="Open your \$\{STORES\[s\]\} profile" data-keyboard-action="activate"` : ''/, 'the clickable store avatar must be a named button reachable by keyboard')
 assert.match(app, /class="acct-ico \$\{s\}"\$\{icoAttrs\}/, 'the store avatar must carry the keyboard-button attributes when signed in')
+// loading, empty results and errors must reach a live region or they are never announced (7)
+assert.match(index, /id="sidebar-errors"[^>]*role="alert"/, 'the sidebar error box must be announced')
+assert.match(index, /id="wishlist-errors"[^>]*role="alert"/, 'wishlist source errors must be announced')
+assert.match(index, /id="info-notice"[^>]*role="status"/, 'the hot-deals notice must be announced')
+assert.match(index, /id="empty-wishlist"[^>]*role="status"/, 'the wishlist empty state must be announced')
+assert.match(index, /id="empty-free"[^>]*role="status"/, 'the free-games empty state must be announced')
+assert.match(index, /id="empty-storesales"[^>]*role="status"/, 'the store-sales empty state must be announced')
+assert.match(index, /id="empty-deals"[^>]*role="status"/, 'the hot-deals empty state must be announced')
+assert.match(app, /announceStatus\('Loading…'\)/, 'skeleton loading must reach the live status region')
 
 console.log('Renderer self-check passed (price targets, escaping, hidden titles, search ranking, filters, store filter, UI preference merge, claimed games, seen deals, list paging, next sale, refresh age, sale themes, J/K navigation, money and date labels, poll data signature, ProtonDB tiers, lowest-ever rule, sale keys, countdown thresholds, theme/CSS consistency, failed update check).')

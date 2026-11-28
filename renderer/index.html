@@ -42,7 +42,7 @@
       <!-- Store accounts (rendered by app.js) -->
       <div class="accounts" id="accounts"></div>
       <div class="sidebar-update" id="sidebar-update" style="display:none"><button class="update-btn" id="btn-update"></button></div>
-      <div class="sidebar-errors" id="sidebar-errors" style="display:none"></div>
+      <div class="sidebar-errors" id="sidebar-errors" role="alert" style="display:none"></div>
 
       <!-- Nav -->
       <div class="nav-items">
@@ -102,7 +102,7 @@
           <select id="wishlist-sort" aria-label="Sort wishlist games"><option value="discount">Biggest discount</option><option value="price">Lowest price</option><option value="name">Name A–Z</option></select>
           <button type="button" class="list-filter-toggle" id="wishlist-sale-only" aria-pressed="false">On sale only</button>
         </div>
-        <div id="wishlist-errors" class="info-notice" style="display:none"></div>
+        <div id="wishlist-errors" class="info-notice" role="alert" style="display:none"></div>
         <div id="wishlist-login-prompt" class="login-prompt" style="display:none">
           <span style="font-size:32px">🎯</span>
           <p>Sign in to import your wishlists and get alerts when games go on sale. Choose any store:</p>
@@ -142,7 +142,7 @@
           <div class="section-label" style="margin-top:20px">Full wishlist</div>
           <div class="wishlist-list" id="list-wishlist-all"></div>
         </div>
-        <div class="empty-state" id="empty-wishlist" style="display:none">
+        <div class="empty-state" id="empty-wishlist" role="status" style="display:none">
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
           <p id="wishlist-empty-msg">Your wishlist is empty.</p>
         </div>
@@ -158,7 +158,7 @@
         <div class="game-grid" id="grid-free"></div>
         <div class="section-label" id="label-weekends" style="display:none">Free weekends</div>
         <div class="game-grid" id="grid-weekends"></div>
-        <div class="empty-state" id="empty-free" style="display:none">
+        <div class="empty-state" id="empty-free" role="status" style="display:none">
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 12V22H4V12"/><path d="M22 7H2v5h20V7z"/></svg>
           <p id="free-empty-copy">No free games right now. We check every hour.</p>
         </div>
@@ -184,7 +184,7 @@
           </div>
         </div>
         <div class="game-grid" id="grid-storesales"></div>
-        <div class="empty-state" id="empty-storesales" style="display:none">
+        <div class="empty-state" id="empty-storesales" role="status" style="display:none">
           <p>No discounts loaded for this store right now.</p>
         </div>
       </section>
@@ -195,7 +195,7 @@
           <h1>Hot deals</h1>
           <span class="last-checked" id="lc-deals"></span>
         </div>
-        <div class="info-notice" id="info-notice" style="display:none"></div>
+        <div class="info-notice" id="info-notice" role="status" style="display:none"></div>
         <div class="list-controls">
           <input type="search" id="deals-search" placeholder="Search titles" aria-label="Search hot deal titles" />
           <span class="result-count" id="deals-result-count" hidden></span>
@@ -206,7 +206,7 @@
           </div>
         </div>
         <div class="deals-list" id="list-deals"></div>
-        <div class="empty-state" id="empty-deals" style="display:none">
+        <div class="empty-state" id="empty-deals" role="status" style="display:none">
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/></svg>
           <p>No deals could be loaded right now.</p>
         </div>

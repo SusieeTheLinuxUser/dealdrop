@@ -215,6 +215,7 @@ function renderSkeletons (container, kind) {
   }
   const label = document.createElement('span')
   label.className = 'sr-only'; label.textContent = 'Loading…'
+  announceStatus('Loading…') // skeletons are new nodes; only the persistent #app-status live region announces them
   container.appendChild(label)
 }
 
