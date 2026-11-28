@@ -418,4 +418,79 @@ for (const t of jsThemes) {
 for (const t of cssThemes) assert.equal(jsThemes.has(t), true, `style.css theme "${t}" is missing from BASE_THEMES/SALE_THEMES in app.js`)
 assert.equal(jsThemes.has('midnight'), true) // and the root default is offered in Settings
 
-console.log('Renderer self-check passed (price targets, escaping, hidden titles, search ranking, filters, store filter, UI preference merge, claimed games, seen deals, list paging, next sale, refresh age, sale themes, J/K navigation, money and date labels, poll data signature, ProtonDB tiers, lowest-ever rule, sale keys, countdown thresholds, theme/CSS consistency, failed update check).')
+// ─── Keyboard & screen-reader audit: static HTML the JS never rebuilds ───
+const index = readFileSync(new URL('../../renderer/index.html', import.meta.url), 'utf8')
+// icon-only buttons need an aria-label; a title alone is not reliably read by screen readers
+assert.match(index, /id="btn-github"[^>]*aria-label="DealDrop on GitHub"/, 'icon-only GitHub titlebar button needs an aria-label')
+// a click handler on a span is invisible to keyboard users: the signed-in store avatar opens the profile
+assert.match(app, /const icoAttrs = a \? ` role="button" tabindex="0" aria-label="Open your \$\{STORES\[s\]\} profile" data-keyboard-action="activate"` : ''/, 'the clickable store avatar must be a named button reachable by keyboard')
+assert.match(app, /class="acct-ico \$\{s\}"\$\{icoAttrs\}/, 'the store avatar must carry the keyboard-button attributes when signed in')
+// loading, empty results and errors must reach a live region or they are never announced (7)
+assert.match(index, /id="sidebar-errors"[^>]*role="alert"/, 'the sidebar error box must be announced')
+assert.match(index, /id="wishlist-errors"[^>]*role="alert"/, 'wishlist source errors must be announced')
+assert.match(index, /id="info-notice"[^>]*role="status"/, 'the hot-deals notice must be announced')
+assert.match(index, /id="empty-wishlist"[^>]*role="status"/, 'the wishlist empty state must be announced')
+assert.match(index, /id="empty-free"[^>]*role="status"/, 'the free-games empty state must be announced')
+assert.match(index, /id="empty-storesales"[^>]*role="status"/, 'the store-sales empty state must be announced')
+assert.match(index, /id="empty-deals"[^>]*role="status"/, 'the hot-deals empty state must be announced')
+assert.match(app, /announceStatus\('Loading…'\)/, 'skeleton loading must reach the live status region')
+// a hidden role="status" region doesn't announce the text it appears with: #app-status says it once, on first show
+{
+  const appStatus = { textContent: '' }, region = { style: { display: 'none' } }
+  const ctx = vm.createContext({ document: { getElementById: id => id === 'app-status' ? appStatus : null } })
+  vm.runInContext(between('function announceStatus (', '\nfunction renderSkeletons'), ctx)
+  ctx.showEmptyState(region, 'Wishlist is empty.')
+  assert.equal(appStatus.textContent, 'Wishlist is empty.', 'a newly shown empty state must be announced')
+  assert.equal(region.style.display, 'flex')
+  appStatus.textContent = ''
+  ctx.showEmptyState(region, 'Wishlist is empty.')
+  assert.equal(appStatus.textContent, '', 'an empty state already on screen must not be announced again on every redraw')
+}
+assert.equal((app.match(/showEmptyState\(emptyEl, /g) ?? []).length, 7, 'every empty-state branch must go through showEmptyState')
+
+// ─── audit items that were already right, pinned as regression tests ───
+const onboardingJs = readFileSync(new URL('../../renderer/onboarding.js', import.meta.url), 'utf8')
+const onboardingCss = readFileSync(new URL('../../renderer/onboarding.css', import.meta.url), 'utf8')
+// (1) every button and link has a name: the remaining icon-only buttons and the account buttons
+assert.match(index, /id="btn-min"[^>]*aria-label="Minimize window"/)
+assert.match(index, /id="btn-close"[^>]*aria-label="Close window"/)
+assert.match(app, /\.acct-name'\)\?\.setAttribute\('aria-label'/)
+assert.match(app, /\.acct-out'\)\?\.setAttribute\('aria-label'/)
+assert.match(app, /\.acct-btn'\)\?\.setAttribute\('aria-label'/)
+// (3) every <img> has an alt attribute; decorative art is alt="" with the game's name as adjacent text
+for (const img of index.match(/<img\b[^>]*>/g) ?? []) assert.match(img, /\balt=/, img)
+assert.match(app, /thumb\.alt\s*=\s*''/)
+assert.match(onboardingJs, /image\.alt = ''/)
+// (4) form fields have an aria-label
+assert.match(index, /id="wishlist-search"[^>]*aria-label="Search wishlist games"/)
+assert.match(index, /id="wishlist-sort"[^>]*aria-label="Sort wishlist games"/)
+assert.match(index, /id="sales-search"[^>]*aria-label="Search store sale titles"/)
+assert.match(index, /id="sales-sort"[^>]*aria-label="Sort store sales"/)
+assert.match(index, /id="deals-search"[^>]*aria-label="Search hot deal titles"/)
+assert.match(index, /id="deals-sort"[^>]*aria-label="Sort hot deals"/)
+assert.match(index, /id="deals-shop"[^>]*aria-label="Filter hot deals by store"/)
+// (5) dialogs: role, modal, a name, Escape closes, focus returns to the opener
+assert.equal([...app.matchAll(/dialog\.setAttribute\('role', 'dialog'\)/g)].length, 2) // shortcuts + search
+assert.equal([...app.matchAll(/dialog\.setAttribute\('aria-modal', 'true'\)/g)].length, 2)
+assert.match(app, /dialog\.setAttribute\('aria-labelledby', 'shortcut-dialog-title'\)/)
+assert.match(app, /dialog\.setAttribute\('aria-labelledby', 'search-dialog-title'\)/)
+assert.match(app, /if \(e\.key === 'Escape'\) \{ e\.preventDefault\(\); closeSearchDialog\(\); return \}/)
+assert.match(app, /if \(e\.key === 'Escape'\) \{ e\.preventDefault\(\); closeShortcutsDialog\(\); return \}/)
+assert.equal([...app.matchAll(/returnFocus\?\.focus\?\.\(\)/g)].length, 2)
+assert.match(onboardingJs, /role="dialog" aria-modal="true" aria-labelledby="onboarding-title"/)
+assert.match(onboardingJs, /role="dialog" aria-modal="true" aria-labelledby="tour-title"/)
+assert.match(onboardingJs, /if \(e\.key === 'Escape'\) \{ e\.preventDefault\(\); if \(tourOverlay\) endTour\(\); else finish\(\); return \}/)
+assert.match(onboardingJs, /returnFocus\?\.focus\?\.\(\)/)
+// (6) tabs, filters and the search combobox expose the current choice
+assert.match(app, /tab\.setAttribute\('aria-selected', String\(key === selected\)\)/)
+assert.match(app, /el\.setAttribute\('aria-current', 'page'\)/)
+assert.match(app, /button\.setAttribute\('aria-pressed', String\(Number\(button\.dataset\.minDiscount\) === minDiscount\)\)/)
+assert.match(app, /b\.setAttribute\('aria-pressed', String\(s\.theme === key\)\)/)
+assert.match(app, /input\.setAttribute\('role', 'combobox'\)/)
+// (8) keyboard focus stays visible: the outline rule survives and nothing removes it
+assert.match(css, /:focus-visible\{outline:2px solid var\(--acc\)/)
+assert.match(onboardingCss, /:focus-visible\{outline:2px solid var\(--acc\)/)
+assert.doesNotMatch(css, /outline:\s*(none|0\b)/)
+assert.doesNotMatch(onboardingCss, /outline:\s*(none|0\b)/)
+
+console.log('Renderer self-check passed (price targets, escaping, hidden titles, search ranking, filters, store filter, UI preference merge, claimed games, seen deals, list paging, next sale, refresh age, sale themes, J/K navigation, money and date labels, poll data signature, ProtonDB tiers, lowest-ever rule, sale keys, countdown thresholds, theme/CSS consistency, failed update check, keyboard/screen-reader audit: named buttons, keyboard-operable store avatar, announced loading/empty/error states, dialog roles and focus return, tab/filter state, img alts, field labels, focus outlines).')
