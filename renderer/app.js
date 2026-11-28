@@ -203,6 +203,12 @@ function announceStatus (message) {
   if (status) status.textContent = message
 }
 
+// a hidden live region doesn't announce the text it appears with, so the persistent #app-status says it once
+function showEmptyState (el, message) {
+  if (el.style.display !== 'flex') announceStatus(message)
+  el.style.display = 'flex'
+}
+
 function renderSkeletons (container, kind) {
   container.replaceChildren()
   for (let i = 0; i < 3; i++) {
@@ -755,11 +761,12 @@ function renderWishlist () {
       return
     }
     const steamOnly = state.wishlistTab === 'steam' || (state.wishlistTab === 'all' && state.accounts.steam && !state.accounts.gog && !state.accounts.epic)
-    $('wishlist-empty-msg').textContent = steamOnly && state.wishlistPrivate
+    const message = steamOnly && state.wishlistPrivate
       ? 'Your Steam wishlist is set to Private. Make it Public in Steam → Privacy Settings.'
       : failed.length ? 'Wishlist could not be loaded. See “Something went wrong” in the sidebar, then choose Copy error.'
       : state.wishlist.length ? 'No games in this store wishlist.' : 'Wishlist is empty.'
-    emptyEl.style.display = 'flex'
+    $('wishlist-empty-msg').textContent = message
+    showEmptyState(emptyEl, message)
     return
   }
   const visibleItems = filteredSorted(items, 'wishlist', {
@@ -771,7 +778,7 @@ function renderWishlist () {
     hide(onSaleWrap, allWrap, panel)
     $('wishlist-empty-msg').textContent = 'No wishlist games match.'
     showFilterEmpty(emptyEl, 'wishlist', 'wishlist-search', null, renderWishlist, 'No wishlist games match.', { saleOnlyId: 'wishlist-sale-only' })
-    emptyEl.style.display = 'flex'
+    showEmptyState(emptyEl, 'No wishlist games match.')
     return
   }
   emptyEl.style.display = 'none'
@@ -1128,8 +1135,9 @@ function renderFreeGames () {
       return
     }
     const mins = Number(state.settings.checkInterval) || 60
-    document.getElementById('free-empty-copy').textContent = `No free games right now. We check every ${mins < 60 ? mins + ' minutes' : mins / 60 + ' hour' + (mins === 60 ? '' : 's')}.`
-    emptyEl.style.display = 'flex'
+    const message = `No free games right now. We check every ${mins < 60 ? mins + ' minutes' : mins / 60 + ' hour' + (mins === 60 ? '' : 's')}.`
+    document.getElementById('free-empty-copy').textContent = message
+    showEmptyState(emptyEl, message)
     return
   }
   emptyEl.style.display = 'none'
@@ -1252,14 +1260,16 @@ function renderDeals () {
 
   const items = filteredSorted(state.deals, 'deals')
   syncMinDiscount('deals', 'deals-discount-filters')
-  emptyEl.style.display = items.length ? 'none' : 'flex'
+  if (items.length) emptyEl.style.display = 'none'
   if (!items.length && !state.dataLoaded) {
     renderSkeletons(list, 'row')
     emptyEl.style.display = 'none'
   } else if (!items.length && (state.listFilters.deals.query.trim() || state.listFilters.deals.minDiscount || state.listFilters.deals.shop)) {
     showFilterEmpty(emptyEl, 'deals', 'deals-search', 'deals-discount-filters', renderDeals, 'No deals match.')
+    showEmptyState(emptyEl, 'No deals match.')
   } else if (!items.length) {
     emptyEl.replaceChildren(Object.assign(document.createElement('p'), { textContent: 'No deals could be loaded right now.' }))
+    showEmptyState(emptyEl, 'No deals could be loaded right now.')
   }
   const fresh = unseen('deals')
   items.forEach(d => list.appendChild(makeDealRow(d, fresh.has(d.id))))
@@ -1336,14 +1346,16 @@ function renderStoreSales () {
   if (state.page === 'storesales') [...items, ...list.filter(d => hiddenTitle(d.title))].forEach(d => state.salesViewed.add(d.id))
   updateResultCount('storesales', items.length, list.length)
   syncMinDiscount('storesales', 'sales-discount-filters')
-  emptyEl.style.display = items.length ? 'none' : 'flex'
+  if (items.length) emptyEl.style.display = 'none'
   if (!items.length && !state.dataLoaded) {
     renderSkeletons(grid, 'card')
     emptyEl.style.display = 'none'
   } else if (!items.length && (state.listFilters.storesales.query.trim() || state.listFilters.storesales.minDiscount)) {
     showFilterEmpty(emptyEl, 'storesales', 'sales-search', 'sales-discount-filters', renderStoreSales, 'No store sales match.')
+    showEmptyState(emptyEl, 'No store sales match.')
   } else if (!items.length) {
     emptyEl.replaceChildren(Object.assign(document.createElement('p'), { textContent: 'No discounts loaded for this store right now.' }))
+    showEmptyState(emptyEl, 'No discounts loaded for this store right now.')
   }
   const fresh = unseen('storesales')
   items.forEach(d => grid.appendChild(makeSaleCard(d, fresh.has(d.id))))

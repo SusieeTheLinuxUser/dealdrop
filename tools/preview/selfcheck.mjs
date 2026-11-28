@@ -434,6 +434,19 @@ assert.match(index, /id="empty-free"[^>]*role="status"/, 'the free-games empty s
 assert.match(index, /id="empty-storesales"[^>]*role="status"/, 'the store-sales empty state must be announced')
 assert.match(index, /id="empty-deals"[^>]*role="status"/, 'the hot-deals empty state must be announced')
 assert.match(app, /announceStatus\('Loading…'\)/, 'skeleton loading must reach the live status region')
+// a hidden role="status" region doesn't announce the text it appears with: #app-status says it once, on first show
+{
+  const appStatus = { textContent: '' }, region = { style: { display: 'none' } }
+  const ctx = vm.createContext({ document: { getElementById: id => id === 'app-status' ? appStatus : null } })
+  vm.runInContext(between('function announceStatus (', '\nfunction renderSkeletons'), ctx)
+  ctx.showEmptyState(region, 'Wishlist is empty.')
+  assert.equal(appStatus.textContent, 'Wishlist is empty.', 'a newly shown empty state must be announced')
+  assert.equal(region.style.display, 'flex')
+  appStatus.textContent = ''
+  ctx.showEmptyState(region, 'Wishlist is empty.')
+  assert.equal(appStatus.textContent, '', 'an empty state already on screen must not be announced again on every redraw')
+}
+assert.equal((app.match(/showEmptyState\(emptyEl, /g) ?? []).length, 7, 'every empty-state branch must go through showEmptyState')
 
 // ─── audit items that were already right, pinned as regression tests ───
 const onboardingJs = readFileSync(new URL('../../renderer/onboarding.js', import.meta.url), 'utf8')
