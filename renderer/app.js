@@ -1933,7 +1933,10 @@ function renderAccounts () {
     const row = document.createElement('div')
     row.className = 'acct'
     const ico = a?.avatar ? `<img src="${escHtml(a.avatar)}" alt="" data-fb="${ACCT_ICON[s]}">` : logo(s, 15)
-    row.innerHTML = `<span class="acct-ico ${s}">${ico}</span>` + (a
+    // the avatar is clickable too; signed in, it becomes a keyboard-operable button (the global
+    // Enter/Space handler serves [data-keyboard-action="activate"], as for the calendar rows)
+    const icoAttrs = a ? ` role="button" tabindex="0" aria-label="Open your ${STORES[s]} profile" data-keyboard-action="activate"` : ''
+    row.innerHTML = `<span class="acct-ico ${s}"${icoAttrs}>${ico}</span>` + (a
       ? `<div class="acct-main"><button class="acct-name" title="Open your ${STORES[s]} profile">${escHtml(name || STORES[s] + ' user')}</button><div class="acct-sub"><span class="store-tag ${s}">${STORES[s]}</span><button class="acct-out">Sign out</button></div></div>`
       : `<span class="acct-label">${STORES[s]}</span><button class="acct-btn">Sign in</button>`)
     // names that make sense out of context: there is one row per store

@@ -422,5 +422,8 @@ assert.equal(jsThemes.has('midnight'), true) // and the root default is offered 
 const index = readFileSync(new URL('../../renderer/index.html', import.meta.url), 'utf8')
 // icon-only buttons need an aria-label; a title alone is not reliably read by screen readers
 assert.match(index, /id="btn-github"[^>]*aria-label="DealDrop on GitHub"/, 'icon-only GitHub titlebar button needs an aria-label')
+// a click handler on a span is invisible to keyboard users: the signed-in store avatar opens the profile
+assert.match(app, /const icoAttrs = a \? ` role="button" tabindex="0" aria-label="Open your \$\{STORES\[s\]\} profile" data-keyboard-action="activate"` : ''/, 'the clickable store avatar must be a named button reachable by keyboard')
+assert.match(app, /class="acct-ico \$\{s\}"\$\{icoAttrs\}/, 'the store avatar must carry the keyboard-button attributes when signed in')
 
 console.log('Renderer self-check passed (price targets, escaping, hidden titles, search ranking, filters, store filter, UI preference merge, claimed games, seen deals, list paging, next sale, refresh age, sale themes, J/K navigation, money and date labels, poll data signature, ProtonDB tiers, lowest-ever rule, sale keys, countdown thresholds, theme/CSS consistency, failed update check).')
