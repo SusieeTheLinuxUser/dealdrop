@@ -435,4 +435,49 @@ assert.match(index, /id="empty-storesales"[^>]*role="status"/, 'the store-sales 
 assert.match(index, /id="empty-deals"[^>]*role="status"/, 'the hot-deals empty state must be announced')
 assert.match(app, /announceStatus\('Loading…'\)/, 'skeleton loading must reach the live status region')
 
-console.log('Renderer self-check passed (price targets, escaping, hidden titles, search ranking, filters, store filter, UI preference merge, claimed games, seen deals, list paging, next sale, refresh age, sale themes, J/K navigation, money and date labels, poll data signature, ProtonDB tiers, lowest-ever rule, sale keys, countdown thresholds, theme/CSS consistency, failed update check).')
+// ─── audit items that were already right, pinned as regression tests ───
+const onboardingJs = readFileSync(new URL('../../renderer/onboarding.js', import.meta.url), 'utf8')
+const onboardingCss = readFileSync(new URL('../../renderer/onboarding.css', import.meta.url), 'utf8')
+// (1) every button and link has a name: the remaining icon-only buttons and the account buttons
+assert.match(index, /id="btn-min"[^>]*aria-label="Minimize window"/)
+assert.match(index, /id="btn-close"[^>]*aria-label="Close window"/)
+assert.match(app, /\.acct-name'\)\?\.setAttribute\('aria-label'/)
+assert.match(app, /\.acct-out'\)\?\.setAttribute\('aria-label'/)
+assert.match(app, /\.acct-btn'\)\?\.setAttribute\('aria-label'/)
+// (3) every <img> has an alt attribute; decorative art is alt="" with the game's name as adjacent text
+for (const img of index.match(/<img\b[^>]*>/g) ?? []) assert.match(img, /\balt=/, img)
+assert.match(app, /thumb\.alt\s*=\s*''/)
+assert.match(onboardingJs, /image\.alt = ''/)
+// (4) form fields have an aria-label
+assert.match(index, /id="wishlist-search"[^>]*aria-label="Search wishlist games"/)
+assert.match(index, /id="wishlist-sort"[^>]*aria-label="Sort wishlist games"/)
+assert.match(index, /id="sales-search"[^>]*aria-label="Search store sale titles"/)
+assert.match(index, /id="sales-sort"[^>]*aria-label="Sort store sales"/)
+assert.match(index, /id="deals-search"[^>]*aria-label="Search hot deal titles"/)
+assert.match(index, /id="deals-sort"[^>]*aria-label="Sort hot deals"/)
+assert.match(index, /id="deals-shop"[^>]*aria-label="Filter hot deals by store"/)
+// (5) dialogs: role, modal, a name, Escape closes, focus returns to the opener
+assert.equal([...app.matchAll(/dialog\.setAttribute\('role', 'dialog'\)/g)].length, 2) // shortcuts + search
+assert.equal([...app.matchAll(/dialog\.setAttribute\('aria-modal', 'true'\)/g)].length, 2)
+assert.match(app, /dialog\.setAttribute\('aria-labelledby', 'shortcut-dialog-title'\)/)
+assert.match(app, /dialog\.setAttribute\('aria-labelledby', 'search-dialog-title'\)/)
+assert.match(app, /if \(e\.key === 'Escape'\) \{ e\.preventDefault\(\); closeSearchDialog\(\); return \}/)
+assert.match(app, /if \(e\.key === 'Escape'\) \{ e\.preventDefault\(\); closeShortcutsDialog\(\); return \}/)
+assert.equal([...app.matchAll(/returnFocus\?\.focus\?\.\(\)/g)].length, 2)
+assert.match(onboardingJs, /role="dialog" aria-modal="true" aria-labelledby="onboarding-title"/)
+assert.match(onboardingJs, /role="dialog" aria-modal="true" aria-labelledby="tour-title"/)
+assert.match(onboardingJs, /if \(e\.key === 'Escape'\) \{ e\.preventDefault\(\); if \(tourOverlay\) endTour\(\); else finish\(\); return \}/)
+assert.match(onboardingJs, /returnFocus\?\.focus\?\.\(\)/)
+// (6) tabs, filters and the search combobox expose the current choice
+assert.match(app, /tab\.setAttribute\('aria-selected', String\(key === selected\)\)/)
+assert.match(app, /el\.setAttribute\('aria-current', 'page'\)/)
+assert.match(app, /button\.setAttribute\('aria-pressed', String\(Number\(button\.dataset\.minDiscount\) === minDiscount\)\)/)
+assert.match(app, /b\.setAttribute\('aria-pressed', String\(s\.theme === key\)\)/)
+assert.match(app, /input\.setAttribute\('role', 'combobox'\)/)
+// (8) keyboard focus stays visible: the outline rule survives and nothing removes it
+assert.match(css, /:focus-visible\{outline:2px solid var\(--acc\)/)
+assert.match(onboardingCss, /:focus-visible\{outline:2px solid var\(--acc\)/)
+assert.doesNotMatch(css, /outline:\s*(none|0\b)/)
+assert.doesNotMatch(onboardingCss, /outline:\s*(none|0\b)/)
+
+console.log('Renderer self-check passed (price targets, escaping, hidden titles, search ranking, filters, store filter, UI preference merge, claimed games, seen deals, list paging, next sale, refresh age, sale themes, J/K navigation, money and date labels, poll data signature, ProtonDB tiers, lowest-ever rule, sale keys, countdown thresholds, theme/CSS consistency, failed update check, keyboard/screen-reader audit: named buttons, keyboard-operable store avatar, announced loading/empty/error states, dialog roles and focus return, tab/filter state, img alts, field labels, focus outlines).')
