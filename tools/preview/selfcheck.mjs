@@ -418,4 +418,9 @@ for (const t of jsThemes) {
 for (const t of cssThemes) assert.equal(jsThemes.has(t), true, `style.css theme "${t}" is missing from BASE_THEMES/SALE_THEMES in app.js`)
 assert.equal(jsThemes.has('midnight'), true) // and the root default is offered in Settings
 
+// ─── Keyboard & screen-reader audit: static HTML the JS never rebuilds ───
+const index = readFileSync(new URL('../../renderer/index.html', import.meta.url), 'utf8')
+// icon-only buttons need an aria-label; a title alone is not reliably read by screen readers
+assert.match(index, /id="btn-github"[^>]*aria-label="DealDrop on GitHub"/, 'icon-only GitHub titlebar button needs an aria-label')
+
 console.log('Renderer self-check passed (price targets, escaping, hidden titles, search ranking, filters, store filter, UI preference merge, claimed games, seen deals, list paging, next sale, refresh age, sale themes, J/K navigation, money and date labels, poll data signature, ProtonDB tiers, lowest-ever rule, sale keys, countdown thresholds, theme/CSS consistency, failed update check).')
