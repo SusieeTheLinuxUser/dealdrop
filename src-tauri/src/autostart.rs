@@ -289,6 +289,26 @@ mod tests {
     }
 
     #[test]
+    fn exec_quoting_round_trips_nasty_paths() {
+        for p in [
+            "/opt/Deal Drop (2026)/dealdrop", // spaces and parentheses
+            r#"/a "q" $b `c` \d 100%% /e"#,   // every escaped character, and a doubled field code
+            "/ünï/çøDE/DealDrop",             // unicode
+            "%leading", "trailing%", "%%",    // field codes at the edges
+            "\"", "$", "`", "\\", "\\%$`\"",  // bare escape characters, and all of them in a row
+        ] {
+            assert_eq!(exec_path(&quoted(p)).as_deref(), Some(p), "{p}");
+        }
+    }
+
+    #[test]
+    fn launch_agent_quotes_are_legal_xml_text() {
+        // Only & < > need escaping in element text; " and ' pass through (launchd parses it as XML)
+        let text = launch_agent(r#"/Applications/Deal"Drop 'X'.app/Contents/MacOS/dealdrop"#);
+        assert!(text.contains(r#"<string>/Applications/Deal"Drop 'X'.app/Contents/MacOS/dealdrop</string>"#), "{text}");
+    }
+
+    #[test]
     fn launch_agent_runs_hidden_at_login() {
         let text = launch_agent("/Applications/Deal & Drop.app/Contents/MacOS/DealDrop");
         assert!(text.contains("<string>com.dealdrop.desktop</string>"));

@@ -1338,6 +1338,49 @@ mod tests {
     use std::collections::{HashMap, HashSet};
 
     #[test]
+    fn a_cached_time_in_the_future_is_neither_stale_nor_forgotten() {
+        // the clock moved back: an entry stamped ahead of now keeps until time catches up
+        let mut cache = HashMap::from([("x".to_string(), super::ProtonEntry { tier: Some("gold".into()), at: 10_000 })]);
+        assert!(super::proton_stale(&cache, &["x".into()], 5_000, 10).is_empty());
+        super::proton_apply(&mut cache, vec![], 5_000);
+        assert!(cache.contains_key("x"));
+        assert_eq!(super::proton_known(&cache, &["x".into()]), HashMap::from([("x".to_string(), "gold".to_string())]));
+    }
+
+    #[test]
+    fn notices_for_nothing_are_none() {
+        let proton = super::Proton::default();
+        assert!(free_notice(&[], false, &proton).is_none());
+        assert!(free_notice(&[], true, &proton).is_none());
+        assert!(wishlist_notice(&[], &proton).is_none());
+        assert!(target_notice(&[]).is_none());
+    }
+
+    #[test]
+    fn free_keys_drop_symbols_but_hidden_titles_keep_them() {
+        // free_key dedupes on letters and digits only (™®© and punctuation dropped), and a
+        // symbol-only title falls back to the spacing-normalised title
+        let game = |title: &str| Free { title: title.into(), kind: "free".into(), ..Default::default() };
+        assert_eq!(super::free_key(&game("Hades™")), "free:hades");
+        assert_eq!(super::free_key(&game("Hades®")), "free:hades");
+        assert_eq!(super::free_key(&game("★★★")), "free:★★★");
+        // hiding matches case and spacing only: the symbols stay part of the name
+        assert_eq!(normalize_title("Hades™"), "hades™");
+        assert_eq!(normalize_title(""), "");
+        assert!(is_hidden(&["Hades™".to_string()], "hades™"));
+        assert!(!is_hidden(&["Hades™".to_string()], "hades"));
+    }
+
+    #[test]
+    fn a_negative_price_never_hits_a_target() {
+        let item = WishItem { store: "steam".into(), id: "a".into(), name: "A".into(),
+            price_info: Some(Price { fin: -3.0, currency: Some("USD".into()), ..Default::default() }), ..Default::default() };
+        let targets = HashMap::from([("steam:a".to_string(), 10.0)]);
+        let (hits, fired) = target_hits(std::slice::from_ref(&item), &targets, &HashMap::new(), &[]);
+        assert!(hits.is_empty() && fired.is_empty());
+    }
+
+    #[test]
     fn a_second_update_install_is_refused_while_one_runs() {
         let first = super::Installing::start().unwrap();
         assert!(super::Installing::start().is_err());

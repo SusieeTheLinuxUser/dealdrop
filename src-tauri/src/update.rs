@@ -153,6 +153,38 @@ mod tests {
     }
 
     #[test]
+    fn flatpak_info_parsing_survives_odd_but_legal_text() {
+        // Windows line endings: the \r is stripped with the line ending, both keys still read
+        let crlf = "[Instance]\r\ninstance-id=abc123\r\napp-path=/home/me/.local/share/flatpak/app/com.dealdrop.desktop/x86_64/stable/files\r\n";
+        assert_eq!(installation(crlf), "--user");
+        assert_eq!(instance_id(crlf), Some("abc123"));
+        // Extra spaces around a value
+        let spaced = "[Instance]\ninstance-id= 777 \napp-path= /home/me/.local/share/flatpak/app/x/files\n";
+        assert_eq!(installation(spaced), "--user");
+        assert_eq!(instance_id(spaced), Some("777"));
+        // The [Instance] section coming after other sections, with a system app-path
+        let later = "[Application]\nname=com.dealdrop.desktop\n\n[Context]\nfilesystems=host\n\n[Instance]\ninstance-id=late\napp-path=/var/lib/flatpak/app/com.dealdrop.desktop/files\n";
+        assert_eq!(installation(later), "--system");
+        assert_eq!(instance_id(later), Some("late"));
+        // Only a value that trims to empty is no id
+        assert_eq!(instance_id("[Instance]\ninstance-id=   \n"), None);
+    }
+
+    #[test]
+    fn update_commands_keep_odd_paths_and_ids_as_single_arguments() {
+        // A bundle path with spaces stays one argument after --bundle
+        let args: Vec<_> = install_command("--user", std::path::Path::new("/cache/My Updates/dealdrop-update.flatpak"))
+            .get_args().map(|a| a.to_string_lossy().into_owned()).collect();
+        assert_eq!(args[1..], ["flatpak", "install", "--user", "-y", "--reinstall", "--bundle", "/cache/My Updates/dealdrop-update.flatpak"]);
+        // The instance id travels as $1, never spliced into the script text
+        let cmd = restart_command("0cf9 weird -id");
+        let args: Vec<_> = cmd.get_args().map(|a| a.to_string_lossy().into_owned()).collect();
+        assert_eq!(&args[..3], &["--host", "sh", "-c"]);
+        assert!(!args[3].contains("0cf9"), "the id must not be inside the script: {}", args[3]);
+        assert_eq!(&args[4..], &["sh", "0cf9 weird -id", APP_ID]);
+    }
+
+    #[test]
     fn host_dirs_follow_the_host_overrides_and_fall_back_to_home() {
         let home = std::path::Path::new("/home/me");
         let get = |k: &str| match k {
