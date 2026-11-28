@@ -2064,6 +2064,9 @@ function offeredUpdate (up) { return up?.viaRepo ? null : up }
 // The Flatpak installs it and restarts; other builds open the release page.
 // Returns false when the check itself failed; the 6-hourly calls stay silent about that,
 // and an update already offered stays up.
+// The sidebar box is not a live region, so a newly offered version is said once through
+// #app-status (again for a newer version, or when the same one is offered after it went away).
+let announcedUpdate
 async function checkUpdate () {
   let reached = true
   const answer = await window.api.checkUpdate().catch(() => { reached = false; return null })
@@ -2074,7 +2077,15 @@ async function checkUpdate () {
   const btn = document.getElementById('btn-update')
   if (!box || !btn || btn.disabled) return reached
   box.style.display = offered ? 'block' : 'none'
-  if (offered) btn.textContent = `Update to v${offered.version}`
+  if (offered) {
+    btn.textContent = `Update to v${offered.version}`
+    if (announcedUpdate !== offered.version) {
+      announcedUpdate = offered.version
+      announceStatus(`Update to v${offered.version} available`)
+    }
+  } else {
+    announcedUpdate = undefined // the offer is gone: a new offer speaks up again
+  }
   return reached
 }
 
